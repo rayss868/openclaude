@@ -310,6 +310,63 @@ export function convertAnthropicMessagesToResponsesInput(
 }
 
 /**
+ * Codex Responses strict mode requires every schema node to declare a `type`.
+ * MCP tools sometimes register properties with no `type` (e.g. a generic
+ * `value` parameter intended to accept any JSON), which triggers a 400 from
+ * the Responses API: `schema must have a 'type' key`. Infer one from sibling
+ * keys, fall back to `string` for fully empty nodes, and leave combinator-only
+ * schemas alone (their branches carry the real type info).
+ */
+function ensureSchemaType(record: Record<string, unknown>): void {
+  const raw = record.type
+  if (typeof raw === 'string') return
+  if (Array.isArray(raw) && raw.length > 0) return
+
+  if (record.properties && typeof record.properties === 'object') {
+    record.type = 'object'
+    return
+  }
+  if ('items' in record) {
+    record.type = 'array'
+    return
+  }
+  if (Array.isArray((record as Record<string, unknown>).anyOf) ||
+      Array.isArray((record as Record<string, unknown>).oneOf) ||
+      Array.isArray((record as Record<string, unknown>).allOf)) {
+    // Combinator-only schemas keep their semantics; forcing a `type` here
+    // would silently narrow the alternatives.
+    return
+  }
+  if (Array.isArray(record.enum) && record.enum.length > 0) {
+    const sample = typeof record.enum[0]
+    if (sample === 'string' || sample === 'boolean') {
+      record.type = sample
+      return
+    }
+    if (sample === 'number') {
+      record.type = record.enum.every(v => Number.isInteger(v)) ? 'integer' : 'number'
+      return
+    }
+  }
+  if ('const' in record) {
+    const sample = typeof record.const
+    if (sample === 'string' || sample === 'boolean') {
+      record.type = sample
+      return
+    }
+    if (sample === 'number') {
+      record.type = Number.isInteger(record.const) ? 'integer' : 'number'
+      return
+    }
+  }
+
+  // Permissive default: strict mode demands a concrete type, and `string`
+  // round-trips through JSON.stringify for callers that need to forward raw
+  // values to the underlying tool.
+  record.type = 'string'
+}
+
+/**
  * Recursively enforces Codex strict-mode constraints on a JSON schema:
  * - Every `object` type gets `additionalProperties: false`
  * - All property keys are listed in `required`
@@ -317,6 +374,8 @@ export function convertAnthropicMessagesToResponsesInput(
  */
 function enforceStrictSchema(schema: unknown): Record<string, unknown> {
   const record = sanitizeSchemaForOpenAICompat(schema)
+
+  ensureSchemaType(record)
 
   // Codex Responses rejects JSON Schema's standard `uri` string format.
   // Keep URL validation in the tool layer and send a plain string here.
