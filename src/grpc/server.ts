@@ -187,6 +187,21 @@ export class GrpcServer {
                 }
                 promptTokens = msg.usage?.input_tokens ?? 0
                 completionTokens = msg.usage?.output_tokens ?? 0
+              } else {
+                // Agent loop ended without success (timeout, max turns,
+                // upstream auth error, etc). Without surfacing this the
+                // gRPC stream just emits empty `done` and the user sees
+                // a frozen UI / empty bubble. Log the full result + emit
+                // an error message so the bridge can SSE it through.
+                const detail: any = msg as any
+                const summary = detail.error ?? detail.message ?? detail.reason ?? `subtype=${detail.subtype}`
+                console.error(`[grpc] non-success result subtype=${detail.subtype} detail=${JSON.stringify(detail).slice(0, 500)}`)
+                call.write({
+                  error: {
+                    message: typeof summary === 'string' ? summary : JSON.stringify(summary).slice(0, 500),
+                    code: 'AGENT_NON_SUCCESS',
+                  },
+                })
               }
             }
           }
