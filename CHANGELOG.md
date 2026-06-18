@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.20.0](https://github.com/Gitlawb/openclaude/compare/v0.19.0...v0.20.0) (2026-06-18)
+
+
+### Features
+
+* **agent-routing:** assign a per-agent model from the /agents menu ([#1632](https://github.com/Gitlawb/openclaude/issues/1632)) ([5471e4c](https://github.com/Gitlawb/openclaude/commit/5471e4c453034c0cbcd1d17f61cdcd1f8b72d53d))
+* **bughunter:** make /bughunter public + add /bughunter-security & /bughunter-perf with robust fallback prompts ([#1621](https://github.com/Gitlawb/openclaude/issues/1621)) ([1aabe26](https://github.com/Gitlawb/openclaude/commit/1aabe261dbb4e49c4dff995b8b5a62456f9607e1))
+* **cache:** classify prompt-cache breaks by reliability ([#1693](https://github.com/Gitlawb/openclaude/issues/1693)) ([4cf9812](https://github.com/Gitlawb/openclaude/commit/4cf981200fd881d839a7872cfb4f342232eeaa37))
+* **cli:** add local background sessions ([#1642](https://github.com/Gitlawb/openclaude/issues/1642)) ([a1b3346](https://github.com/Gitlawb/openclaude/commit/a1b3346f654d06f97aeec102394e0786bf8934ba))
+* **commands:** add /update command with package-manager auto-detection ([#1687](https://github.com/Gitlawb/openclaude/issues/1687)) ([c4aa756](https://github.com/Gitlawb/openclaude/commit/c4aa7566899132effd798766a80b772fe01c4d2a))
+* **config:** add explicit provider env-file loading ([#1668](https://github.com/Gitlawb/openclaude/issues/1668)) ([5af6f95](https://github.com/Gitlawb/openclaude/commit/5af6f95c46ebe994dc892177c956e4fdd9466426))
+* **config:** add OPENCLAUDE_CONFIG_DIR override ([#1683](https://github.com/Gitlawb/openclaude/issues/1683)) ([2aad6fc](https://github.com/Gitlawb/openclaude/commit/2aad6fc93eeb93f668af87a88a02f5930a3fdc25))
+* **context-collapse:** opt-in between-turns context collapse (span summarization) ([#1619](https://github.com/Gitlawb/openclaude/issues/1619)) ([d5588ea](https://github.com/Gitlawb/openclaude/commit/d5588ea80da55392ce79865448cb86b10778b6be))
+* **memory:** add memory.autoWrite alias for autoMemoryEnabled ([#1326](https://github.com/Gitlawb/openclaude/issues/1326)) ([#1396](https://github.com/Gitlawb/openclaude/issues/1396)) ([b8c7c3b](https://github.com/Gitlawb/openclaude/commit/b8c7c3bfac48140bbe495ba8b54d356c1bb13abd))
+
+
+### Bug Fixes
+
+* **bughunter-security:** align log-forging exclusion with A9 criteria ([1aabe26](https://github.com/Gitlawb/openclaude/commit/1aabe261dbb4e49c4dff995b8b5a62456f9607e1))
+* **claude-desktop:** add native Windows support for MCP server import ([#1653](https://github.com/Gitlawb/openclaude/issues/1653)) ([e733908](https://github.com/Gitlawb/openclaude/commit/e733908a910bb9a1af4ba507c48109d8926b9031))
+* **context:** treat Opus 4.7 as 1M-context capable in modelSupports1M ([#1670](https://github.com/Gitlawb/openclaude/issues/1670)) ([de6b6bd](https://github.com/Gitlawb/openclaude/commit/de6b6bdd0357c7a3c9841e9422b65af4731b7bb7))
+* **ink:** reduce high-write-ratio diagnostic noise ([#1699](https://github.com/Gitlawb/openclaude/issues/1699)) ([cc385a6](https://github.com/Gitlawb/openclaude/commit/cc385a649092d2e7e0df0a441da7090d90c26638))
+* **lsp:** throttle diagnostic storms ([#1698](https://github.com/Gitlawb/openclaude/issues/1698)) ([8cd4633](https://github.com/Gitlawb/openclaude/commit/8cd463383d832162c00f2e91961f3b509166c2b1))
+* **messages:** make projections tool-pair safe ([#1695](https://github.com/Gitlawb/openclaude/issues/1695)) ([df986c9](https://github.com/Gitlawb/openclaude/commit/df986c9275c30504b532cba17475ef60aa738a90))
+* **model:** preserve [1m] tag for the 'best' alias ([#1671](https://github.com/Gitlawb/openclaude/issues/1671)) ([da551e6](https://github.com/Gitlawb/openclaude/commit/da551e6d05273e1ec6aa2c823c6d69738242e73c))
+* **provider:** centralize provider secret redaction ([#1665](https://github.com/Gitlawb/openclaude/issues/1665)) ([29aea49](https://github.com/Gitlawb/openclaude/commit/29aea4969d0686f9864bbe88b030f79890d745c4))
+* **provider:** honor explicit CLAUDE_CODE_USE_OPENAI=0 on fresh startup ([#1690](https://github.com/Gitlawb/openclaude/issues/1690)) ([6fbbf2d](https://github.com/Gitlawb/openclaude/commit/6fbbf2dffce6efbbb130ebcb69a1d22cbd727c16)), closes [#1245](https://github.com/Gitlawb/openclaude/issues/1245)
+* **provider:** match xAI base URL by hostname, not 'x.ai' substring ([#1669](https://github.com/Gitlawb/openclaude/issues/1669)) ([1b33fa6](https://github.com/Gitlawb/openclaude/commit/1b33fa62b841aa0a0230d685957925598e2edecf))
+* **query:** add activity-aware query guard leases ([#1686](https://github.com/Gitlawb/openclaude/issues/1686)) ([23cfc24](https://github.com/Gitlawb/openclaude/commit/23cfc242ed465de22ddc8b54952b1bbf04cef785))
+* **sdk:** make stub-leak detection TDZ-safe + defer to next microtask ([#1287](https://github.com/Gitlawb/openclaude/issues/1287)) ([#1398](https://github.com/Gitlawb/openclaude/issues/1398)) ([650fae9](https://github.com/Gitlawb/openclaude/commit/650fae952d2b4c22fb5216121f18ba613e4191f5))
+* **session-title:** harden generated title handling ([#1691](https://github.com/Gitlawb/openclaude/issues/1691)) ([beab67b](https://github.com/Gitlawb/openclaude/commit/beab67b44a9796a6c3d75ba455bc8a20d08f6e76))
+* **settings:** correct stale settings path references ([#1666](https://github.com/Gitlawb/openclaude/issues/1666)) ([544b857](https://github.com/Gitlawb/openclaude/commit/544b857876acc180a2ef4fa543a3117aefb861d4))
+* **warnings:** surface perf hooks buffer guidance ([#1696](https://github.com/Gitlawb/openclaude/issues/1696)) ([916f247](https://github.com/Gitlawb/openclaude/commit/916f2477f3e371b97097198fe9f3388bded716ec))
+* WSL stdin handling ([#1679](https://github.com/Gitlawb/openclaude/issues/1679)) ([3135e73](https://github.com/Gitlawb/openclaude/commit/3135e731c9f21c5485bb41ac0788f62a6c8e8145))
+
 ## [0.19.0](https://github.com/Gitlawb/openclaude/compare/v0.18.0...v0.19.0) (2026-06-16)
 
 
