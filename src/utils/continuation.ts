@@ -7,12 +7,12 @@ import { tokenCountWithEstimation } from './tokens.js'
 
 export const CONTINUATION_SIGNALS = [
   // English: Action-transition phrases (requires intent + action)
-  /\bso now (i|let me|we) (need to|have to|should|must|will) (do|create|write|edit|update|fix|implement|add|run|check|make|build|set up|start|begin|apply|identify|inspect|analyze|review|search)\b/i,
-  /\bnow i('ll| will) (do|create|write|edit|update|fix|implement|add|run|check|make|build|set up|go|proceed|start|begin|apply|identify|inspect|analyze|review|search)\b/i,
-  /\bi (will|shall|now|need to|have to|must|should) (now )?(do|create|write|edit|update|fix|implement|add|run|check|make|build|set up|go|proceed|start|begin|apply|identify|inspect|analyze|review|search)\b/i,
-  /\blet me (go ahead and |now )?(do|create|write|edit|update|fix|implement|add|run|check|make|build|set up|proceed|start|begin|apply|update|create|identify|inspect|analyze|review|search|summarize)\b/i,
-  /\btime to (do|create|write|edit|update|fix|implement|add|run|check|make|build|get started|begin|start|inspect|analyze|review|search)\b/i,
-  /\b(moving on to|next step is to|starting to|proceeding to|applying (the|these) changes|inspecting|analyzing|reviewing|searching)\b/i,
+  /\bso now (i|let me|we) (need to|have to|should|must|will) (do|create|write|edit|update|fix|implement|add|run|check|make|build|set up|start|begin|apply|identify|inspect|analyze|review|search|process|download|upload|convert|compile|train|evaluate|test|continue|generate|extract|merge|deploy|install|configure|refactor|optimize)\b/i,
+  /\bnow i('ll| will) (do|create|write|edit|update|fix|implement|add|run|check|make|build|set up|go|proceed|start|begin|apply|identify|inspect|analyze|review|search|process|download|upload|convert|compile|train|evaluate|test|continue|generate|extract|merge|deploy|install|configure|refactor|optimize)\b/i,
+  /\bi (will|shall|now|need to|have to|must|should) (now )?(do|create|write|edit|update|fix|implement|add|run|check|make|build|set up|go|proceed|start|begin|apply|identify|inspect|analyze|review|search|process|download|upload|convert|compile|train|evaluate|test|continue|generate|extract|merge|deploy|install|configure|refactor|optimize)\b/i,
+  /\blet me (go ahead and |now )?(do|create|write|edit|update|fix|implement|add|run|check|make|build|set up|proceed|start|begin|apply|update|create|identify|inspect|analyze|review|search|summarize|process|download|upload|convert|compile|train|evaluate|test|continue|generate|extract|merge|deploy|install|configure|refactor|optimize)\b/i,
+  /\btime to (do|create|write|edit|update|fix|implement|add|run|check|make|build|get started|begin|start|inspect|analyze|review|search|process|download|upload|convert|compile|train|evaluate|test|continue|generate|extract|merge|deploy|install|configure|refactor|optimize)\b/i,
+  /\b(moving on to|next step is to|starting to|proceeding to|continuing with|applying (the|these) changes|inspecting|analyzing|reviewing|searching|processing|downloading|uploading|converting|compiling|training|evaluating|testing|extracting|merging|deploying|installing|configuring|refactoring|optimizing)\b/i,
   // French: Support for common continuation phrasing (relaxed boundaries for accents and apostrophes)
   /(^|\s)(je passe (à|au)|ensuite|l'étape suivante est de|je continue avec|au suivant|passons à|je reviens vers vous|je suis en train d'|je vais maintenant)(\s|$|[a-zà-ÿ])/i,
   /(^|\s)(je (vais|dois|dois maintenant|vais maintenant) (faire|créer|écrire|modifier|ajouter|tester|vérifier|lancer|exécuter|procéder|démarrer|commencer|identifier|analyser|inspecter|revoir|chercher))(\s|$|[a-zà-ÿ])/i,
@@ -111,7 +111,10 @@ export function analyzeContinuationIntent(
   }
 
   // 3. Completion Marker Guard (Final check for sound, completed messages)
-  if (COMPLETION_MARKERS.test(lowerText)) {
+  // Only block continuation if no continuation signal is present (prevents false
+  // positives when "complete" or "done" appears mid-sentence, e.g. "The download
+  // is complete. Now processing the files...")
+  if (COMPLETION_MARKERS.test(lowerText) && (hasLateContinuationSignal || !CONTINUATION_SIGNALS.some(re => re.test(lowerText)))) {
     return { shouldNudge: false }
   }
 
@@ -121,6 +124,13 @@ export function analyzeContinuationIntent(
     CONTINUATION_SIGNALS.some(re => re.test(lowerText)) && 
     !hasTerminalPunctuation
   ) {
+    return { shouldNudge: true, reason: 'continuation_signal' }
+  }
+
+  // 4. Soft fallback: if no terminal punctuation and no explicit completion signal,
+  // assume the model intends to continue (important for non-Claude models that
+  // don't use the specific continuation phrasing expected by this heuristic).
+  if (!hasTerminalPunctuation && !COMPLETION_MARKERS.test(lowerText)) {
     return { shouldNudge: true, reason: 'continuation_signal' }
   }
 
