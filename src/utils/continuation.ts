@@ -101,7 +101,7 @@ export function analyzeContinuationIntent(
     if (hasTerminalPunctuation) {
       const strongIntent = /\b(i (will|shall|need to|must|should|now)|let (me|us)|je (vais|reviens)|passons à|moving on to|next step is to)\b/i.test(lowerText) || 
                            /je suis en train d'/i.test(lowerText) || /◻/.test(lastText)
-      const presentProgressive = /\bnow \w+ing\b/i.test(lateText) || /\b\w+ing\s+(the|this|these|a|an|remaining|next|files|data|model)\b/i.test(lateText)
+      const presentProgressive = /\bnow \w+ing\b/i.test(lateText)
       const endsWithColon = /:\s*$/.test(lastText)
       if (strongIntent || endsWithColon || presentProgressive) {
         return { shouldNudge: true, reason: 'continuation_signal' }
@@ -115,7 +115,7 @@ export function analyzeContinuationIntent(
   // Only block continuation if no continuation signal is present (prevents false
   // positives when "complete" or "done" appears mid-sentence, e.g. "The download
   // is complete. Now processing the files...")
-  if (COMPLETION_MARKERS.test(lowerText) && (hasLateContinuationSignal || !CONTINUATION_SIGNALS.some(re => re.test(lowerText)))) {
+  if (COMPLETION_MARKERS.test(lowerText) && !hasLateContinuationSignal && !CONTINUATION_SIGNALS.some(re => re.test(lowerText))) {
     return { shouldNudge: false }
   }
 
