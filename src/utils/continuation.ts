@@ -99,7 +99,7 @@ export function analyzeContinuationIntent(
     // it's a strong 1st person intent or open tasks are present.
     const hasTerminalPunctuation = /[.!??"'`)\]]\s*$/.test(lastText) || lastText.endsWith('`')
     if (hasTerminalPunctuation) {
-      const strongIntent = /\b(i (will|shall|need to|must|should|now)|let (me|us)|je (vais|reviens)|passons à|moving on to|next step is to)\b/i.test(lowerText) || 
+      const strongIntent = /\b(i (will|shall|need to|must|should|now)|let (me|us)|je (vais|reviens)|passons à|moving on to|continuing with|proceeding to|next step is to)\b/i.test(lowerText) || 
                            /je suis en train d'/i.test(lowerText) || /◻/.test(lastText)
       const presentProgressive = /\bnow \w+ing\b/i.test(lateText)
       const endsWithColon = /:\s*$/.test(lastText)
