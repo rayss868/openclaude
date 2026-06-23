@@ -12,7 +12,7 @@ export const CONTINUATION_SIGNALS = [
   /\bi (will|shall|now|need to|have to|must|should) (now )?(do|create|write|edit|update|fix|implement|add|run|check|make|build|set up|go|proceed|start|begin|apply|identify|inspect|analyze|review|search|process|download|upload|convert|compile|train|evaluate|test|continue|generate|extract|merge|deploy|install|configure|refactor|optimize)\b/i,
   /\blet me (go ahead and |now )?(do|create|write|edit|update|fix|implement|add|run|check|make|build|set up|proceed|start|begin|apply|update|create|identify|inspect|analyze|review|search|summarize|process|download|upload|convert|compile|train|evaluate|test|continue|generate|extract|merge|deploy|install|configure|refactor|optimize)\b/i,
   /\btime to (do|create|write|edit|update|fix|implement|add|run|check|make|build|get started|begin|start|inspect|analyze|review|search|process|download|upload|convert|compile|train|evaluate|test|continue|generate|extract|merge|deploy|install|configure|refactor|optimize)\b/i,
-  /\b(moving on to|next step is to|starting to|proceeding to|continuing with|applying (the|these) changes|inspecting|analyzing|reviewing|searching|processing|downloading|uploading|converting|compiling|training|evaluating|testing|extracting|merging|deploying|installing|configuring|refactoring|optimizing)\b/i,
+  /\b(moving on to|next step is to|starting to|proceeding to|continuing with|applying (the|these) changes|creating|writing|editing|updating|fixing|implementing|adding|running|checking|making|building|starting|beginning|going|proceeding|identifying|inspecting|analyzing|reviewing|searching|processing|downloading|uploading|converting|compiling|training|evaluating|testing|continuing|generating|summarizing|extracting|merging|deploying|installing|configuring|refactoring|optimizing|doing)\b/i,
   // French: Support for common continuation phrasing (relaxed boundaries for accents and apostrophes)
   /(^|\s)(je passe (à|au)|ensuite|l'étape suivante est de|je continue avec|au suivant|passons à|je reviens vers vous|je suis en train d'|je vais maintenant)(\s|$|[a-zà-ÿ])/i,
   /(^|\s)(je (vais|dois|dois maintenant|vais maintenant) (faire|créer|écrire|modifier|ajouter|tester|vérifier|lancer|exécuter|procéder|démarrer|commencer|identifier|analyser|inspecter|revoir|chercher))(\s|$|[a-zà-ÿ])/i,
@@ -21,6 +21,11 @@ export const CONTINUATION_SIGNALS = [
   /:\s*$/,
   // Universal: Open task marker indicates pending work
   /◻/,
+  // Imperative/declarative patterns (no subject required — handles cases like
+  // "Need to process files", "Now create files", "Next I process files")
+  /\bneed to (do|create|write|edit|update|fix|implement|add|run|check|make|build|set up|start|begin|go|proceed|apply|identify|inspect|analyze|review|search|process|download|upload|convert|compile|train|evaluate|test|continue|generate|extract|merge|deploy|install|configure|refactor|optimize|summarize)\b/i,
+  /\bnow (do|create|write|edit|update|fix|implement|add|run|check|make|build|set up|start|begin|go|proceed|apply|identify|inspect|analyze|review|search|process|download|upload|convert|compile|train|evaluate|test|continue|generate|extract|merge|deploy|install|configure|refactor|optimize|summarize)\b(?!\s+you\b)/i,
+  /\bnext (i|we)\s+(need to|will|shall|should|must)?\s*(do|create|write|edit|update|fix|implement|add|run|check|make|build|set up|start|begin|go|proceed|apply|identify|inspect|analyze|review|search|process|download|upload|convert|compile|train|evaluate|test|continue|generate|extract|merge|deploy|install|configure|refactor|optimize|summarize)\b/i,
 ]
 
 export const COMPLETION_MARKERS = /\b(done|finished|completed|complete|summary|that's all|that is all|all set|hope this helps|let me know if|no issues|lgtm)\b/i
