@@ -169,35 +169,35 @@ describe('Expanded continuation coverage', () => {
     expect(analyzeContinuationIntent("I need to convert the format").shouldNudge).toBe(true)
   })
 
-	test('imperative / declarative patterns trigger continuation', async () => {
-	    const { analyzeContinuationIntent } = await import('../utils/continuation.js')
+  test('imperative / declarative patterns trigger continuation', async () => {
+    const { analyzeContinuationIntent } = await import('../utils/continuation.js')
 
-	    // "Need to ..." pattern
-	    expect(analyzeContinuationIntent("Need to update the config").shouldNudge).toBe(true)
-	    expect(analyzeContinuationIntent("Need to process these files").shouldNudge).toBe(true)
-	    expect(analyzeContinuationIntent("Need to deploy the changes").shouldNudge).toBe(true)
+    // "Need to ..." pattern
+    expect(analyzeContinuationIntent("Need to update the config").shouldNudge).toBe(true)
+    expect(analyzeContinuationIntent("Need to process these files").shouldNudge).toBe(true)
+    expect(analyzeContinuationIntent("Need to deploy the changes").shouldNudge).toBe(true)
 
-	    // "Now ..." pattern (without subject)
-	    expect(analyzeContinuationIntent("Now create the component").shouldNudge).toBe(true)
-	    expect(analyzeContinuationIntent("Now run the tests").shouldNudge).toBe(true)
-	    expect(analyzeContinuationIntent("Now compile everything").shouldNudge).toBe(true)
+    // "Now ..." pattern (without subject)
+    expect(analyzeContinuationIntent("Now create the component").shouldNudge).toBe(true)
+    expect(analyzeContinuationIntent("Now run the tests").shouldNudge).toBe(true)
+    expect(analyzeContinuationIntent("Now compile everything").shouldNudge).toBe(true)
 
-	    // "Now ..." should NOT match "Now you ..." (excluded by negative lookahead)
-	    expect(analyzeContinuationIntent("Now you can run the app").shouldNudge).toBe(false)
+    // "Now ..." should NOT match "Now you ..." (excluded by negative lookahead)
+    expect(analyzeContinuationIntent("Now you can run the app").shouldNudge).toBe(false)
 
-	    // "Next I/We ..." pattern
-	    expect(analyzeContinuationIntent("Next I will fix the bug").shouldNudge).toBe(true)
-	    expect(analyzeContinuationIntent("Next we need to add tests").shouldNudge).toBe(true)
-	    expect(analyzeContinuationIntent("Next I should deploy").shouldNudge).toBe(true)
+    // "Next I/We ..." pattern
+    expect(analyzeContinuationIntent("Next I will fix the bug").shouldNudge).toBe(true)
+    expect(analyzeContinuationIntent("Next we need to add tests").shouldNudge).toBe(true)
+    expect(analyzeContinuationIntent("Next I should deploy").shouldNudge).toBe(true)
 
-	    // Punctuated variants should also signal intent (Reviewer Feedback)
-	    expect(analyzeContinuationIntent("Need to process the files.").shouldNudge).toBe(true)
-	    expect(analyzeContinuationIntent("Need to deploy the changes.").shouldNudge).toBe(true)
-	    expect(analyzeContinuationIntent("Now create the component.").shouldNudge).toBe(true)
-	    expect(analyzeContinuationIntent("Now run the tests.").shouldNudge).toBe(true)
-	    expect(analyzeContinuationIntent("Next I will fix the bug.").shouldNudge).toBe(true)
-	    expect(analyzeContinuationIntent("Next we need to add tests.").shouldNudge).toBe(true)
-	  })
+    // Punctuated variants should also signal intent (Reviewer Feedback)
+    expect(analyzeContinuationIntent("Need to process the files.").shouldNudge).toBe(true)
+    expect(analyzeContinuationIntent("Need to deploy the changes.").shouldNudge).toBe(true)
+    expect(analyzeContinuationIntent("Now create the component.").shouldNudge).toBe(true)
+    expect(analyzeContinuationIntent("Now run the tests.").shouldNudge).toBe(true)
+    expect(analyzeContinuationIntent("Next I will fix the bug.").shouldNudge).toBe(true)
+    expect(analyzeContinuationIntent("Next we need to add tests.").shouldNudge).toBe(true)
+  })
 
   test('present-progressive fallback triggers continuation', async () => {
     const { analyzeContinuationIntent } = await import('../utils/continuation.js')

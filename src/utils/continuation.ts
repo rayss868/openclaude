@@ -181,9 +181,10 @@ export function analyzeContinuationIntent(
       const presentProgressive = new RegExp(`\\bnow (?:${VERB_ING})\\b`, 'i').test(lateText)
       // Imperative/declarative patterns also signal intent when punctuated
       // (e.g. "Need to process files.", "Now create the component.", "Next we need to add tests.")
-      const hasImperativeSignal = new RegExp(`\\bneed to (?:${VERB_ALT})\\b`, 'i').test(lowerText) ||
-        new RegExp(`\\bnow (?:${VERB_ALT})\\b(?!\\s+you\\b)`, 'i').test(lowerText) ||
-        new RegExp(`\\bnext (?:i|we)\\s+(?:need to|will|shall|should|must)?\\s*(?:${VERB_ALT})\\b`, 'i').test(lowerText)
+      // Use lateText (last 120 chars) for consistency with the late-window intent check above.
+      const hasImperativeSignal = new RegExp(`\\bneed to (?:${VERB_ALT})\\b`, 'i').test(lateText) ||
+        new RegExp(`\\bnow (?:${VERB_ALT})\\b(?!\\s+you\\b)`, 'i').test(lateText) ||
+        new RegExp(`\\bnext (?:i|we)\\s+(?:need to|will|shall|should|must)?\\s*(?:${VERB_ALT})\\b`, 'i').test(lateText)
       const endsWithColon = /:\s*$/.test(lastText)
       if (strongIntent || endsWithColon || presentProgressive || hasImperativeSignal) {
         return { shouldNudge: true, reason: 'continuation_signal' }
