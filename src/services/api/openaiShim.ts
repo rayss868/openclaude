@@ -117,6 +117,8 @@ const GITHUB_429_MAX_RETRIES = 3
 const GITHUB_429_BASE_DELAY_SEC = 1
 const GITHUB_429_MAX_DELAY_SEC = 32
 const CREDENTIAL_POOL_COOLDOWN_MS = 30_000
+const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 90_000
+const MAX_STREAM_IDLE_TIMEOUT_MS = 2_147_483_647
 const GEMINI_API_HOST = 'generativelanguage.googleapis.com'
 const COPILOT_HEADERS: Record<string, string> = {
   'User-Agent': 'GitHubCopilotChat/0.26.7',
@@ -128,6 +130,13 @@ const COPILOT_HEADERS: Record<string, string> = {
 function isCopilotTokenExpiredError(text: string): boolean {
   const lower = text.toLowerCase()
   return lower.includes('token expired') || lower.includes('token has expired')
+}
+
+class StreamIdleTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Stream idle timeout - no chunks received for ${timeoutMs}ms`)
+    this.name = 'StreamIdleTimeoutError'
+  }
 }
 
 function createStreamAbortError(): DOMException {
@@ -170,17 +179,35 @@ function createReaderCanceller(
   }
 }
 
-function readWithAbort(
+export function getStreamIdleTimeoutMs(): number {
+  const raw = process.env.CLAUDE_STREAM_IDLE_TIMEOUT_MS?.trim()
+  if (!raw || !/^\d+$/.test(raw)) return DEFAULT_STREAM_IDLE_TIMEOUT_MS
+  const parsed = Number(raw)
+  return Number.isSafeInteger(parsed) && parsed > 0
+    ? Math.min(parsed, MAX_STREAM_IDLE_TIMEOUT_MS)
+    : DEFAULT_STREAM_IDLE_TIMEOUT_MS
+}
+
+async function readWithIdleTimeout(
   reader: ReadableStreamDefaultReader<Uint8Array>,
-  signal?: AbortSignal,
-  cancelReader?: (error?: unknown) => void,
+  timeoutMs: number,
+  options: {
+    signal?: AbortSignal
+    cancelReader?: (error?: unknown) => void
+    onTimeout?: () => void
+  } = {},
 ): Promise<StreamReadResult> {
-  if (!signal) return reader.read()
+  const signal = options.signal
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
 
   return new Promise<StreamReadResult>((resolve, reject) => {
     let settled = false
     const cleanup = () => {
-      signal.removeEventListener('abort', onAbort)
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId)
+        timeoutId = undefined
+      }
+      signal?.removeEventListener('abort', onAbort)
     }
     const finishResolve = (value: StreamReadResult) => {
       if (settled) return
@@ -195,8 +222,8 @@ function readWithAbort(
       reject(error)
     }
     const cancelAndReject = (error: unknown) => {
-      if (cancelReader) {
-        cancelReader(error)
+      if (options.cancelReader) {
+        options.cancelReader(error)
       } else {
         void reader.cancel(error).catch(() => {})
       }
@@ -204,11 +231,21 @@ function readWithAbort(
     }
     const onAbort = () => cancelAndReject(createStreamAbortError())
 
-    signal.addEventListener('abort', onAbort, { once: true })
-    if (signal.aborted) {
+    signal?.addEventListener('abort', onAbort, { once: true })
+    if (signal?.aborted) {
       onAbort()
       return
     }
+
+    timeoutId = setTimeout(() => {
+      const error = new StreamIdleTimeoutError(timeoutMs)
+      try {
+        options.onTimeout?.()
+      } catch {
+        // ignore diagnostic callback failures
+      }
+      cancelAndReject(error)
+    }, timeoutMs)
 
     reader.read().then(finishResolve, finishReject)
   })
@@ -1854,15 +1891,28 @@ async function* anthropicSsePassthrough(
   const readerCanceller = createReaderCanceller(reader, signal)
   const decoder = new TextDecoder()
   let buffer = ''
+  const streamIdleTimeoutMs = getStreamIdleTimeoutMs()
+  let lastDataTime = Date.now()
   let streamComplete = false
 
   try {
     while (true) {
-      const { done, value } = await readWithAbort(reader, signal, readerCanceller.cancel)
+      const { done, value } = await readWithIdleTimeout(reader, streamIdleTimeoutMs, {
+        signal,
+        cancelReader: readerCanceller.cancel,
+        onTimeout: () => {
+          const elapsed = Math.round((Date.now() - lastDataTime) / 1000)
+          logForDebugging(
+            `Anthropic-compatible SSE stream idle for ${elapsed}s (limit: ${streamIdleTimeoutMs / 1000}s). Connection likely dropped.`,
+            { level: 'error' },
+          )
+        },
+      })
       if (done) {
         streamComplete = true
         break
       }
+      if (value) lastDataTime = Date.now()
 
       throwIfStreamAborted(signal)
       buffer += decoder.decode(value, { stream: true })
@@ -1926,6 +1976,8 @@ async function* geminiSseToAnthropic(
   let hasEmittedCurrentTool = false
   let usage: Partial<AnthropicUsage> | undefined
   let finishReason: string | undefined
+  const streamIdleTimeoutMs = getStreamIdleTimeoutMs()
+  let lastDataTime = Date.now()
   let streamComplete = false
 
   function mapFinishReason(reason: string | undefined, hasToolUse: boolean): string {
@@ -1936,11 +1988,22 @@ async function* geminiSseToAnthropic(
 
   try {
     while (true) {
-      const { done, value } = await readWithAbort(reader, signal, readerCanceller.cancel)
+      const { done, value } = await readWithIdleTimeout(reader, streamIdleTimeoutMs, {
+        signal,
+        cancelReader: readerCanceller.cancel,
+        onTimeout: () => {
+          const elapsed = Math.round((Date.now() - lastDataTime) / 1000)
+          logForDebugging(
+            `Gemini SSE stream idle for ${elapsed}s (limit: ${streamIdleTimeoutMs / 1000}s). Connection likely dropped.`,
+            { level: 'error' },
+          )
+        },
+      })
       if (done) {
         streamComplete = true
         break
       }
+      if (value) lastDataTime = Date.now()
 
       throwIfStreamAborted(signal)
       buffer += decoder.decode(value, { stream: true })
@@ -2147,67 +2210,9 @@ async function* openaiStreamToAnthropic(
 
   const decoder = new TextDecoder()
   let buffer = ''
-  const STREAM_IDLE_TIMEOUT_MS = 120_000 // 2 minutes without data = connection likely dead
+  const streamIdleTimeoutMs = getStreamIdleTimeoutMs()
   let lastDataTime = Date.now()
   let streamComplete = false
-
-  /**
-   * Read from the stream with an idle timeout. If no data arrives within
-   * STREAM_IDLE_TIMEOUT_MS, assume the connection is dead and throw so
-   * withRetry can reconnect. This prevents indefinite hangs on stale
-   * SSE connections from OpenAI/Gemini during long-running sessions.
-   * Respects the caller's AbortSignal — clears the idle timer on abort
-   * so the rejection reason is AbortError, not a spurious idle timeout.
-   */
-  type ReadResult = Awaited<ReturnType<typeof reader.read>>
-  async function readWithTimeout(): Promise<ReadResult> {
-    return new Promise<ReadResult>((resolve, reject) => {
-      let settled = false
-      let timeoutId: ReturnType<typeof setTimeout> | undefined = setTimeout(() => {
-        const elapsed = Math.round((Date.now() - lastDataTime) / 1000)
-        cancelAndReject(new Error(
-          `OpenAI/Gemini SSE stream idle for ${elapsed}s (limit: ${STREAM_IDLE_TIMEOUT_MS / 1000}s). Connection likely dropped.`,
-        ))
-      }, STREAM_IDLE_TIMEOUT_MS)
-
-      const cleanup = () => {
-        if (timeoutId !== undefined) {
-          clearTimeout(timeoutId)
-          timeoutId = undefined
-        }
-        signal?.removeEventListener('abort', onAbort)
-      }
-      const finishResolve = (value: ReadResult) => {
-        if (settled) return
-        settled = true
-        cleanup()
-        if (value.value) lastDataTime = Date.now()
-        resolve(value)
-      }
-      const finishReject = (error: unknown) => {
-        if (settled) return
-        settled = true
-        cleanup()
-        reject(error)
-      }
-      const cancelAndReject = (error: unknown) => {
-        readerCanceller.cancel(error)
-        finishReject(error)
-      }
-      const onAbort = () => cancelAndReject(createStreamAbortError())
-
-      signal?.addEventListener('abort', onAbort, { once: true })
-      if (signal?.aborted) {
-        onAbort()
-        return
-      }
-
-      reader.read().then(
-        result => finishResolve(result),
-        err => finishReject(err),
-      )
-    })
-  }
 
   const closeActiveContentBlock = async function* () {
     if (!hasEmittedContentStart) return
@@ -2321,11 +2326,22 @@ async function* openaiStreamToAnthropic(
     }
 
     while (true) {
-      const { done, value } = await readWithTimeout()
+      const { done, value } = await readWithIdleTimeout(reader, streamIdleTimeoutMs, {
+        signal,
+        cancelReader: readerCanceller.cancel,
+        onTimeout: () => {
+          const elapsed = Math.round((Date.now() - lastDataTime) / 1000)
+          logForDebugging(
+            `OpenAI-compatible SSE stream idle for ${elapsed}s (limit: ${streamIdleTimeoutMs / 1000}s). Connection likely dropped.`,
+            { level: 'error' },
+          )
+        },
+      })
       if (done) {
         streamComplete = true
         break
       }
+      if (value) lastDataTime = Date.now()
 
       throwIfStreamAborted(signal)
       buffer += decoder.decode(value, { stream: true })
@@ -4693,4 +4709,9 @@ export function createOpenAIShimClient(options: {
 }
 
 // Test-only surface (same pattern as WebSearchTool's __test export).
-export const __test = { convertMessages }
+export const __test = {
+  convertMessages,
+  getStreamIdleTimeoutMs,
+  readWithIdleTimeout,
+  StreamIdleTimeoutError,
+}

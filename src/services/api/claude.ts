@@ -102,6 +102,7 @@ import {
   extractQuotaStatusFromHeaders,
 } from '../claudeAiLimits.js'
 import { getAPIContextManagement } from '../compact/apiMicrocompact.js'
+import { getStreamIdleTimeoutMs } from './openaiShim.js'
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
@@ -111,7 +112,6 @@ const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
 import { feature } from 'bun:bundle'
 import type { ClientOptions } from '@anthropic-ai/sdk'
 import {
-  APIConnectionTimeoutError,
   APIError,
   APIUserAbortError,
 } from '@anthropic-ai/sdk/error'
@@ -1962,7 +1962,7 @@ async function* queryModel(
     // the session indefinitely since the SDK's request timeout only covers the
     // initial fetch(), not the streaming body.
     // Enabled by default, matching the always-on idle timeout already used by
-    // the OpenAI/Codex shims (readWithTimeout). A silently dropped Anthropic
+    // the OpenAI/Codex shims. A silently dropped Anthropic
     // stream now aborts and falls back to a non-streaming retry within
     // STREAM_IDLE_TIMEOUT_MS, instead of hanging until QueryGuard's 5-minute
     // idle timeout. Opt out with CLAUDE_DISABLE_STREAM_WATCHDOG=1 (or by
@@ -1970,8 +1970,7 @@ async function* queryModel(
     const streamWatchdogEnabled =
       !isEnvTruthy(process.env.CLAUDE_DISABLE_STREAM_WATCHDOG) &&
       !isEnvDefinedFalsy(process.env.CLAUDE_ENABLE_STREAM_WATCHDOG)
-    const STREAM_IDLE_TIMEOUT_MS =
-      parseInt(process.env.CLAUDE_STREAM_IDLE_TIMEOUT_MS || '', 10) || 90_000
+    const STREAM_IDLE_TIMEOUT_MS = getStreamIdleTimeoutMs()
     const STREAM_IDLE_WARNING_MS = STREAM_IDLE_TIMEOUT_MS / 2
     let streamIdleAborted = false
     // performance.now() snapshot when watchdog fires, for measuring abort propagation delay
@@ -2647,8 +2646,8 @@ async function* queryModel(
             `Streaming timeout (SDK abort): ${streamingError.message}`,
             { level: 'error' },
           )
-          // Throw a more specific error for timeout
-          throw new APIConnectionTimeoutError({ message: 'Request timed out' })
+          // Treat provider/SDK stream timeouts like other streaming failures:
+          // fall back below while the parent query signal is still live.
         }
       }
 
