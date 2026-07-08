@@ -371,9 +371,6 @@ async function loadDescriptorDiscoveryContext(
     return null
   }
 
-  if (routeId === 'custom') {
-    return null
-  }
 
   const routeLabel = descriptor.label
   const routeDefaultModel =
