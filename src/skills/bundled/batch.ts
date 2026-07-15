@@ -58,7 +58,7 @@ Call the \`${ENTER_PLAN_MODE_TOOL_NAME}\` tool now to enter plan mode, then:
 
 ## Phase 2: Spawn Workers (After Plan Approval)
 
-Once the plan is approved, spawn one background agent per work unit using the \`${AGENT_TOOL_NAME}\` tool. **All agents must use \`isolation: "worktree"\` and \`run_in_background: true\`.** Launch them all in a single message block so they run in parallel.
+Once the plan is approved, spawn one background agent per work unit using the \`${AGENT_TOOL_NAME}\` tool. **All agents must use \`run_in_background: true\`. Do not set \`isolation: "worktree"\` unless the user explicitly asks for a git worktree.** Launch them all in a single message block so they run in parallel.
 
 For each agent, the prompt must be fully self-contained. Include:
 - The overall goal (the user's instruction)

@@ -1531,8 +1531,10 @@ export function isMcpServerDisabled(name: string): boolean {
     const enabledServers = projectConfig.enabledMcpServers || []
     return !enabledServers.includes(name)
   }
-  const disabledServers = projectConfig.disabledMcpServers || []
-  return disabledServers.includes(name)
+  if (projectConfig.disabledMcpServers !== undefined) {
+    return projectConfig.disabledMcpServers.includes(name)
+  }
+  return (getGlobalConfig().disabledMcpServers || []).includes(name)
 }
 
 function toggleMembership(
