@@ -5,8 +5,10 @@ import { useCallback, useMemo, useState } from 'react';
 import { useExitOnCtrlCDWithKeybindings } from 'src/hooks/useExitOnCtrlCDWithKeybindings.js';
 import { type AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS, logEvent } from 'src/services/analytics/index.js';
 import { FAST_MODE_MODEL_DISPLAY, isFastModeAvailable, isFastModeCooldown, isFastModeEnabled } from 'src/utils/fastMode.js';
-import { Box, Text } from '../ink.js';
+import { Box, Text, useInput, useTerminalFocus } from '../ink.js';
 import { useKeybindings } from '../keybindings/useKeybinding.js';
+import { useSearchInput } from '../hooks/useSearchInput.js';
+import { SearchBox } from './SearchBox.js';
 import { useAppState, useSetAppState } from '../state/AppState.js';
 import { convertEffortValueToLevel, type EffortLevel, getAvailableEffortLevels, getDefaultEffortForModel, modelSupportsEffort, modelSupportsMaxEffort, resolvePickerEffortPersistence, toPersistableEffort } from '../utils/effort.js';
 import { isModelAllowed } from '../utils/model/modelAllowlist.js';
@@ -93,7 +95,7 @@ function mapDiscoveryToneToColor(tone: ModelPickerDiscoveryState['tone']): 'erro
   }
 }
 export function ModelPicker(t0) {
-  const $ = _c(84);
+  const $ = _c(91);
   const {
     initial,
     sessionModel,
@@ -123,6 +125,17 @@ export function ModelPicker(t0) {
     t1 = $[1];
   }
   const [effort, setEffort] = useState(t1);
+  const [viewMode, setViewMode] = useState<'list' | 'search'>('search');
+  const isTerminalFocused = useTerminalFocus();
+  const {
+    query: searchQuery,
+    setQuery: setSearchQuery,
+    cursorOffset: searchCursorOffset,
+  } = useSearchInput({
+    isActive: viewMode === 'search',
+    onExit: () => setViewMode('list'),
+    onExitUp: () => setViewMode('list'),
+  });
   const t2 = isFastMode ?? false;
   let t3;
   if ($[2] !== t2) {
@@ -190,6 +203,12 @@ export function ModelPicker(t0) {
     t5 = $[13];
   }
   const selectOptions = t5;
+  const filteredSelectOptions = searchQuery
+    ? selectOptions.filter(opt =>
+        typeof opt.label === 'string' &&
+        opt.label.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : selectOptions;
   let t6;
   if ($[14] !== initialValue || $[15] !== selectOptions) {
     t6 = selectOptions.find(_ => optionMatchesPickerValue(_, initialValue))?.value ?? selectOptions[0]?.value ?? undefined;
@@ -201,8 +220,8 @@ export function ModelPicker(t0) {
   }
   const initialFocusValue = t6;
   const [focusedValue, setFocusedValue] = useState(initialFocusValue ?? initialValue);
-  const visibleCount = Math.min(10, selectOptions.length);
-  const hiddenCount = Math.max(0, selectOptions.length - visibleCount);
+  const visibleCount = Math.min(10, filteredSelectOptions.length);
+  const hiddenCount = Math.max(0, filteredSelectOptions.length - visibleCount);
   let t7;
   if ($[17] !== focusedValue || $[18] !== selectOptions) {
     t7 = selectOptions.find(opt_1 => opt_1.value === focusedValue)?.label;
@@ -293,6 +312,12 @@ export function ModelPicker(t0) {
     t13 = $[34];
   }
   useKeybindings(t12, t13);
+  useInput((input, key) => {
+    if (viewMode === 'list' && input === '/' && !key.ctrl && !key.meta) {
+      setViewMode('search');
+      setSearchQuery('');
+    }
+  }, { isActive: viewMode === 'list' });
   let t14;
   if ($[35] !== effort || $[36] !== hasToggledEffort || $[37] !== onSelect || $[38] !== setAppState || $[39] !== skipSettingsWrite || $[46] !== focusedAvailableLevels || $[47] !== focusedDefaultEffort || $[48] !== selectOptions) {
     t14 = function handleSelect(value_0) {
@@ -381,95 +406,99 @@ export function ModelPicker(t0) {
   const t19 = <Box marginBottom={1} flexDirection="column">{t15}{t17}{t18}{discoveryLine}</Box>;
   const t20 = onCancel ?? _temp4;
   let t21;
-  if ($[49] !== handleFocus || $[50] !== handleSelect || $[51] !== initialFocusValue || $[52] !== selectOptions || $[53] !== t20 || $[54] !== visibleCount) {
-    t21 = <Box flexDirection="column"><Select defaultValue={initialFocusValue} defaultFocusValue={initialFocusValue} options={selectOptions} onChange={handleSelect} onFocus={handleFocus} onCancel={t20} visibleOptionCount={visibleCount} /></Box>;
+  if ($[49] !== handleFocus || $[50] !== handleSelect || $[51] !== initialFocusValue || $[52] !== selectOptions || $[53] !== t20 || $[54] !== visibleCount || $[55] !== searchQuery || $[56] !== viewMode || $[57] !== isTerminalFocused || $[58] !== searchCursorOffset) {
+    t21 = <Box flexDirection="column">{viewMode === 'search' ? <SearchBox query={searchQuery} isFocused={true} isTerminalFocused={isTerminalFocused} cursorOffset={searchCursorOffset} /> : null}<Select defaultValue={initialFocusValue} defaultFocusValue={initialFocusValue} options={filteredSelectOptions} onChange={handleSelect} onFocus={handleFocus} onCancel={t20} visibleOptionCount={visibleCount} highlightText={searchQuery || undefined} isDisabled={viewMode === 'search'} /></Box>;
     $[49] = handleFocus;
     $[50] = handleSelect;
     $[51] = initialFocusValue;
     $[52] = selectOptions;
     $[53] = t20;
     $[54] = visibleCount;
-    $[56] = t21;
+    $[55] = searchQuery;
+    $[56] = viewMode;
+    $[57] = isTerminalFocused;
+    $[58] = searchCursorOffset;
+    $[59] = t21;
   } else {
-    t21 = $[56];
+    t21 = $[59];
   }
   let t22;
-  if ($[57] !== hiddenCount) {
+  if ($[60] !== hiddenCount) {
     t22 = hiddenCount > 0 && <Box paddingLeft={3}><Text dimColor={true}>and {hiddenCount} more…</Text></Box>;
-    $[57] = hiddenCount;
-    $[58] = t22;
+    $[60] = hiddenCount;
+    $[61] = t22;
   } else {
-    t22 = $[58];
+    t22 = $[61];
   }
   let t23;
-  if ($[59] !== t21 || $[60] !== t22) {
+  if ($[62] !== t21 || $[63] !== t22) {
     t23 = <Box flexDirection="column" marginBottom={1}>{t21}{t22}</Box>;
-    $[59] = t21;
-    $[60] = t22;
-    $[61] = t23;
+    $[62] = t21;
+    $[63] = t22;
+    $[64] = t23;
   } else {
-    t23 = $[61];
+    t23 = $[64];
   }
   let t24;
-  if ($[62] !== displayEffort || $[63] !== focusedDefaultEffort || $[64] !== focusedModelName || $[65] !== focusedSupportsEffort) {
+  if ($[65] !== displayEffort || $[66] !== focusedDefaultEffort || $[67] !== focusedModelName || $[68] !== focusedSupportsEffort) {
     t24 = <Box marginBottom={1} flexDirection="column">{focusedSupportsEffort ? <Text dimColor={true}><EffortLevelIndicator effort={displayEffort} />{" "}{capitalize(displayEffort)} effort{displayEffort === focusedDefaultEffort ? " (default)" : ""}{" "}<Text color="subtle">← → to adjust</Text></Text> : <Text color="subtle"><EffortLevelIndicator effort={undefined} /> Effort not supported{focusedModelName ? ` for ${focusedModelName}` : ""}</Text>}</Box>;
-    $[62] = displayEffort;
-    $[63] = focusedDefaultEffort;
-    $[64] = focusedModelName;
-    $[65] = focusedSupportsEffort;
-    $[66] = t24;
+    $[65] = displayEffort;
+    $[66] = focusedDefaultEffort;
+    $[67] = focusedModelName;
+    $[68] = focusedSupportsEffort;
+    $[69] = t24;
   } else {
-    t24 = $[66];
+    t24 = $[69];
   }
   let t25;
-  if ($[67] !== showFastModeNotice) {
+  if ($[70] !== showFastModeNotice) {
     t25 = isFastModeEnabled() ? showFastModeNotice ? <Box marginBottom={1}><Text dimColor={true}>Fast mode is <Text bold={true}>ON</Text> and available with{" "}{FAST_MODE_MODEL_DISPLAY} only (/fast). Switching to other models turn off fast mode.</Text></Box> : isFastModeAvailable() && !isFastModeCooldown() ? <Box marginBottom={1}><Text dimColor={true}>Use <Text bold={true}>/fast</Text> to turn on Fast mode ({FAST_MODE_MODEL_DISPLAY} only).</Text></Box> : null : null;
-    $[67] = showFastModeNotice;
-    $[68] = t25;
+    $[70] = showFastModeNotice;
+    $[71] = t25;
   } else {
-    t25 = $[68];
+    t25 = $[71];
   }
   let t26;
-  if ($[69] !== t19 || $[70] !== t23 || $[71] !== t24 || $[72] !== t25) {
+  if ($[72] !== t19 || $[73] !== t23 || $[74] !== t24 || $[75] !== t25) {
     t26 = <Box flexDirection="column">{t19}{t23}{t24}{t25}</Box>;
-    $[69] = t19;
-    $[70] = t23;
-    $[71] = t24;
-    $[72] = t25;
-    $[73] = t26;
+    $[72] = t19;
+    $[73] = t23;
+    $[74] = t24;
+    $[75] = t25;
+    $[76] = t26;
   } else {
-    t26 = $[73];
+    t26 = $[76];
   }
   let t27;
-  if ($[74] !== exitState || $[75] !== isStandaloneCommand || $[76] !== refreshHint) {
+  if ($[77] !== exitState || $[78] !== isStandaloneCommand || $[79] !== refreshHint) {
     t27 = isStandaloneCommand && <Text dimColor={true} italic={true}>{exitState.pending ? <>Press {exitState.keyName} again to exit</> : <Byline><KeyboardShortcutHint shortcut="Enter" action="confirm" />{refreshHint}<ConfigurableShortcutHint action="select:cancel" context="Select" fallback="Esc" description="exit" /></Byline>}</Text>;
-    $[74] = exitState;
-    $[75] = isStandaloneCommand;
-    $[76] = refreshHint;
-    $[82] = t27;
+    $[77] = exitState;
+    $[78] = isStandaloneCommand;
+    $[79] = refreshHint;
+    $[85] = t27;
   } else {
-    t27 = $[82];
+    t27 = $[85];
   }
   let t28;
-  if ($[77] !== t26 || $[78] !== t27) {
+  if ($[86] !== t26 || $[87] !== t27) {
     t28 = <Box flexDirection="column">{t26}{t27}</Box>;
-    $[77] = t26;
-    $[78] = t27;
-    $[79] = t28;
+    $[86] = t26;
+    $[87] = t27;
+    $[88] = t28;
   } else {
-    t28 = $[79];
+    t28 = $[88];
   }
   const content = t28;
   if (!isStandaloneCommand) {
     return content;
   }
   let t29;
-  if ($[80] !== content) {
+  if ($[89] !== content) {
     t29 = <Pane color="permission">{content}</Pane>;
-    $[80] = content;
-    $[81] = t29;
+    $[89] = content;
+    $[90] = t29;
   } else {
-    t29 = $[81];
+    t29 = $[90];
   }
   return t29;
 }
