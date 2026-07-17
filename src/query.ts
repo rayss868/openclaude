@@ -2375,6 +2375,45 @@ async function* queryLoop(
             .join(' ')
             .toLowerCase()
 
+          // Empty response guard: some models occasionally return end_turn
+          // with zero text content (no tool calls either). Inject a
+          // continuation nudge to prevent premature task completion.
+          // General guard — catches empty responses regardless of context.
+          if (lastText.length === 0) {
+            logForDebugging(
+              `Continuation nudge triggered (${state.continuationNudgeCount + 1}/${MAX_CONTINUATION_NUDGES}): empty response`,
+            )
+            const nudge = createUserMessage({
+              content:
+                'Continue with the task. If you were interrupted, resume your thought. Otherwise, use the appropriate tools to proceed to the next step.',
+              isMeta: true,
+            })
+            const next: State = {
+              messages: [
+                ...messagesForQuery,
+                ...assistantMessages,
+                nudge,
+              ],
+              toolUseContext,
+              autoCompactTracking: tracking,
+              maxOutputTokensRecoveryCount: 0,
+              hasAttemptedReactiveCompact: false,
+              hasAttemptedContextOverflowRecovery: false,
+              hasAttemptedProviderFallback: false,
+              maxOutputTokensOverride: undefined,
+              providerMaxOutputTokensCap,
+              pendingToolUseSummary: undefined,
+              stopHookActive: undefined,
+              turnCount,
+              continuationNudgeCount:
+                state.continuationNudgeCount + 1,
+              agentStepLimit,
+              transition: { reason: 'continuation_nudge' },
+            }
+            state = next
+            continue
+          }
+
           const { shouldNudge, reason: nudgeReason } = analyzeContinuationIntent(
             lastText,
           )
