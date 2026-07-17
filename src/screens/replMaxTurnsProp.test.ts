@@ -26,8 +26,8 @@ function objectBody(source: string, marker: RegExp): string {
 
 describe('interactive REPL max-turn cap', () => {
   test('supplies the local interactive default at runtime', () => {
-    expect(DEFAULT_REPL_MAX_TURNS).toBe(50)
-    expect(resolveReplMaxTurns()).toBe(50)
+    expect(DEFAULT_REPL_MAX_TURNS).toBe(Infinity)
+    expect(resolveReplMaxTurns()).toBe(Infinity)
   })
 
   test('preserves an explicit interactive cap at runtime', () => {
