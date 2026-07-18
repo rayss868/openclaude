@@ -27,6 +27,7 @@ import {
 import { parseCustomHeadersEnv } from '../utils/providerCustomHeaders.js'
 import { firstUsableCredential } from '../services/api/credentialPool.js'
 import { ZAI_GLM_OPENAI_SHIM } from './transport/zaiGlmShim.js'
+import { getInitialSettings } from '../utils/settings/settings.js'
 
 function normalizeModelApiName(
   value: string | undefined,
@@ -484,16 +485,17 @@ export function resolveModelRuntimeLimits(options: {
     runtimeEnv,
   )
 
-  // Precedence: an exact env override wins outright; then the built-in
-  // catalog / discovery-cache value (a `:cloud` variant must take its known
-  // catalog limit rather than inherit a broad base-model env *prefix*); then a
-  // broad env *prefix* override; then the settings.json `modelLimits` override;
-  // then the descriptor default. The key fix for the env/settings drift is
+  // Precedence: a global `maxContextWindow`/`maxOutputTokens` setting wins
+  // outright; then an exact env override; then the built-in catalog /
+  // discovery-cache value; then a broad env *prefix* override; then the
+  // settings.json `modelLimits` override; then the descriptor default. The key fix for the env/settings drift is
   // keeping `settings` strictly below `prefix` so a broad env-prefix override is
   // never silently overtaken by a settings entry — matching the scalar
   // getOpenAIContextWindow, where env (exact or prefix) beats settings.
+  const settings = getInitialSettings()
   return {
     contextWindow:
+      settings.maxContextWindow ??
       externalContextWindow.exact ??
       catalogEntry?.contextWindow ??
       cachedCatalogEntry?.contextWindow ??

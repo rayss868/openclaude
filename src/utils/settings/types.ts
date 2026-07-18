@@ -841,6 +841,15 @@ export const SettingsSchema = lazySchema(() =>
             'the currently-active id) and retries the turn. ' +
             'Example: ["provider_anthropic", "provider_openai", "provider_ollama"]',
         ),
+      maxContextWindow: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe(
+          'Global override for max context window (tokens). Applied to all models, ' +
+            'taking the highest precedence over per-model settings, env vars, and catalog limits.',
+        ),
       modelLimits: z
         .record(
           z.string(),

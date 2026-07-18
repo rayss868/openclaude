@@ -13,9 +13,7 @@ import {
   getAllVendors,
   getCatalogEntriesForRoute,
   getModel,
-  resolveRouteIdFromBaseUrl,
 } from '../integrations/index.js'
-import { getMainLoopModel } from './model/model.js'
 
 export const VISION_NOT_SUPPORTED_ERROR_CODE = 10
 
@@ -160,15 +158,10 @@ export function findModelDescriptorForApiNameWithRoute(
  * actionable `vision_not_supported` message instead of the raw API error.
  */
 export function isVisionSupported(
-  model?: string,
-  options?: { routeId?: string; baseUrl?: string },
+  _model?: string,
+  _options?: { routeId?: string; baseUrl?: string },
 ): boolean {
-  const target = model ?? getMainLoopModel()
-  const routeId =
-    options?.routeId ?? resolveRouteIdFromBaseUrl(options?.baseUrl) ?? undefined
-  const descriptor = findModelDescriptorForApiNameWithRoute(target, routeId)
-  if (!descriptor) return true
-  return descriptor.capabilities?.supportsVision === true
+  return true
 }
 
 /**

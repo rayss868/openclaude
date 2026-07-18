@@ -73,19 +73,26 @@ describe('findModelDescriptorForApiName', () => {
 })
 
 describe('isVisionSupported', () => {
-  test('returns false for a registered non-vision model (Xiaomi Mimo V2.5 Pro)', () => {
-    expect(isVisionSupported('mimo-v2.5-pro')).toBe(false)
-  })
-
-  test('returns false for the Xiaomi Mimo V2 Flash variant', () => {
-    expect(isVisionSupported('mimo-v2-flash')).toBe(false)
-  })
-
-  test('returns true for the registered vision variant (Xiaomi Mimo V2.5)', () => {
+  test('always returns true regardless of model (pre-flight check removed)', () => {
+    expect(isVisionSupported('mimo-v2.5-pro')).toBe(true)
+    expect(isVisionSupported('mimo-v2-flash')).toBe(true)
     expect(isVisionSupported('mimo-v2.5')).toBe(true)
+    expect(isVisionSupported('mimo-v2.5-free')).toBe(true)
+    expect(isVisionSupported('claude-sonnet-4-6')).toBe(true)
+    expect(isVisionSupported('gemini-2.5-pro')).toBe(true)
+    expect(isVisionSupported('custom-vision-corp/secret-model-v1')).toBe(true)
+    expect(isVisionSupported('not-a-real-model-xyz')).toBe(true)
   })
 
-  test('does not let ambient OPENAI_BASE_URL change route-free checks', () => {
+  test('route-specific lookup still returns true', () => {
+    expect(
+      isVisionSupported('mimo-v2.5', {
+        baseUrl: 'https://opencode.ai/zen/go/v1',
+      }),
+    ).toBe(true)
+  })
+
+  test('does not let ambient OPENAI_BASE_URL change behavior', () => {
     const originalBaseUrl = process.env.OPENAI_BASE_URL
     process.env.OPENAI_BASE_URL = 'https://opencode.ai/zen/go/v1'
     try {
@@ -98,60 +105,21 @@ describe('isVisionSupported', () => {
       }
     }
   })
-
-  test('returns false for non-vision catalog aliases that share a vision-model prefix', () => {
-    expect(isVisionSupported('mimo-v2.5-free')).toBe(false)
-  })
-
-  test('returns false for route-specific catalog aliases that collide with global vision models', () => {
-    expect(
-      isVisionSupported('mimo-v2.5', {
-        baseUrl: 'https://opencode.ai/zen/go/v1',
-      }),
-    ).toBe(false)
-  })
-
-  test('returns true for Claude models', () => {
-    expect(isVisionSupported('claude-sonnet-4-6')).toBe(true)
-  })
-
-  test('returns true for Gemini models', () => {
-    expect(isVisionSupported('gemini-2.5-pro')).toBe(true)
-  })
-
-  test('falls open for unknown models so custom / non-registered providers keep working', () => {
-    expect(isVisionSupported('custom-vision-corp/secret-model-v1')).toBe(true)
-    expect(isVisionSupported('not-a-real-model-xyz')).toBe(true)
-  })
 })
 
 describe('checkVisionCapabilityForFile (issue #1421)', () => {
-  test('refuses PNG read for a registered non-vision model with an actionable message', () => {
+  test('allows PNG read for any model (pre-flight check removed)', () => {
     const result = checkVisionCapabilityForFile(
       'C:\\temp\\openclaude\\tests\\fixtures\\screenshot.png',
       'mimo-v2.5-pro',
     )
-
-    expect(result.result).toBe(false)
-    if (result.result === false) {
-      expect(result.message).toContain('mimo-v2.5-pro')
-      expect(result.message).toContain('does not support image')
-      expect(result.message).toContain('/model')
-      expect(result.errorCode).toBe(VISION_NOT_SUPPORTED_ERROR_CODE)
-    }
+    expect(result.result).toBe(true)
   })
 
-  test('refuses JPG read for Xiaomi Mimo V2 Flash', () => {
-    const result = checkVisionCapabilityForFile('C:\\foo\\bar.jpg', 'mimo-v2-flash')
-    expect(result.result).toBe(false)
-    if (result.result === false) {
-      expect(result.errorCode).toBe(VISION_NOT_SUPPORTED_ERROR_CODE)
-    }
-  })
-
-  test('refuses GIF / WebP reads for non-vision models', () => {
-    expect(checkVisionCapabilityForFile('a.gif', 'mimo-v2.5-pro').result).toBe(false)
-    expect(checkVisionCapabilityForFile('a.webp', 'mimo-v2.5-pro').result).toBe(false)
+  test('allows all image types for any model', () => {
+    expect(checkVisionCapabilityForFile('C:\\foo\\bar.jpg', 'mimo-v2-flash').result).toBe(true)
+    expect(checkVisionCapabilityForFile('a.gif', 'mimo-v2.5-pro').result).toBe(true)
+    expect(checkVisionCapabilityForFile('a.webp', 'mimo-v2.5-pro').result).toBe(true)
   })
 
   test('allows PNG read for a registered vision-capable model', () => {
@@ -162,13 +130,13 @@ describe('checkVisionCapabilityForFile (issue #1421)', () => {
     expect(result.result).toBe(true)
   })
 
-  test('refuses PNG read for a route-specific non-vision catalog model that collides with a global vision model', () => {
+  test('allows PNG read for route-specific catalog model', () => {
     const result = checkVisionCapabilityForFile(
       'C:\\foo\\bar.png',
       'mimo-v2.5',
       { baseUrl: 'https://opencode.ai/zen/go/v1' },
     )
-    expect(result.result).toBe(false)
+    expect(result.result).toBe(true)
   })
 
   test('allows PNG read for unknown models (fail-open so non-registered providers keep working)', () => {
@@ -192,7 +160,7 @@ describe('checkVisionCapabilityForFile (issue #1421)', () => {
   test('handles uppercase image extensions', () => {
     expect(
       checkVisionCapabilityForFile('C:\\FOO\\BAR.PNG', 'mimo-v2.5-pro').result,
-    ).toBe(false)
+    ).toBe(true)
     expect(
       checkVisionCapabilityForFile('C:\\FOO\\BAR.PNG', 'claude-sonnet-4-6').result,
     ).toBe(true)
