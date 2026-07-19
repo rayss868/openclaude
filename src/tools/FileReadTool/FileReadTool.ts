@@ -1,7 +1,8 @@
 import type { Base64ImageSource } from '@anthropic-ai/sdk/resources/index.mjs'
-import { readdir, readFile as readFileAsync } from 'fs/promises'
+import { mkdir, readdir, readFile as readFileAsync, writeFile } from 'fs/promises'
 import * as path from 'path'
-import { posix, win32 } from 'path'
+import { posix, win32, join } from 'path'
+import { tmpdir } from 'node:os'
 import { z } from 'zod/v4'
 import {
   PDF_AT_MENTION_INLINE_THRESHOLD,
@@ -971,31 +972,62 @@ async function callInner(
     return { data }
   }
 
-  // --- Image (single read, no double-read) ---
+  // --- Image: save to temp dir instead of embedding base64 in context ---
   if (IMAGE_EXTENSIONS.has(ext)) {
-    // Images have their own size limits (token budget + compression) —
-    // don't apply the text maxSizeBytes cap.
-    const data = await readImageWithTokenBudget(resolvedFilePath, maxTokens)
-    context.nestedMemoryAttachmentTriggers?.add(fullFilePath)
+    const stats = await getFsImplementation().stat(resolvedFilePath)
+    const tmpImageDir = join(tmpdir(), 'openclaude-images')
+    await mkdir(tmpImageDir, { recursive: true })
+
+    const imageBuffer = await getFsImplementation().readFileBytes(
+      resolvedFilePath,
+    )
+    const detectedMediaType = detectImageFormatFromBuffer(imageBuffer)
+    const imageExt = detectedMediaType.split('/')[1] || 'png'
+    const tmpPath = join(
+      tmpImageDir,
+      `${path.basename(file_path, path.extname(file_path))}_${Date.now()}.${imageExt}`,
+    )
+    await writeFile(tmpPath, imageBuffer)
+
+    // Get dimensions for metadata
+    let dimensionsText = ''
+    let imageDimensions: ImageDimensions | undefined
+    try {
+      const resized = await maybeResizeAndDownsampleImageBuffer(
+        imageBuffer,
+        imageBuffer.length,
+        imageExt,
+      )
+      imageDimensions = resized.dimensions
+      if (imageDimensions) {
+        dimensionsText = ` (${imageDimensions.displayWidth ?? imageDimensions.originalWidth}x${imageDimensions.displayHeight ?? imageDimensions.originalHeight})`
+      }
+    } catch {
+      // dimensions non-critical
+    }
+
+    const metadataText = `Image saved to temporary location: ${tmpPath}${dimensionsText} (${formatFileSize(stats.size)})`
 
     logFileOperation({
       operation: 'read',
       tool: 'FileReadTool',
       filePath: fullFilePath,
-      content: data.file.base64,
+      content: metadataText,
     })
 
-    const metadataText = data.file.dimensions
-      ? createImageMetadataText(data.file.dimensions)
-      : null
+    context.nestedMemoryAttachmentTriggers?.add(fullFilePath)
 
     return {
-      data,
-      ...(metadataText && {
-        newMessages: [
-          createUserMessage({ content: metadataText, isMeta: true }),
-        ],
-      }),
+      data: {
+        type: 'text',
+        file: {
+          filePath: file_path,
+          content: metadataText,
+          numLines: 1,
+          startLine: 1,
+          totalLines: 1,
+        },
+      },
     }
   }
 

@@ -80,17 +80,13 @@ describe('renderPromptTemplate — vision sentence (issue #1421)', () => {
 })
 
 describe('FileReadTool.validateInput — vision gate (issue #1421)', () => {
-  test('returns a structured denial for image reads on registered non-vision models', async () => {
+  test('image reads are no longer blocked by pre-flight vision check', async () => {
     const result = await FileReadTool.validateInput(
       { file_path: 'fixture.png' },
       createToolUseContext('mimo-v2.5-pro'),
     )
 
-    expect(result).toEqual({
-      result: false,
-      errorCode: 10,
-      message: expect.stringContaining('does not support image inputs'),
-    })
+    expect(result).toMatchObject({ result: true })
   })
 
   test('provider override base URL wins over ambient OpenAI-compatible env', async () => {
@@ -105,7 +101,7 @@ describe('FileReadTool.validateInput — vision gate (issue #1421)', () => {
       }),
     )
 
-    expect(result).toMatchObject({ result: false, errorCode: 10 })
+    expect(result).toMatchObject({ result: true })
   })
 
   test('falls back to OPENAI_BASE_URL when no provider override is present', async () => {
@@ -116,7 +112,7 @@ describe('FileReadTool.validateInput — vision gate (issue #1421)', () => {
       createToolUseContext('mimo-v2.5'),
     )
 
-    expect(result).toMatchObject({ result: false, errorCode: 10 })
+    expect(result).toMatchObject({ result: true })
   })
 
   test('validates UNC image paths before the UNC no-I/O early return', async () => {
@@ -125,6 +121,6 @@ describe('FileReadTool.validateInput — vision gate (issue #1421)', () => {
       createToolUseContext('mimo-v2.5-pro'),
     )
 
-    expect(result).toMatchObject({ result: false, errorCode: 10 })
+    expect(result).toMatchObject({ result: true })
   })
 })
