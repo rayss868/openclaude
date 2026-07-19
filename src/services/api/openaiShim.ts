@@ -77,7 +77,10 @@ import {
 } from './codexShim.js'
 import { buildAnthropicUsageFromRawUsage } from './cacheMetrics.js'
 import { compressToolHistory } from './compressToolHistory.js'
-import { fetchWithProxyRetry } from './fetchWithProxyRetry.js'
+import {
+  fetchWithProxyRetry,
+  type ProxyRetryFetcher,
+} from './fetchWithProxyRetry.js'
 import {
   getLocalFastPathConfig,
   getLocalProviderRetryBaseUrls,
@@ -97,9 +100,14 @@ import {
   buildOpenAICompatibilityErrorMessage,
   classifyOpenAIHttpFailure,
   classifyOpenAINetworkFailure,
+  markOpenAIRequestNonReplayable,
 } from './openaiErrorClassification.js'
 import { sanitizeSchemaForOpenAICompat } from '../../utils/schemaSanitizer.js'
 import { redactSecretValueForDisplay, type SecretValueSource } from '../../utils/providerProfile.js'
+import {
+  redactEncodedSecretSubstringsForDisplay,
+  redactSecretSubstringsForDisplay,
+} from '../../utils/providerSecrets.js'
 import {
   redactUrlForDisplay,
   shouldRedactUrlQueryParam,
@@ -128,6 +136,7 @@ const GITHUB_429_MAX_RETRIES = 3
 const GITHUB_429_BASE_DELAY_SEC = 1
 const GITHUB_429_MAX_DELAY_SEC = 32
 const CREDENTIAL_POOL_COOLDOWN_MS = 30_000
+const DEFAULT_API_TIMEOUT_MS = 600_000
 const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 90_000
 const MAX_STREAM_IDLE_TIMEOUT_MS = 2_147_483_647
 const GEMINI_API_HOST = 'generativelanguage.googleapis.com'
@@ -148,6 +157,36 @@ class StreamIdleTimeoutError extends Error {
     super(`Stream idle timeout - no chunks received for ${timeoutMs}ms`)
     this.name = 'StreamIdleTimeoutError'
   }
+}
+
+class ResponseHeadersTimeoutError extends Error {
+  constructor(timeoutMs: number, url: string) {
+    super(
+      `OpenAI-compatible request received no response headers within ${timeoutMs}ms (API_TIMEOUT_MS) from ${url}`,
+    )
+    this.name = 'ResponseHeadersTimeoutError'
+  }
+}
+
+function preserveCallerAbortError(
+  error: unknown,
+  callerSignal: AbortSignal,
+): unknown {
+  return error instanceof ResponseHeadersTimeoutError || isAbortError(error)
+    ? callerSignal.reason ?? error
+    : error
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    (typeof DOMException !== 'undefined' &&
+      error instanceof DOMException &&
+      error.name === 'AbortError') ||
+    (typeof error === 'object' &&
+      error !== null &&
+      'name' in error &&
+      error.name === 'AbortError')
+  )
 }
 
 function createStreamAbortError(): DOMException {
@@ -197,6 +236,201 @@ export function getStreamIdleTimeoutMs(): number {
   return Number.isSafeInteger(parsed) && parsed > 0
     ? Math.min(parsed, MAX_STREAM_IDLE_TIMEOUT_MS)
     : DEFAULT_STREAM_IDLE_TIMEOUT_MS
+}
+
+export function getApiTimeoutMs(): number {
+  const raw = process.env.API_TIMEOUT_MS?.trim()
+  if (!raw || !/^\d+$/.test(raw)) return DEFAULT_API_TIMEOUT_MS
+  const parsed = Number(raw)
+  return Number.isSafeInteger(parsed) && parsed > 0
+    ? Math.min(parsed, MAX_STREAM_IDLE_TIMEOUT_MS)
+    : DEFAULT_API_TIMEOUT_MS
+}
+
+function combineRequestSignals(
+  callerSignal: AbortSignal | undefined,
+  deadlineSignal: AbortSignal,
+): {
+  signal: AbortSignal
+  cleanupAfterHeaders: () => void
+  cleanup: () => void
+  cleanupAfterBody?: () => void
+} {
+  if (!callerSignal) {
+    return {
+      signal: deadlineSignal,
+      cleanupAfterHeaders: () => {},
+      cleanup: () => {},
+    }
+  }
+
+  if (typeof AbortSignal.any === 'function') {
+    return {
+      // The deadline controller is request-local and its timer is the only
+      // abort source, so clearing that timer after headers permanently disarms it.
+      signal: AbortSignal.any([callerSignal, deadlineSignal]),
+      cleanupAfterHeaders: () => {},
+      cleanup: () => {},
+    }
+  }
+
+  const combined = new AbortController()
+  const abortFromCaller = () => {
+    deadlineSignal.removeEventListener('abort', abortFromDeadline)
+    combined.abort(callerSignal.reason)
+  }
+  const abortFromDeadline = () => {
+    callerSignal.removeEventListener('abort', abortFromCaller)
+    combined.abort(deadlineSignal.reason)
+  }
+  const cleanupAfterHeaders = () => {
+    deadlineSignal.removeEventListener('abort', abortFromDeadline)
+  }
+  const cleanup = () => {
+    callerSignal.removeEventListener('abort', abortFromCaller)
+    cleanupAfterHeaders()
+  }
+
+  callerSignal.addEventListener('abort', abortFromCaller, { once: true })
+  deadlineSignal.addEventListener('abort', abortFromDeadline, { once: true })
+  if (callerSignal.aborted) {
+    abortFromCaller()
+  } else if (deadlineSignal.aborted) {
+    abortFromDeadline()
+  }
+
+  return {
+    signal: combined.signal,
+    cleanupAfterHeaders,
+    cleanup,
+    cleanupAfterBody: cleanup,
+  }
+}
+
+function wrapResponseBodyWithCleanup(
+  response: Response,
+  cleanup: () => void,
+): Response {
+  if (!response.body) {
+    cleanup()
+    return response
+  }
+
+  const reader = response.body.getReader()
+  let cleanedUp = false
+  const cleanupOnce = () => {
+    if (cleanedUp) return
+    cleanedUp = true
+    cleanup()
+  }
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const result = await reader.read()
+        if (result.done) {
+          cleanupOnce()
+          controller.close()
+        } else {
+          controller.enqueue(result.value)
+        }
+      } catch (error) {
+        cleanupOnce()
+        controller.error(error)
+      }
+    },
+    async cancel(reason) {
+      try {
+        await reader.cancel(reason)
+      } finally {
+        cleanupOnce()
+      }
+    },
+  })
+  const wrapped = new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  })
+  for (const property of ['url', 'type', 'redirected'] as const) {
+    try {
+      Object.defineProperty(wrapped, property, {
+        value: response[property],
+        configurable: true,
+      })
+    } catch {
+      /* non-fatal: standard response metadata remains available */
+    }
+  }
+  return wrapped
+}
+
+async function fetchWithHeadersDeadline(
+  url: string,
+  init: RequestInit,
+  options: {
+    callerSignal?: AbortSignal
+    timeoutMs: number
+  },
+): Promise<Response> {
+  const redactedUrl = redactUrlForDiagnostics(url)
+  const fetchWithAttemptDeadline: ProxyRetryFetcher = async (input, attemptInit) => {
+    const deadlineController = new AbortController()
+    const timeoutReason = new ResponseHeadersTimeoutError(
+      options.timeoutMs,
+      redactedUrl,
+    )
+    const {
+      signal,
+      cleanupAfterHeaders,
+      cleanup,
+      cleanupAfterBody,
+    } = combineRequestSignals(options.callerSignal, deadlineController.signal)
+    const timer = setTimeout(
+      () => deadlineController.abort(timeoutReason),
+      options.timeoutMs,
+    )
+    timer.unref?.()
+
+    let headersReceived = false
+    try {
+      const response = await fetch(input, { ...attemptInit, signal })
+      if (signal.aborted) {
+        void response.body?.cancel().catch(() => {})
+        throw (
+          signal.reason ??
+          new DOMException('The operation was aborted.', 'AbortError')
+        )
+      }
+      headersReceived = true
+      return cleanupAfterBody
+        ? wrapResponseBodyWithCleanup(response, cleanupAfterBody)
+        : response
+    } catch (error) {
+      if (options.callerSignal?.aborted) {
+        throw preserveCallerAbortError(error, options.callerSignal)
+      }
+      if (
+        deadlineController.signal.aborted &&
+        deadlineController.signal.reason === timeoutReason
+      ) {
+        throw timeoutReason
+      }
+      throw error
+    } finally {
+      clearTimeout(timer)
+      if (headersReceived) {
+        cleanupAfterHeaders()
+      } else {
+        cleanup()
+      }
+    }
+  }
+
+  return fetchWithProxyRetry(
+    url,
+    { ...init, signal: options.callerSignal },
+    { fetcher: fetchWithAttemptDeadline },
+  )
 }
 
 async function readWithIdleTimeout(
@@ -413,16 +647,148 @@ function formatRetryAfterHint(response: Response): string {
   return ra ? ` (Retry-After: ${ra})` : ''
 }
 
+function decodeValidPercentRun(encoded: string): string {
+  const escapes = encoded.match(/%[0-9A-Fa-f]{2}/g)
+  if (!escapes) return encoded
+
+  let decoded = ''
+  let offset = 0
+  while (offset < escapes.length) {
+    const firstByte = Number.parseInt(escapes[offset].slice(1), 16)
+    const sequenceLength =
+      firstByte <= 0x7f
+        ? 1
+        : firstByte >= 0xc2 && firstByte <= 0xdf
+          ? 2
+          : firstByte >= 0xe0 && firstByte <= 0xef
+            ? 3
+            : firstByte >= 0xf0 && firstByte <= 0xf4
+              ? 4
+              : 1
+    try {
+      decoded += decodeURIComponent(
+        escapes.slice(offset, offset + sequenceLength).join(''),
+      )
+      offset += sequenceLength
+    } catch {
+      decoded += escapes[offset]
+      offset++
+    }
+  }
+  return decoded
+}
+
+function decodeValidUrlEscapesOnce(value: string): string {
+  return value.replace(/(?:%[0-9A-Fa-f]{2})+/g, decodeValidPercentRun)
+}
+
+const MAX_URL_SECRET_DECODING_LAYERS = 4
+
+function redactDecodedUrlComponentSecrets(value: string): string {
+  let decoded = value
+  let foundSecret = false
+  for (let layer = 0; layer <= MAX_URL_SECRET_DECODING_LAYERS; layer++) {
+    const redacted =
+      redactSecretSubstringsForDisplay(
+        decoded,
+        process.env as SecretValueSource,
+      ) ?? decoded
+    if (redacted !== decoded) foundSecret = true
+    if (layer === MAX_URL_SECRET_DECODING_LAYERS) {
+      decoded = redacted
+      break
+    }
+    const next = decodeValidUrlEscapesOnce(redacted)
+    if (next === redacted) {
+      decoded = redacted
+      break
+    }
+    decoded = next
+  }
+  return foundSecret ? decoded : value
+}
+
 function redactUrlForDiagnostics(url: string): string {
-  const redacted = redactUrlForDisplay(url)
+  let redacted = redactUrlForDisplay(url)
+  try {
+    const parsed = new URL(redacted)
+    const redactedPathname = redactDecodedUrlComponentSecrets(parsed.pathname)
+    const redactedSearch = redactDecodedUrlComponentSecrets(parsed.search)
+    let componentRedacted = false
+    if (redactedPathname !== parsed.pathname) {
+      parsed.pathname = redactedPathname
+      componentRedacted = true
+    }
+    if (redactedSearch !== parsed.search) {
+      parsed.search = redactedSearch
+      componentRedacted = true
+    }
+    if (componentRedacted) redacted = parsed.toString()
+  } catch {
+    // Keep the URL-level redaction when the URL cannot be parsed.
+  }
+  const redactedSubstrings =
+    redactSecretSubstringsForDisplay(
+      redacted,
+      process.env as SecretValueSource,
+    ) ?? redacted
   return (
-    redactSecretValueForDisplay(redacted, process.env as SecretValueSource) ??
-    redacted
+    redactSecretValueForDisplay(
+      redactedSubstrings,
+      process.env as SecretValueSource,
+    ) ?? redactedSubstrings
   )
 }
 
 function redactUrlsInMessage(message: string): string {
   return message.replace(/https?:\/\/\S+/g, match => redactUrlForDiagnostics(match))
+}
+
+function createClassifiedTransportError(
+  error: unknown,
+  requestUrl: string,
+  model: string,
+  preclassifiedFailure?: ReturnType<typeof classifyOpenAINetworkFailure>,
+) {
+  const failure =
+    preclassifiedFailure ??
+    classifyOpenAINetworkFailure(error, {
+      url: requestUrl,
+    })
+  const redactedUrl = redactUrlForDiagnostics(requestUrl)
+  const encodedSecretRedactedMessage =
+    redactEncodedSecretSubstringsForDisplay(
+      redactUrlsInMessage(failure.message),
+      process.env as SecretValueSource,
+    ) ?? 'Request failed'
+  const redactedMessage =
+    redactSecretSubstringsForDisplay(
+      encodedSecretRedactedMessage,
+      process.env as SecretValueSource,
+    ) ?? 'Request failed'
+  const safeMessage =
+    redactSecretValueForDisplay(
+      redactedMessage,
+      process.env as SecretValueSource,
+    ) || 'Request failed'
+
+  logForDebugging(
+    `[OpenAIShim] transport failure category=${failure.category} retryable=${failure.retryable} code=${failure.code ?? 'unknown'} method=POST url=${redactedUrl} model=${model} message=${safeMessage}`,
+    { level: 'warn' },
+  )
+
+  const apiError = APIError.generate(
+    0,
+    undefined,
+    buildOpenAICompatibilityErrorMessage(
+      `OpenAI API transport error: ${safeMessage}${failure.code ? ` (code=${failure.code})` : ''}`,
+      failure,
+    ),
+    new Headers(),
+  )
+  return failure.retryable
+    ? apiError
+    : markOpenAIRequestNonReplayable(apiError)
 }
 
 function sleepMs(ms: number): Promise<void> {
@@ -3696,6 +4062,8 @@ class OpenAIShimMessages {
     const isGithubWithCodexTransport = isGithubCopilotEndpoint && request.transport === 'codex_responses'
 
     if (isGithubWithCodexTransport) {
+      const apiTimeoutMs = getApiTimeoutMs()
+      const responsesUrl = `${request.baseUrl}/responses`
       let didRefreshCopilotCodexToken = false
       let refreshedCopilotCodexToken: string | undefined
       for (let attempt = 0; attempt < 2; attempt++) {
@@ -3707,20 +4075,53 @@ class OpenAIShimMessages {
         }
 
         try {
-          return await performCodexRequest({
-            request,
-            credentials: {
-              apiKey,
-              source: 'env',
-            },
-            params,
-            defaultHeaders: {
-              ...this.defaultHeaders,
-              ...filterAnthropicHeaders(options?.headers),
-              ...COPILOT_HEADERS,
-            },
-            signal: options?.signal,
-          })
+          try {
+            return await performCodexRequest({
+              request,
+              credentials: {
+                apiKey,
+                source: 'env',
+              },
+              params,
+              defaultHeaders: {
+                ...this.defaultHeaders,
+                ...filterAnthropicHeaders(options?.headers),
+                ...COPILOT_HEADERS,
+              },
+              signal: options?.signal,
+              fetcher: (input, init) => {
+                const url =
+                  typeof input === 'string'
+                    ? input
+                    : input instanceof URL
+                      ? input.toString()
+                      : input.url
+                return fetchWithHeadersDeadline(url, init ?? {}, {
+                  callerSignal: options?.signal,
+                  timeoutMs: apiTimeoutMs,
+                })
+              },
+            })
+          } catch (error) {
+            if (options?.signal?.aborted) {
+              throw preserveCallerAbortError(error, options.signal)
+            }
+            if (error instanceof ResponseHeadersTimeoutError) {
+              const failure = {
+                ...classifyOpenAINetworkFailure(error, {
+                  url: responsesUrl,
+                }),
+                retryable: false,
+              }
+              throw createClassifiedTransportError(
+                error,
+                responsesUrl,
+                request.resolvedModel,
+                failure,
+              )
+            }
+            throw error
+          }
         } catch (error) {
           if (
             !didRefreshCopilotCodexToken &&
@@ -3802,6 +4203,7 @@ class OpenAIShimMessages {
     options?: { signal?: AbortSignal; headers?: Record<string, string> },
     requestProcessEnv: NodeJS.ProcessEnv = process.env,
   ): Promise<Response> {
+    const apiTimeoutMs = getApiTimeoutMs()
     // Local backends (llama.cpp, vLLM, Ollama, LM Studio, …) do not implement
     // the cloud-side caching/strict-validation behaviours that several of our
     // pre-send transforms target. Computing the fast-path config once here
@@ -4628,16 +5030,26 @@ class OpenAIShimMessages {
       method: 'POST' as const,
       headers,
       body: serializedBody,
-      signal: options?.signal,
     })
+
+    const fetchAttemptWithHeadersDeadline = (
+      url: string,
+      init: RequestInit,
+    ): Promise<Response> =>
+      fetchWithHeadersDeadline(url, init, {
+        callerSignal: options?.signal,
+        timeoutMs: apiTimeoutMs,
+      })
 
     const maxSelfHealAttempts = isLocal
       ? localRetryBaseUrls.length + 1
       : 0
     const credentialPoolAttempts = credentialPool?.size ?? 1
-    let maxAttempts =
+    let maxAttempts = Math.max(
+      2,
       Math.max(isGithub ? GITHUB_429_MAX_RETRIES : 1, credentialPoolAttempts) +
-      maxSelfHealAttempts
+        maxSelfHealAttempts,
+    )
 
     const throwClassifiedTransportError = (
       error: unknown,
@@ -4645,34 +5057,14 @@ class OpenAIShimMessages {
       preclassifiedFailure?: ReturnType<typeof classifyOpenAINetworkFailure>,
     ): never => {
       if (options?.signal?.aborted) {
-        throw error
+        throw preserveCallerAbortError(error, options.signal)
       }
 
-      const failure =
-        preclassifiedFailure ??
-        classifyOpenAINetworkFailure(error, {
-          url: requestUrl,
-        })
-      const redactedUrl = redactUrlForDiagnostics(requestUrl)
-      const safeMessage =
-        redactSecretValueForDisplay(
-          redactUrlsInMessage(failure.message),
-          process.env as SecretValueSource,
-        ) || 'Request failed'
-
-      logForDebugging(
-        `[OpenAIShim] transport failure category=${failure.category} retryable=${failure.retryable} code=${failure.code ?? 'unknown'} method=POST url=${redactedUrl} model=${request.resolvedModel} message=${safeMessage}`,
-        { level: 'warn' },
-      )
-
-      throw APIError.generate(
-        0,
-        undefined,
-        buildOpenAICompatibilityErrorMessage(
-          `OpenAI API transport error: ${safeMessage}${failure.code ? ` (code=${failure.code})` : ''}`,
-          failure,
-        ),
-        new Headers(),
+      throw createClassifiedTransportError(
+        error,
+        requestUrl,
+        request.resolvedModel,
+        preclassifiedFailure,
       )
     }
 
@@ -4739,38 +5131,40 @@ class OpenAIShimMessages {
       }
       const headers = await buildHeadersForAttempt(credentialLease)
       try {
-        response = await fetchWithProxyRetry(
+        response = await fetchAttemptWithHeadersDeadline(
           requestUrl,
           buildFetchInit(headers),
         )
       } catch (error) {
-        const isAbortError =
-          options?.signal?.aborted === true ||
-          (typeof DOMException !== 'undefined' &&
-            error instanceof DOMException &&
-            error.name === 'AbortError') ||
-          (typeof error === 'object' &&
-            error !== null &&
-            'name' in error &&
-            error.name === 'AbortError')
-
-        if (isAbortError) {
+        if (options?.signal?.aborted) {
+          throw preserveCallerAbortError(error, options.signal)
+        }
+        const isResponseHeadersTimeout =
+          error instanceof ResponseHeadersTimeoutError
+        if (!isResponseHeadersTimeout && isAbortError(error)) {
           throw error
         }
 
-        const failure = classifyOpenAINetworkFailure(error, {
+        const classifiedFailure = classifyOpenAINetworkFailure(error, {
           url: requestUrl,
         })
 
+        if (isResponseHeadersTimeout) {
+          throwClassifiedTransportError(error, requestUrl, {
+            ...classifiedFailure,
+            retryable: false,
+          })
+        }
+
         if (
           isLocal &&
-          failure.category === 'localhost_resolution_failed' &&
+          classifiedFailure.category === 'localhost_resolution_failed' &&
           promoteNextLocalBaseUrl('localhost_resolution_failed')
         ) {
           continue
         }
 
-        throwClassifiedTransportError(error, requestUrl, failure)
+        throwClassifiedTransportError(error, requestUrl, classifiedFailure)
       }
 
       // After the try/catch, response is guaranteed to be defined — the catch
@@ -4866,14 +5260,38 @@ class OpenAIShimMessages {
 
           let responsesResponse!: Response
           try {
-            responsesResponse = await fetchWithProxyRetry(responsesUrl, {
-              method: 'POST',
-              headers,
-              body: stableStringifyJson(responsesBody),
-              signal: options?.signal,
-            })
+            responsesResponse = await fetchAttemptWithHeadersDeadline(
+              responsesUrl,
+              {
+                method: 'POST',
+                headers,
+                body: stableStringifyJson(responsesBody),
+              },
+            )
           } catch (error) {
-            throwClassifiedTransportError(error, responsesUrl)
+            if (options?.signal?.aborted) {
+              throw preserveCallerAbortError(error, options.signal)
+            }
+            if (
+              !(error instanceof ResponseHeadersTimeoutError) &&
+              isAbortError(error)
+            ) {
+              throw error
+            }
+            const classifiedFailure = classifyOpenAINetworkFailure(error, {
+              url: responsesUrl,
+            })
+            if (error instanceof ResponseHeadersTimeoutError) {
+              throwClassifiedTransportError(error, responsesUrl, {
+                ...classifiedFailure,
+                retryable: false,
+              })
+            }
+            throwClassifiedTransportError(
+              error,
+              responsesUrl,
+              classifiedFailure,
+            )
           }
 
           if (responsesResponse.ok) {
@@ -5134,6 +5552,7 @@ export function createOpenAIShimClient(options: {
 // Test-only surface (same pattern as WebSearchTool's __test export).
 export const __test = {
   convertMessages,
+  getApiTimeoutMs,
   getStreamIdleTimeoutMs,
   readWithIdleTimeout,
   StreamIdleTimeoutError,

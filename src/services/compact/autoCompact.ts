@@ -72,10 +72,10 @@ export type AutoCompactTrackingState = {
   // threaded through query() callers rather than serialized into transcripts.
   nextRetryAtMs?: number
   lastFailureAtMs?: number
-  // When set, bypasses shouldAutoCompact() token threshold and user-disable checks.
-  // Used by memory pressure and message count guards to force compaction
-  // even when token usage is below the normal autocompact threshold.
-  forceReason?: 'memory-pressure' | 'message-count'
+  // When set, bypasses the normal token threshold. Message-count and
+  // provider-overflow recovery also bypass user-disable; process-memory
+  // pressure respects that setting.
+  forceReason?: 'memory-pressure' | 'message-count' | 'context-overflow'
 }
 
 // Threshold buffer: auto-compact fires when token usage reaches this far below
@@ -296,8 +296,9 @@ export async function shouldAutoCompact(
   // pre-snip context, so tokenCountWithEstimation can't see the savings.
   // Subtract the rough-delta that snip already computed.
   snipTokensFreed = 0,
-  // When set, skip user-disable and token-threshold checks but still run
-  // recursion/context-collapse guards. Used by runtime safety signals.
+  // When set, skip the token threshold but still run recursion and
+  // context-collapse guards. Only message-count and provider-overflow also
+  // bypass a user-disabled auto-compact setting.
   forceReason?: AutoCompactTrackingState['forceReason'],
 ): Promise<boolean> {
   // Recursion guards. session_memory and compact are forked agents that
@@ -316,7 +317,15 @@ export async function shouldAutoCompact(
     }
   }
 
-  if (!forceReason && !isAutoCompactEnabled()) {
+  // Process memory pressure is not evidence that this conversation exhausted
+  // its context. Keep cache pruning available, but honor the user's disabled
+  // auto-compact choice rather than unexpectedly summarizing a short
+  // conversation (#1985). Explicit message-count and provider-overflow
+  // recovery remain forced compaction paths.
+  if (
+    !isAutoCompactEnabled() &&
+    (!forceReason || forceReason === 'memory-pressure')
+  ) {
     return false
   }
 
@@ -408,8 +417,8 @@ export async function autoCompactIfNeeded(
   // Force compaction if a pressure/count signal set forceReason.
   // Intentionally consume the caller-owned flag in place so the same tracking
   // object cannot force multiple compaction cycles in one query loop pass.
-  // Forced safety compaction bypasses user-disable gates while preserving
-  // recursion/context-collapse guards.
+  // Message-count and provider-overflow bypass user-disable gates; memory
+  // pressure does not. All forced paths preserve recursion/collapse guards.
   const forcedBy = tracking?.forceReason
   if (tracking?.forceReason) {
     tracking.forceReason = undefined

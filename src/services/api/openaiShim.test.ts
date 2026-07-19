@@ -1,5 +1,6 @@
 import { APIError } from '@anthropic-ai/sdk'
 import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
+import { getEventListeners } from 'node:events'
 import { acquireSharedMutationLock, releaseSharedMutationLock } from '../../test/sharedMutationLock.js'
 import { asMockFetch } from '../../test/typedMocks.js'
 import { _clearRegistryForTesting, ensureIntegrationsLoaded, registerGateway } from '../../integrations/index.ts'
@@ -9,6 +10,10 @@ import {
   getAssistantMessageFromError,
   OPENCODE_GO_FREE_LIMIT_ERROR_MESSAGE,
 } from './errors.ts'
+import {
+  extractOpenAICategoryMarker,
+  isOpenAIRequestNonReplayable,
+} from './openaiErrorClassification.ts'
 import { createOpenAIShimClient, hasMistralApiHost } from './openaiShim.ts'
 import * as realCodexShim from './codexShim.js'
 import * as realGithubModelsCredentials from '../../utils/githubModelsCredentials.js'
@@ -56,6 +61,7 @@ const originalEnv = {
   CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED: process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED,
   CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED_ID: process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED_ID,
   CLAUDE_STREAM_IDLE_TIMEOUT_MS: process.env.CLAUDE_STREAM_IDLE_TIMEOUT_MS,
+  API_TIMEOUT_MS: process.env.API_TIMEOUT_MS,
 }
 
 const originalFetch = globalThis.fetch
@@ -364,6 +370,7 @@ function importFreshOpenAIShim(
 
 type StreamIdleTestApi = {
   StreamIdleTimeoutError: new (timeoutMs: number) => Error
+  getApiTimeoutMs: () => number
   getStreamIdleTimeoutMs: () => number
   readWithIdleTimeout: (
     reader: ReadableStreamDefaultReader<Uint8Array>,
@@ -376,6 +383,7 @@ async function getStreamIdleTestApi(cacheKey: string): Promise<StreamIdleTestApi
   const mod = await importFreshOpenAIShim(cacheKey)
   const testApi = mod.__test as unknown as Partial<StreamIdleTestApi>
   expect(typeof testApi.StreamIdleTimeoutError).toBe('function')
+  expect(typeof testApi.getApiTimeoutMs).toBe('function')
   expect(typeof testApi.getStreamIdleTimeoutMs).toBe('function')
   expect(typeof testApi.readWithIdleTimeout).toBe('function')
   return testApi as StreamIdleTestApi
@@ -402,6 +410,48 @@ function makeChatCompletionResponse(model: string): Response {
       },
     },
   )
+}
+
+function makeGithubChatFallbackResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      error: { message: '/chat/completions is not accessible for this model' },
+    }),
+    { status: 400, headers: { 'Content-Type': 'application/json' } },
+  )
+}
+
+function makeResponsesApiResponse(model: string): Response {
+  return new Response(
+    JSON.stringify({
+      id: 'resp-fallback-test',
+      model,
+      output: [
+        {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'ok' }],
+        },
+      ],
+      usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+    }),
+    { headers: { 'Content-Type': 'application/json' } },
+  )
+}
+
+function pendingFetchUntilAbort(
+  init: RequestInit | undefined,
+): Promise<Response> {
+  return new Promise<Response>((_resolve, reject) => {
+    const signal = init?.signal
+    if (!signal) return
+
+    const rejectFromAbort = () => {
+      reject(signal.reason ?? new DOMException('Aborted', 'AbortError'))
+    }
+    signal.addEventListener('abort', rejectFromAbort, { once: true })
+    if (signal.aborted) rejectFromAbort()
+  })
 }
 
 async function captureChatCompletionRequest(
@@ -472,6 +522,7 @@ beforeEach(async () => {
   delete process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED
   delete process.env.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED_ID
   delete process.env.CLAUDE_STREAM_IDLE_TIMEOUT_MS
+  delete process.env.API_TIMEOUT_MS
 })
 
 afterEach(() => {
@@ -516,6 +567,7 @@ afterEach(() => {
     restoreEnv('CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED', originalEnv.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED)
     restoreEnv('CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED_ID', originalEnv.CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED_ID)
     restoreEnv('CLAUDE_STREAM_IDLE_TIMEOUT_MS', originalEnv.CLAUDE_STREAM_IDLE_TIMEOUT_MS)
+    restoreEnv('API_TIMEOUT_MS', originalEnv.API_TIMEOUT_MS)
     globalThis.fetch = originalFetch
     _clearRegistryForTesting()
     ensureIntegrationsLoaded()
@@ -2149,6 +2201,27 @@ test('stream idle timeout env parser parses and bounds overrides', async () => {
 
   process.env.CLAUDE_STREAM_IDLE_TIMEOUT_MS = '-5'
   expect(testApi.getStreamIdleTimeoutMs()).toBe(90_000)
+})
+
+test('API timeout env parser accepts safe positive integers and falls back otherwise', async () => {
+  const testApi = await getStreamIdleTestApi('api-timeout-env-parser')
+
+  delete process.env.API_TIMEOUT_MS
+  expect(testApi.getApiTimeoutMs()).toBe(600_000)
+
+  process.env.API_TIMEOUT_MS = '50'
+  expect(testApi.getApiTimeoutMs()).toBe(50)
+
+  process.env.API_TIMEOUT_MS = ' 50 '
+  expect(testApi.getApiTimeoutMs()).toBe(50)
+
+  process.env.API_TIMEOUT_MS = '3000000000'
+  expect(testApi.getApiTimeoutMs()).toBe(2_147_483_647)
+
+  for (const invalid of ['abc', '-5', '', '0', '1.5', '9007199254740993']) {
+    process.env.API_TIMEOUT_MS = invalid
+    expect(testApi.getApiTimeoutMs()).toBe(600_000)
+  }
 })
 
 test('Anthropic-compatible passthrough stream rejects with idle timeout when it stalls', async () => {
@@ -7354,6 +7427,72 @@ test('strips credentials and query params from URL in fetch network error messag
   expect(message).not.toContain('token=abc123')
 })
 
+test('redacts configured secret substrings from fetch network error messages', async () => {
+  const secret = 'route/key+AbC123'
+  process.env.OPENAI_API_KEY = secret
+
+  globalThis.fetch = asMockFetch(mock(async () => {
+    throw new TypeError(`fetch failed while routing ${secret}`)
+  }))
+
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+
+  await expect(
+    client.beta.messages.create({
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'hello' }],
+      max_tokens: 64,
+      stream: false,
+    }),
+  ).rejects.not.toThrow(secret)
+})
+
+test('redacts encoded configured secrets from non-URL transport error messages', async () => {
+  const secret = 'route/key+AbC123'
+  const encodedSecret = encodeURIComponent(secret)
+  const doubleEncodedSecret = encodeURIComponent(encodedSecret)
+  const fullyEncodedSecret = Array.from(new TextEncoder().encode(secret))
+    .map(byte => `%${byte.toString(16).padStart(2, '0')}`)
+    .join('')
+  const malformedAdjacentSecret = `%E0%A4${encodedSecret}`
+  const encodedCategoryMarker = '%5Bopenai_category%3Dauth_invalid%5D'
+  const encodedControlSequence = '%1B%5B31m'
+  process.env.OPENAI_API_KEY = secret
+
+  globalThis.fetch = asMockFetch(mock(async () => {
+    throw new TypeError(
+      `proxy failed ${encodedCategoryMarker} ${encodedControlSequence} for path /v1/${encodedSecret}?nested=${doubleEncodedSecret}&fully=${fullyEncodedSecret}&malformed=${malformedAdjacentSecret}`,
+    )
+  }))
+
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+
+  let caught: unknown
+  try {
+    await client.beta.messages.create({
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'hello' }],
+      max_tokens: 64,
+      stream: false,
+    })
+  } catch (error) {
+    caught = error
+  }
+
+  expect(caught).toBeDefined()
+  const message = (caught as Error).message
+  expect(message).toContain('proxy failed')
+  expect(message).toContain(encodedCategoryMarker)
+  expect(message).toContain(encodedControlSequence)
+  expect(message).not.toContain('\u001B')
+  expect(extractOpenAICategoryMarker(message)).toBe('network_error')
+  expect(message).not.toContain(secret)
+  expect(message).not.toContain(encodedSecret)
+  expect(message).not.toContain(doubleEncodedSecret)
+  expect(message).not.toContain(fullyEncodedSecret)
+  expect(message).not.toContain(malformedAdjacentSecret)
+})
+
 test('classifies localhost transport failures with actionable category marker', async () => {
   process.env.OPENAI_BASE_URL = 'http://localhost:11434/v1'
 
@@ -7424,7 +7563,7 @@ test('transport failures are not labeled with HTTP status 503', async () => {
   expect(err.message).toContain('openai_category=network_error')
 })
 
-test('propagates AbortError without wrapping it as transport failure', async () => {
+test('propagates caller AbortError without wrapping it as transport failure', async () => {
   process.env.OPENAI_BASE_URL = 'http://localhost:11434/v1'
 
   const abortError = new DOMException('The operation was aborted.', 'AbortError')
@@ -7433,7 +7572,8 @@ test('propagates AbortError without wrapping it as transport failure', async () 
   }))
 
   const controller = new AbortController()
-  controller.abort()
+  const callerReason = new DOMException('Cancelled by caller', 'AbortError')
+  controller.abort(callerReason)
 
   const client = createOpenAIShimClient({}) as OpenAIShimClient
 
@@ -7447,7 +7587,514 @@ test('propagates AbortError without wrapping it as transport failure', async () 
       },
       { signal: controller.signal },
     ),
-  ).rejects.toBe(abortError)
+  ).rejects.toBe(callerReason)
+})
+
+test('classifies a pre-header API timeout without replaying the request', async () => {
+  process.env.API_TIMEOUT_MS = '20'
+  const pathSecret = 'route/key+AbC123'
+  const encodedPathSecret = encodeURIComponent(pathSecret)
+  const doubleEncodedPathSecret = encodeURIComponent(encodedPathSecret)
+  const escapeLookingSecret = 'abc%2FdefLONG'
+  const encodedEscapeLookingSecret = encodeURIComponent(escapeLookingSecret)
+  const decodedEscapeLookingSecret = decodeURIComponent(escapeLookingSecret)
+  const malformedUtf8Secret = 'éSECRET_VALUE_123'
+  const encodedMalformedUtf8Secret = encodeURIComponent(malformedUtf8Secret)
+  process.env.OPENAI_API_KEY = pathSecret
+  process.env.OPENROUTER_API_KEY = escapeLookingSecret
+  process.env.DEEPSEEK_API_KEY = malformedUtf8Secret
+  process.env.OPENAI_BASE_URL =
+    `https://user:password@slow.example.test/v1/invalid%ZZ/${doubleEncodedPathSecret}/${encodedEscapeLookingSecret}/%E0%A4${encodedMalformedUtf8Secret}` +
+    `?prompt=${encodedPathSecret}&nested=${doubleEncodedPathSecret}` +
+    `&escape=${encodedEscapeLookingSecret}&malformed=%E0%A4${encodedMalformedUtf8Secret}` +
+    '&token=secret'
+  let fetchCalls = 0
+  let completedGenerations = 0
+  const receivedBodies: string[] = []
+  globalThis.fetch = (async (_input, init) => {
+    fetchCalls++
+    receivedBodies.push(String(init?.body))
+    return new Promise<Response>((resolve, reject) => {
+      setTimeout(() => {
+        completedGenerations++
+        resolve(makeChatCompletionResponse('gpt-4o-mini'))
+      }, 50)
+      const signal = init?.signal
+      if (!signal) return
+      const rejectFromAbort = () => {
+        reject(signal.reason ?? new DOMException('Aborted', 'AbortError'))
+      }
+      signal.addEventListener('abort', rejectFromAbort, { once: true })
+      if (signal.aborted) rejectFromAbort()
+    })
+  }) as unknown as FetchType
+
+  const safety = new AbortController()
+  const safetyTimer = setTimeout(() => safety.abort(), 500)
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+
+  let caught: unknown
+  try {
+    await waitForPromise(
+      client.beta.messages.create(
+        {
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: 'hello' }],
+          max_tokens: 64,
+          stream: false,
+        },
+        { signal: safety.signal },
+      ),
+      750,
+      'pre-header timeout did not settle',
+    )
+  } catch (error) {
+    caught = error
+  } finally {
+    clearTimeout(safetyTimer)
+  }
+  await new Promise(resolve => setTimeout(resolve, 60))
+
+  expect(caught).toBeDefined()
+  const error = caught as Error & { constructor: { name: string } }
+  expect(error.constructor.name).toBe('APIConnectionError')
+  expect(isOpenAIRequestNonReplayable(error)).toBe(true)
+  expect(error.message).toContain('no response headers within 20ms (API_TIMEOUT_MS)')
+  expect(error.message).toContain('slow.example.test')
+  expect(error.message).toContain('openai_category=request_timeout')
+  expect(error.message).not.toContain('password')
+  expect(error.message).not.toContain('token=secret')
+  expect(error.message).not.toContain(pathSecret)
+  expect(error.message).not.toContain(encodedPathSecret)
+  expect(error.message).not.toContain(doubleEncodedPathSecret)
+  expect(error.message).not.toContain(escapeLookingSecret)
+  expect(error.message).not.toContain(encodedEscapeLookingSecret)
+  expect(error.message).not.toContain(decodedEscapeLookingSecret)
+  expect(error.message).not.toContain(malformedUtf8Secret)
+  expect(error.message).not.toContain(encodedMalformedUtf8Secret)
+  expect(fetchCalls).toBe(1)
+  expect(receivedBodies).toHaveLength(1)
+  expect(completedGenerations).toBe(1)
+})
+
+test('does not proxy-retry when a deadline abort surfaces as fetch failed', async () => {
+  process.env.API_TIMEOUT_MS = '20'
+  let fetchCalls = 0
+  globalThis.fetch = (async (_input, init) => {
+    fetchCalls++
+    return new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal
+      const rejectFromAbort = () => reject(new TypeError('fetch failed'))
+      signal?.addEventListener('abort', rejectFromAbort, { once: true })
+      if (signal?.aborted) rejectFromAbort()
+    })
+  }) as unknown as FetchType
+
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+
+  await expect(
+    client.beta.messages.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: 'hello' }],
+      max_tokens: 64,
+      stream: false,
+    }),
+  ).rejects.toThrow('no response headers within 20ms (API_TIMEOUT_MS)')
+
+  expect(fetchCalls).toBe(1)
+})
+
+test('deadline wins when an abort-ignoring fetch resolves 504 afterward', async () => {
+  process.env.API_TIMEOUT_MS = '20'
+  let fetchCalls = 0
+  globalThis.fetch = (async (_input, init) => {
+    fetchCalls++
+    return new Promise<Response>(resolve => {
+      const resolveAfterAbort = () => {
+        resolve(new Response('Gateway Timeout', { status: 504 }))
+      }
+      init?.signal?.addEventListener('abort', resolveAfterAbort, { once: true })
+      if (init?.signal?.aborted) resolveAfterAbort()
+    })
+  }) as unknown as FetchType
+
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+
+  await expect(
+    client.beta.messages.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: 'hello' }],
+      max_tokens: 64,
+      stream: false,
+    }),
+  ).rejects.toThrow('no response headers within 20ms (API_TIMEOUT_MS)')
+
+  expect(fetchCalls).toBe(1)
+})
+
+test('gives a proxy retry its own response-header deadline', async () => {
+  process.env.API_TIMEOUT_MS = '50'
+  let fetchCalls = 0
+  globalThis.fetch = (async () => {
+    fetchCalls++
+    if (fetchCalls === 1) {
+      await new Promise(resolve => setTimeout(resolve, 30))
+      return new Response('Gateway Timeout', { status: 504 })
+    }
+    await new Promise(resolve => setTimeout(resolve, 30))
+    return makeChatCompletionResponse('gpt-4o-mini')
+  }) as unknown as FetchType
+
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+  const response = await client.beta.messages.create({
+    model: 'gpt-4o-mini',
+    messages: [{ role: 'user', content: 'hello' }],
+    max_tokens: 64,
+    stream: false,
+  })
+
+  expect(response).toBeDefined()
+  expect(fetchCalls).toBe(2)
+})
+
+test('bounds nested URL decoding while retaining encoded secret redaction', async () => {
+  const secret = 'route/key+AbC123'
+  const secretVariants = [secret]
+  for (let layer = 0; layer < 4; layer++) {
+    secretVariants.push(
+      encodeURIComponent(secretVariants[secretVariants.length - 1]!),
+    )
+  }
+  const deeplyNestedValue = `%${'25'.repeat(200)}`
+  process.env.OPENAI_API_KEY = secret
+  process.env.OPENAI_BASE_URL =
+    `https://slow.example.test/v1/${deeplyNestedValue}/${secretVariants[4]}`
+  globalThis.fetch = asMockFetch(mock(async () => {
+    throw new TypeError('fetch failed')
+  }))
+
+  const originalDecodeURIComponent = globalThis.decodeURIComponent
+  let decodeCalls = 0
+  globalThis.decodeURIComponent = ((value: string) => {
+    decodeCalls++
+    return originalDecodeURIComponent(value)
+  }) as typeof decodeURIComponent
+
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+  let caught: unknown
+  try {
+    await client.beta.messages.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: 'hello' }],
+      max_tokens: 64,
+      stream: false,
+    })
+  } catch (error) {
+    caught = error
+  } finally {
+    globalThis.decodeURIComponent = originalDecodeURIComponent
+  }
+
+  expect(caught).toBeDefined()
+  for (const secretVariant of secretVariants) {
+    expect((caught as Error).message).not.toContain(secretVariant)
+  }
+  expect(decodeCalls).toBeLessThanOrEqual(32)
+})
+
+test('decodes malformed URL escape runs in linear work', async () => {
+  const secret = 'route/key+AbC123'
+  const encodedSecret = encodeURIComponent(secret)
+  const malformedEscapeCount = 200
+  const malformedUtf8Run = '%80'.repeat(malformedEscapeCount)
+  process.env.OPENAI_API_KEY = secret
+  process.env.OPENAI_BASE_URL =
+    `https://slow.example.test/v1/${malformedUtf8Run}/${encodedSecret}`
+  globalThis.fetch = asMockFetch(mock(async () => {
+    throw new TypeError('fetch failed')
+  }))
+
+  const originalDecodeURIComponent = globalThis.decodeURIComponent
+  let malformedDecodeCalls = 0
+  globalThis.decodeURIComponent = ((value: string) => {
+    if (value.includes('%80')) malformedDecodeCalls++
+    return originalDecodeURIComponent(value)
+  }) as typeof decodeURIComponent
+
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+  let caught: unknown
+  try {
+    await client.beta.messages.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: 'hello' }],
+      max_tokens: 64,
+      stream: false,
+    })
+  } catch (error) {
+    caught = error
+  } finally {
+    globalThis.decodeURIComponent = originalDecodeURIComponent
+  }
+
+  expect(caught).toBeDefined()
+  expect((caught as Error).message).not.toContain(secret)
+  expect((caught as Error).message).not.toContain(encodedSecret)
+  expect(malformedDecodeCalls).toBeLessThanOrEqual(malformedEscapeCount * 10)
+})
+
+test('preserves caller cancellation while waiting for response headers without retrying', async () => {
+  process.env.API_TIMEOUT_MS = '200'
+  let fetchCalls = 0
+  globalThis.fetch = (async (_input, init) => {
+    fetchCalls++
+    return pendingFetchUntilAbort(init)
+  }) as unknown as FetchType
+
+  const caller = new AbortController()
+  const callerReason = new DOMException('Cancelled by user', 'AbortError')
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+  const originalAbortSignalAny = Object.getOwnPropertyDescriptor(
+    AbortSignal,
+    'any',
+  )
+  Object.defineProperty(AbortSignal, 'any', {
+    value: undefined,
+    configurable: true,
+  })
+  try {
+    const request = client.beta.messages.create(
+      {
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: 'hello' }],
+        max_tokens: 64,
+        stream: false,
+      },
+      { signal: caller.signal },
+    )
+
+    setTimeout(() => caller.abort(callerReason), 10)
+
+    await expect(
+      waitForPromise(request, 500, 'caller abort did not settle'),
+    ).rejects.toBe(callerReason)
+    expect(fetchCalls).toBe(1)
+  } finally {
+    if (originalAbortSignalAny) {
+      Object.defineProperty(AbortSignal, 'any', originalAbortSignalAny)
+    }
+  }
+})
+
+test('native signal composition preserves the caller abort reason when fetch rejects AbortError', async () => {
+  expect(typeof AbortSignal.any).toBe('function')
+  process.env.API_TIMEOUT_MS = '200'
+  let fetchCalls = 0
+  const fetchAbortError = new DOMException(
+    'The operation was aborted.',
+    'AbortError',
+  )
+  globalThis.fetch = (async (_input, init) => {
+    fetchCalls++
+    return new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal
+      if (!signal) return
+      const rejectFromAbort = () => reject(fetchAbortError)
+      signal.addEventListener('abort', rejectFromAbort, { once: true })
+      if (signal.aborted) rejectFromAbort()
+    })
+  }) as unknown as FetchType
+
+  const caller = new AbortController()
+  const callerReason = new DOMException('Cancelled by user', 'AbortError')
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+  const request = client.beta.messages.create(
+    {
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: 'hello' }],
+      max_tokens: 64,
+      stream: false,
+    },
+    { signal: caller.signal },
+  )
+
+  const abortTimer = setTimeout(() => caller.abort(callerReason), 10)
+
+  try {
+    await expect(
+      waitForPromise(request, 500, 'caller abort did not settle'),
+    ).rejects.toBe(callerReason)
+  } finally {
+    clearTimeout(abortTimer)
+  }
+  expect(fetchCalls).toBe(1)
+})
+
+test('caller abort winning the timeout catch race prevents a retry', async () => {
+  process.env.API_TIMEOUT_MS = '20'
+  let fetchCalls = 0
+  const caller = new AbortController()
+  const callerReason = new DOMException('Cancelled by user', 'AbortError')
+  globalThis.fetch = (async (_input, init) => {
+    fetchCalls++
+    return new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal
+      if (!signal) return
+      const rejectFromAbort = () => {
+        reject(signal.reason ?? new DOMException('Aborted', 'AbortError'))
+        if (fetchCalls === 1) {
+          queueMicrotask(() => caller.abort(callerReason))
+        }
+      }
+      signal.addEventListener('abort', rejectFromAbort, { once: true })
+      if (signal.aborted) rejectFromAbort()
+    })
+  }) as unknown as FetchType
+
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+  await expect(
+    waitForPromise(
+      client.beta.messages.create(
+        {
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: 'hello' }],
+          max_tokens: 64,
+          stream: false,
+        },
+        { signal: caller.signal },
+      ),
+      500,
+      'caller abort race did not settle',
+    ),
+  ).rejects.toBe(callerReason)
+  expect(fetchCalls).toBe(1)
+})
+
+test('manual signal fallback preserves caller cancellation after headers arrive', async () => {
+  process.env.API_TIMEOUT_MS = '200'
+  const fetchSignals: AbortSignal[] = []
+  const stalled = makeStallingResponse(
+    makeOpenAIStreamFrame({ role: 'assistant', content: 'started' }),
+  )
+  globalThis.fetch = (async (_input, init) => {
+    if (init?.signal) fetchSignals.push(init.signal)
+    return stalled.response
+  }) as unknown as FetchType
+
+  const caller = new AbortController()
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+  const originalAbortSignalAny = Object.getOwnPropertyDescriptor(
+    AbortSignal,
+    'any',
+  )
+  Object.defineProperty(AbortSignal, 'any', {
+    value: undefined,
+    configurable: true,
+  })
+  try {
+    const result = await client.beta.messages
+      .create(
+        {
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: 'hello' }],
+          max_tokens: 64,
+          stream: true,
+        },
+        { signal: caller.signal },
+      )
+      .withResponse()
+
+    await expectAbortStopsStream({
+      abort: () => caller.abort(),
+      cancelReasons: stalled.cancelReasons,
+      expectedEventsBeforeAbort: 1,
+      label: 'manual combined signal after headers',
+      stream: result.data as ShimStream,
+    })
+
+    expect(fetchSignals).toHaveLength(1)
+    expect(fetchSignals[0].aborted).toBe(true)
+  } finally {
+    stalled.close()
+    if (originalAbortSignalAny) {
+      Object.defineProperty(AbortSignal, 'any', originalAbortSignalAny)
+    }
+  }
+})
+
+test('manual signal fallback removes caller forwarding after the body settles', async () => {
+  process.env.API_TIMEOUT_MS = '200'
+  globalThis.fetch = asMockFetch(mock(async () =>
+    makeChatCompletionResponse('gpt-4o-mini')))
+
+  const caller = new AbortController()
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+  const originalAbortSignalAny = Object.getOwnPropertyDescriptor(
+    AbortSignal,
+    'any',
+  )
+  Object.defineProperty(AbortSignal, 'any', {
+    value: undefined,
+    configurable: true,
+  })
+  try {
+    for (let request = 0; request < 2; request++) {
+      await client.beta.messages.create(
+        {
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: 'hello' }],
+          max_tokens: 64,
+          stream: false,
+        },
+        { signal: caller.signal },
+      )
+      expect(getEventListeners(caller.signal, 'abort')).toHaveLength(0)
+    }
+  } finally {
+    if (originalAbortSignalAny) {
+      Object.defineProperty(AbortSignal, 'any', originalAbortSignalAny)
+    }
+  }
+})
+
+test('disarms the API timeout after headers arrive while the body keeps streaming', async () => {
+  process.env.API_TIMEOUT_MS = '20'
+  const fetchSignals: AbortSignal[] = []
+  const encoder = new TextEncoder()
+  globalThis.fetch = (async (_input, init) => {
+    if (init?.signal) fetchSignals.push(init.signal)
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          setTimeout(() => {
+            controller.enqueue(encoder.encode(makeOpenAIStreamFrame(
+              { role: 'assistant', content: 'late body' },
+              'stop',
+            )))
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+            controller.close()
+          }, 50)
+        },
+      }),
+      { headers: { 'Content-Type': 'text/event-stream' } },
+    )
+  }) as unknown as FetchType
+
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+  const result = await client.beta.messages
+    .create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: 'hello' }],
+      max_tokens: 64,
+      stream: true,
+    })
+    .withResponse()
+
+  const events: Array<Record<string, unknown>> = []
+  for await (const event of result.data) events.push(event)
+
+  expect(events.length).toBeGreaterThan(0)
+  expect(fetchSignals).toHaveLength(1)
+  expect(fetchSignals[0].aborted).toBe(false)
 })
 
 test('classifies chat-completions endpoint 404 failures with endpoint_not_found marker', async () => {
@@ -10264,6 +10911,195 @@ function makeCodexSseResponse(responseData: Record<string, unknown>): Response {
   const data = JSON.stringify(responseData)
   return makeSseResponse([`event: response.completed\ndata: ${data}\n\n`])
 }
+
+test('GitHub Copilot codex responses transport does not replay after a pre-header timeout', async () => {
+  process.env.CLAUDE_CODE_USE_GITHUB = '1'
+  process.env.OPENAI_BASE_URL = 'https://api.githubcopilot.com'
+  process.env.OPENAI_API_KEY = 'test-token'
+  process.env.API_TIMEOUT_MS = '20'
+  let fetchCalls = 0
+  const requestUrls: string[] = []
+
+  globalThis.fetch = (async (input, init) => {
+    fetchCalls++
+    requestUrls.push(String(input))
+    return pendingFetchUntilAbort(init)
+  }) as unknown as FetchType
+
+  const safety = new AbortController()
+  const safetyTimer = setTimeout(() => safety.abort(), 500)
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+  let caught: unknown
+  try {
+    await waitForPromise(
+      client.beta.messages.create(
+        {
+          model: 'gpt-5',
+          messages: [{ role: 'user', content: 'hello' }],
+          max_tokens: 32,
+          stream: false,
+        },
+        { signal: safety.signal },
+      ),
+      750,
+      'GitHub codex responses timeout did not settle',
+    )
+  } catch (error) {
+    caught = error
+  } finally {
+    clearTimeout(safetyTimer)
+  }
+
+  expect(caught).toBeDefined()
+  const error = caught as Error & { constructor: { name: string } }
+  expect(error.constructor.name).toBe('APIConnectionError')
+  expect(isOpenAIRequestNonReplayable(error)).toBe(true)
+  expect(fetchCalls).toBe(1)
+  expect(requestUrls).toEqual([
+    'https://api.githubcopilot.com/responses',
+  ])
+})
+
+test('GitHub Copilot responses fallback does not replay after a pre-header timeout', async () => {
+  process.env.CLAUDE_CODE_USE_GITHUB = '1'
+  process.env.OPENAI_BASE_URL = 'https://api.githubcopilot.com'
+  process.env.OPENAI_API_KEY = 'test-token'
+  process.env.API_TIMEOUT_MS = '20'
+  const requestUrls: string[] = []
+
+  globalThis.fetch = (async (input, init) => {
+    const url = String(input)
+    requestUrls.push(url)
+    if (url.endsWith('/chat/completions')) {
+      return makeGithubChatFallbackResponse()
+    }
+    return pendingFetchUntilAbort(init)
+  }) as unknown as FetchType
+
+  const safety = new AbortController()
+  const safetyTimer = setTimeout(() => safety.abort(), 500)
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+  let caught: unknown
+  try {
+    await waitForPromise(
+      client.beta.messages.create(
+        {
+          model: 'gpt-4',
+          messages: [{ role: 'user', content: 'hello' }],
+          max_tokens: 32,
+          stream: false,
+        },
+        { signal: safety.signal },
+      ),
+      750,
+      'GitHub responses fallback timeout did not settle',
+    )
+  } catch (error) {
+    caught = error
+  } finally {
+    clearTimeout(safetyTimer)
+  }
+
+  expect(caught).toBeDefined()
+  const error = caught as Error & { constructor: { name: string } }
+  expect(error.constructor.name).toBe('APIConnectionError')
+  expect(isOpenAIRequestNonReplayable(error)).toBe(true)
+  expect(requestUrls).toEqual([
+    'https://api.githubcopilot.com/chat/completions',
+    'https://api.githubcopilot.com/responses',
+  ])
+})
+
+test('GitHub Copilot responses fallback preserves caller abort without retrying', async () => {
+  process.env.CLAUDE_CODE_USE_GITHUB = '1'
+  process.env.OPENAI_BASE_URL = 'https://api.githubcopilot.com'
+  process.env.OPENAI_API_KEY = 'test-token'
+  process.env.API_TIMEOUT_MS = '200'
+  let fetchCalls = 0
+
+  globalThis.fetch = (async (input, init) => {
+    fetchCalls++
+    if (String(input).endsWith('/chat/completions')) {
+      return makeGithubChatFallbackResponse()
+    }
+    return pendingFetchUntilAbort(init)
+  }) as unknown as FetchType
+
+  const caller = new AbortController()
+  const callerReason = new DOMException('Cancelled by user', 'AbortError')
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+  const request = client.beta.messages.create(
+    {
+      model: 'gpt-4',
+      messages: [{ role: 'user', content: 'hello' }],
+      max_tokens: 32,
+      stream: false,
+    },
+    { signal: caller.signal },
+  )
+  setTimeout(() => caller.abort(callerReason), 10)
+
+  await expect(
+    waitForPromise(request, 500, 'GitHub responses fallback abort did not settle'),
+  ).rejects.toBe(callerReason)
+  expect(fetchCalls).toBe(2)
+})
+
+test('GitHub Copilot responses fallback preserves non-caller transport aborts', async () => {
+  process.env.CLAUDE_CODE_USE_GITHUB = '1'
+  process.env.OPENAI_BASE_URL = 'https://api.githubcopilot.com'
+  process.env.OPENAI_API_KEY = 'test-token'
+  let fetchCalls = 0
+  const transportAbort = new DOMException('Proxy aborted request', 'AbortError')
+
+  globalThis.fetch = (async input => {
+    fetchCalls++
+    if (String(input).endsWith('/chat/completions')) {
+      return makeGithubChatFallbackResponse()
+    }
+    throw transportAbort
+  }) as unknown as FetchType
+
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+  await expect(
+    client.beta.messages.create({
+      model: 'gpt-4',
+      messages: [{ role: 'user', content: 'hello' }],
+      max_tokens: 32,
+      stream: false,
+    }),
+  ).rejects.toBe(transportAbort)
+  expect(fetchCalls).toBe(2)
+})
+
+test('GitHub Copilot responses fallback does not retry non-retryable HTTP failures', async () => {
+  process.env.CLAUDE_CODE_USE_GITHUB = '1'
+  process.env.OPENAI_BASE_URL = 'https://api.githubcopilot.com'
+  process.env.OPENAI_API_KEY = 'test-token'
+  let fetchCalls = 0
+
+  globalThis.fetch = (async input => {
+    fetchCalls++
+    if (String(input).endsWith('/chat/completions')) {
+      return makeGithubChatFallbackResponse()
+    }
+    return new Response(
+      JSON.stringify({ error: { message: 'invalid token' } }),
+      { status: 401, headers: { 'Content-Type': 'application/json' } },
+    )
+  }) as unknown as FetchType
+
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+  await expect(
+    client.beta.messages.create({
+      model: 'gpt-4',
+      messages: [{ role: 'user', content: 'hello' }],
+      max_tokens: 32,
+      stream: false,
+    }),
+  ).rejects.toMatchObject({ status: 401 })
+  expect(fetchCalls).toBe(2)
+})
 
 test('GitHub Copilot 401 chat_completions retries with refreshed token', async () => {
   const realModule = realGithubModelsCredentials
