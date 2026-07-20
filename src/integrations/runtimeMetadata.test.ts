@@ -13,8 +13,8 @@ import {
 } from '../integrations/runtimeMetadata'
 import { setCachedModels } from './discoveryCache'
 import { getDiscoveryCacheKey } from './discoveryService'
-
 const originalConfigDir = process.env.CLAUDE_CONFIG_DIR
+const originalOpenClaudeConfigDir = process.env.OPENCLAUDE_CONFIG_DIR
 
 async function withTempConfigDir<T>(fn: () => Promise<T>): Promise<T> {
   await acquireSharedMutationLock('integrations/runtimeMetadata.test.ts')
@@ -22,6 +22,7 @@ async function withTempConfigDir<T>(fn: () => Promise<T>): Promise<T> {
   try {
     tempDir = mkdtempSync(join(tmpdir(), 'openclaude-runtime-metadata-test-'))
     process.env.CLAUDE_CONFIG_DIR = tempDir
+    process.env.OPENCLAUDE_CONFIG_DIR = tempDir
     return await fn()
   } finally {
     try {
@@ -29,6 +30,11 @@ async function withTempConfigDir<T>(fn: () => Promise<T>): Promise<T> {
         delete process.env.CLAUDE_CONFIG_DIR
       } else {
         process.env.CLAUDE_CONFIG_DIR = originalConfigDir
+      }
+      if (originalOpenClaudeConfigDir === undefined) {
+        delete process.env.OPENCLAUDE_CONFIG_DIR
+      } else {
+        process.env.OPENCLAUDE_CONFIG_DIR = originalOpenClaudeConfigDir
       }
       if (tempDir) {
         rmSync(tempDir, { recursive: true, force: true })
