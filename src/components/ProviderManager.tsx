@@ -2419,7 +2419,7 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
     const amountUsd = aimlapiTopupAmountUsd.trim()
     const parsedAmountUsd = Number(amountUsd)
     if (!trimmedEmail) {
-      setErrorMessage('AI/ML API email is required.')
+      setErrorMessage('aimlapi.com email is required.')
       setScreen('aimlapi-topup-email')
       return
     }
@@ -2429,17 +2429,17 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
       return
     }
     if (Math.round(parsedAmountUsd * 100) < MIN_AMOUNT_USD_MINOR) {
-      setErrorMessage(`Minimum AI/ML API top-up is $${MIN_AMOUNT_USD_MINOR / 100}.`)
+      setErrorMessage(`Minimum aimlapi.com top-up is $${MIN_AMOUNT_USD_MINOR / 100}.`)
       setScreen('aimlapi-topup-amount')
       return
     }
     if (Math.round(parsedAmountUsd * 100) > MAX_AMOUNT_USD_MINOR) {
-      setErrorMessage(`Maximum AI/ML API top-up is $${MAX_AMOUNT_USD_MINOR / 100}.`)
+      setErrorMessage(`Maximum aimlapi.com top-up is $${MAX_AMOUNT_USD_MINOR / 100}.`)
       setScreen('aimlapi-topup-amount')
       return
     }
     if (!password) {
-      setErrorMessage('AI/ML API password is required.')
+      setErrorMessage('aimlapi.com password is required.')
       setScreen('aimlapi-topup-password')
       return
     }
@@ -2479,7 +2479,7 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error)
         setIsAimlapiTopupRunning(false)
-        setErrorMessage(`Could not finish AI/ML API top-up: ${detail}`)
+        setErrorMessage(`Could not finish aimlapi.com top-up: ${detail}`)
       }
     })()
   }
@@ -2491,7 +2491,7 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
           Create provider profile
         </Text>
         <Text dimColor>
-          Choose how to configure AI/ML API. Endpoint and model are already
+          Choose how to configure aimlapi.com. Endpoint and model are already
           configured.
         </Text>
         <Text dimColor>
@@ -2509,7 +2509,7 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
             {
               value: 'manual',
               label: 'Enter existing API key',
-              description: 'Paste a key you already have from AI/ML API',
+              description: 'Paste a key you already have from aimlapi.com',
             },
           ]}
           onChange={(value: string) => {
@@ -2548,10 +2548,10 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
     return (
       <Box flexDirection="column" gap={1}>
         <Text color="remember" bold>
-          AI/ML API top-up
+          aimlapi.com top-up
         </Text>
         <Text dimColor>
-          Enter your AI/ML API account email. The checkout flow will use it to
+          Enter your aimlapi.com account email. The checkout flow will use it to
           register or sign in.
         </Text>
         <Text dimColor>Step 2 of 2: Top up account</Text>
@@ -2563,7 +2563,7 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
             onSubmit={value => {
               const email = value.trim()
               if (!email) {
-                setErrorMessage('AI/ML API email is required.')
+                setErrorMessage('aimlapi.com email is required.')
                 return
               }
               setAimlapiTopupEmail(email)
@@ -2591,7 +2591,7 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
     return (
       <Box flexDirection="column" gap={1}>
         <Text color="remember" bold>
-          AI/ML API top-up
+          aimlapi.com top-up
         </Text>
         <Text dimColor>
           Choose a top-up amount in USD. Minimum is ${MIN_AMOUNT_USD_MINOR / 100}.
@@ -2610,11 +2610,11 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
                 return
               }
               if (Math.round(parsedAmountUsd * 100) < MIN_AMOUNT_USD_MINOR) {
-                setErrorMessage(`Minimum AI/ML API top-up is $${MIN_AMOUNT_USD_MINOR / 100}.`)
+                setErrorMessage(`Minimum aimlapi.com top-up is $${MIN_AMOUNT_USD_MINOR / 100}.`)
                 return
               }
               if (Math.round(parsedAmountUsd * 100) > MAX_AMOUNT_USD_MINOR) {
-                setErrorMessage(`Maximum AI/ML API top-up is $${MAX_AMOUNT_USD_MINOR / 100}.`)
+                setErrorMessage(`Maximum aimlapi.com top-up is $${MAX_AMOUNT_USD_MINOR / 100}.`)
                 return
               }
               setAimlapiTopupAmountUsd(amountUsd)
@@ -2641,10 +2641,10 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
     return (
       <Box flexDirection="column" gap={1}>
         <Text color="remember" bold>
-          AI/ML API top-up
+          aimlapi.com top-up
         </Text>
         <Text dimColor>
-          Enter your AI/ML API password. The CLI will open checkout and save the
+          Enter your aimlapi.com password. The CLI will open checkout and save the
           issued API key after payment.
         </Text>
         <Text dimColor>Step 2 of 2: Top up account</Text>
@@ -2655,7 +2655,7 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
             onChange={setAimlapiTopupPassword}
             onSubmit={value => {
               if (!value) {
-                setErrorMessage('AI/ML API password is required.')
+                setErrorMessage('aimlapi.com password is required.')
                 return
               }
               setAimlapiTopupPassword(value)
@@ -2684,11 +2684,11 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
     return (
       <Box flexDirection="column" gap={1}>
         <Text color="remember" bold>
-          AI/ML API top-up
+          aimlapi.com top-up
         </Text>
         <Text dimColor>
           Choose how to pay. The selected method decides which checkout invoice
-          AI/ML API opens.
+          aimlapi.com opens.
         </Text>
         <Text dimColor>Step 2 of 2: Payment method</Text>
         <Select
@@ -2724,9 +2724,9 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
 
   function renderAimlapiTopupProgress(): React.ReactNode {
     const labels: Record<AimlapiTopupStatus, string> = {
-      registering: 'Registering AI/ML API account...',
+      registering: 'Registering aimlapi.com account...',
       registered: 'Account registered.',
-      'signing-in': 'Signing in to AI/ML API...',
+      'signing-in': 'Signing in to aimlapi.com...',
       'signed-in': 'Signed in.',
       'creating-session': 'Creating checkout session...',
       'opening-checkout': 'Opening checkout...',
@@ -2735,12 +2735,12 @@ export function ProviderManager({ mode, onDone }: Props): React.ReactNode {
     }
     const status = aimlapiTopupStatus
       ? labels[aimlapiTopupStatus]
-      : 'Preparing AI/ML API top-up...'
+      : 'Preparing aimlapi.com top-up...'
 
     return (
       <Box flexDirection="column" gap={1}>
         <Text color="remember" bold>
-          AI/ML API top-up
+          aimlapi.com top-up
         </Text>
         <Text dimColor>{status}</Text>
         {aimlapiTopupDetail ? <Text>{aimlapiTopupDetail}</Text> : null}

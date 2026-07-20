@@ -353,6 +353,329 @@ test('openai launch lets live base URL override persisted AIMLAPI route marker',
   assert.equal(env.CLAUDE_CODE_PROVIDER_ROUTE_ID, undefined)
 })
 
+test('openai launch withholds the ambient AIMLAPI key from a keyless proxy profile on restart', async () => {
+  // A keyless saved aimlapi profile that points at a user-controlled proxy keeps
+  // its route id after relaunch, but the canonical AIMLAPI credential must never
+  // be copied into that proxy session.
+  const env = await buildLaunchEnv({
+    profile: 'openai',
+    persisted: profile('openai', {
+      CLAUDE_CODE_PROVIDER_ROUTE_ID: 'aimlapi',
+      OPENAI_BASE_URL: 'https://proxy.example.com/v1',
+      OPENAI_MODEL: 'gpt-4o',
+    }),
+    goal: 'coding',
+    processEnv: {
+      OPENAI_BASE_URL: 'https://proxy.example.com/v1',
+      AIMLAPI_API_KEY: 'ambient-aimlapi-key',
+    },
+  })
+
+  // Still recognized as the aimlapi route...
+  assert.equal(env.CLAUDE_CODE_PROVIDER_ROUTE_ID, 'aimlapi')
+  // ...but the ambient canonical credential is withheld from the proxy host.
+  assert.equal(env.AIMLAPI_API_KEY, undefined)
+
+  // The same profile on the canonical host DOES receive the ambient key.
+  const canonical = await buildLaunchEnv({
+    profile: 'openai',
+    persisted: profile('openai', {
+      CLAUDE_CODE_PROVIDER_ROUTE_ID: 'aimlapi',
+      OPENAI_BASE_URL: 'https://api.aimlapi.com/v1',
+      OPENAI_MODEL: 'gpt-4o',
+    }),
+    goal: 'coding',
+    processEnv: {
+      OPENAI_BASE_URL: 'https://api.aimlapi.com/v1',
+      AIMLAPI_API_KEY: 'ambient-aimlapi-key',
+    },
+  })
+  assert.equal(canonical.AIMLAPI_API_KEY, 'ambient-aimlapi-key')
+})
+
+test('openai launch withholds the ambient generic OpenAI credential from a keyless proxy aimlapi profile', async () => {
+  // The generic OPENAI_API_KEY / OPENAI_API_KEYS alias is the same exfiltration
+  // path: a keyless retained aimlapi profile on a proxy must not receive the
+  // ambient canonical credential in either form.
+  for (const ambient of [
+    { OPENAI_API_KEY: 'ambient-openai-key' },
+    { OPENAI_API_KEYS: 'ambient-key-a,ambient-key-b' },
+  ]) {
+    const env = await buildLaunchEnv({
+      profile: 'openai',
+      persisted: profile('openai', {
+        CLAUDE_CODE_PROVIDER_ROUTE_ID: 'aimlapi',
+        OPENAI_BASE_URL: 'https://proxy.example.com/v1',
+        OPENAI_MODEL: 'gpt-4o',
+      }),
+      goal: 'coding',
+      processEnv: {
+        OPENAI_BASE_URL: 'https://proxy.example.com/v1',
+        ...ambient,
+      },
+    })
+    assert.equal(env.CLAUDE_CODE_PROVIDER_ROUTE_ID, 'aimlapi')
+    assert.equal(env.OPENAI_API_KEY, undefined)
+    assert.equal(env.OPENAI_API_KEYS, undefined)
+  }
+
+  // The same ambient credential IS applied on the canonical host.
+  const canonical = await buildLaunchEnv({
+    profile: 'openai',
+    persisted: profile('openai', {
+      CLAUDE_CODE_PROVIDER_ROUTE_ID: 'aimlapi',
+      OPENAI_BASE_URL: 'https://api.aimlapi.com/v1',
+      OPENAI_MODEL: 'gpt-4o',
+    }),
+    goal: 'coding',
+    processEnv: {
+      OPENAI_BASE_URL: 'https://api.aimlapi.com/v1',
+      OPENAI_API_KEY: 'ambient-openai-key',
+    },
+  })
+  assert.equal(canonical.OPENAI_API_KEY, 'ambient-openai-key')
+})
+
+test('openai launch keeps a keyed proxy aimlapi profile own OpenAI credential', async () => {
+  // A proxy profile that carries its own key still authenticates with it; only
+  // the ambient credential is dropped, not the user-configured one.
+  const env = await buildLaunchEnv({
+    profile: 'openai',
+    persisted: profile('openai', {
+      CLAUDE_CODE_PROVIDER_ROUTE_ID: 'aimlapi',
+      OPENAI_BASE_URL: 'https://proxy.example.com/v1',
+      OPENAI_MODEL: 'gpt-4o',
+      OPENAI_API_KEY: 'profile-own-key',
+    }),
+    goal: 'coding',
+    processEnv: {
+      OPENAI_BASE_URL: 'https://proxy.example.com/v1',
+      OPENAI_API_KEY: 'ambient-openai-key',
+    },
+  })
+  assert.equal(env.OPENAI_API_KEY, 'profile-own-key')
+})
+
+test('openai launch keeps the proxy aimlapi guard across equivalent base URL spellings', async () => {
+  // The saved route identity is retained on a normalized comparison, so a shell
+  // base URL that differs only by a trailing slash (or host casing) still names
+  // the same proxy. A literal comparison would drop the route id here and let
+  // the ambient canonical credential through.
+  for (const shellBaseUrl of [
+    'https://proxy.example.com/v1/',
+    'https://PROXY.example.com/v1',
+  ]) {
+    const env = await buildLaunchEnv({
+      profile: 'openai',
+      persisted: profile('openai', {
+        CLAUDE_CODE_PROVIDER_ROUTE_ID: 'aimlapi',
+        OPENAI_BASE_URL: 'https://proxy.example.com/v1',
+        OPENAI_MODEL: 'gpt-4o',
+      }),
+      goal: 'coding',
+      processEnv: {
+        OPENAI_BASE_URL: shellBaseUrl,
+        OPENAI_API_KEY: 'ambient-openai-key',
+        AIMLAPI_API_KEY: 'ambient-aimlapi-key',
+      },
+    })
+
+    assert.equal(env.CLAUDE_CODE_PROVIDER_ROUTE_ID, 'aimlapi')
+    assert.equal(env.OPENAI_API_KEY, undefined)
+    assert.equal(env.AIMLAPI_API_KEY, undefined)
+  }
+})
+
+test('openai launch does not let a distinct proxy target inherit the saved aimlapi identity', async () => {
+  // Path case and query parameters name a distinct target on the same host. The
+  // saved identity must NOT carry over to it, because that identity is what
+  // mirrors the profile's dedicated AIMLAPI_API_KEY — a key configured for the
+  // original tenant, not this one.
+  for (const [persistedBaseUrl, shellBaseUrl] of [
+    ['https://proxy.example.com/tenantA/v1', 'https://proxy.example.com/tenanta/v1'],
+    ['https://proxy.example.com/v1', 'https://proxy.example.com/v1?tenant=other'],
+  ]) {
+    const env = await buildLaunchEnv({
+      profile: 'openai',
+      persisted: profile('openai', {
+        CLAUDE_CODE_PROVIDER_ROUTE_ID: 'aimlapi',
+        OPENAI_BASE_URL: persistedBaseUrl,
+        OPENAI_MODEL: 'gpt-4o',
+        OPENAI_API_KEY: 'profile-own-tenant-key',
+        AIMLAPI_API_KEY: 'profile-own-tenant-key',
+        OPENAI_AUTH_HEADER: 'X-Profile-Auth',
+        OPENAI_AUTH_HEADER_VALUE: 'profile-own-tenant-secret',
+      }),
+      goal: 'coding',
+      processEnv: {
+        OPENAI_BASE_URL: shellBaseUrl,
+        OPENAI_API_KEY: 'user-supplied-key',
+        OPENAI_AUTH_HEADER_VALUE: 'user-supplied-secret',
+      },
+    })
+
+    assert.equal(env.CLAUDE_CODE_PROVIDER_ROUTE_ID, undefined)
+    // The dedicated aimlapi credential rides on the route identity, so a target
+    // that cannot inherit the identity never receives it.
+    assert.equal(env.AIMLAPI_API_KEY, undefined)
+    // Without that identity the launch falls back to the route-agnostic
+    // precedence: the credential the user supplied for THIS endpoint wins. The
+    // profile's own key must not be forced in over it — that would both hand a
+    // key to an endpoint it was never configured for and discard the user's.
+    assert.equal(env.OPENAI_API_KEY, 'user-supplied-key')
+    assert.equal(env.OPENAI_AUTH_HEADER_VALUE, 'user-supplied-secret')
+  }
+})
+
+test('openai launch withholds ambient custom headers from a keyless proxy aimlapi profile', async () => {
+  // ANTHROPIC_CUSTOM_HEADERS reaches the proxy: client.ts merges it into the
+  // defaultHeaders passed to the OpenAI shim client, and its filter only drops
+  // the three standard auth header names — a custom-named secret rides through.
+  const env = await buildLaunchEnv({
+    profile: 'openai',
+    persisted: profile('openai', {
+      CLAUDE_CODE_PROVIDER_ROUTE_ID: 'aimlapi',
+      OPENAI_BASE_URL: 'https://proxy.example.com/v1',
+      OPENAI_MODEL: 'gpt-4o',
+    }),
+    goal: 'coding',
+    processEnv: {
+      OPENAI_BASE_URL: 'https://proxy.example.com/v1',
+      ANTHROPIC_CUSTOM_HEADERS: 'X-Proxy-Auth: ambient-canonical-secret',
+    },
+  })
+
+  assert.equal(env.CLAUDE_CODE_PROVIDER_ROUTE_ID, 'aimlapi')
+  assert.equal(env.ANTHROPIC_CUSTOM_HEADERS, undefined)
+
+  // Headers the profile itself persisted are the user's own configuration for
+  // that proxy, so they survive — and an ambient value cannot override them.
+  const owned = await buildLaunchEnv({
+    profile: 'openai',
+    persisted: profile('openai', {
+      CLAUDE_CODE_PROVIDER_ROUTE_ID: 'aimlapi',
+      OPENAI_BASE_URL: 'https://proxy.example.com/v1',
+      OPENAI_MODEL: 'gpt-4o',
+      ANTHROPIC_CUSTOM_HEADERS: 'X-Proxy-Auth: profile-own-proxy-secret',
+    }),
+    goal: 'coding',
+    processEnv: {
+      OPENAI_BASE_URL: 'https://proxy.example.com/v1',
+      ANTHROPIC_CUSTOM_HEADERS: 'X-Proxy-Auth: ambient-canonical-secret',
+    },
+  })
+  assert.equal(
+    owned.ANTHROPIC_CUSTOM_HEADERS,
+    'X-Proxy-Auth: profile-own-proxy-secret',
+  )
+
+  // On the canonical endpoint the ambient value keeps its existing behaviour.
+  const canonical = await buildLaunchEnv({
+    profile: 'openai',
+    persisted: profile('openai', {
+      CLAUDE_CODE_PROVIDER_ROUTE_ID: 'aimlapi',
+      OPENAI_BASE_URL: 'https://api.aimlapi.com/v1',
+      OPENAI_MODEL: 'gpt-4o',
+    }),
+    goal: 'coding',
+    processEnv: {
+      OPENAI_BASE_URL: 'https://api.aimlapi.com/v1',
+      ANTHROPIC_CUSTOM_HEADERS: 'X-Trace: ambient-value',
+    },
+  })
+  assert.equal(canonical.ANTHROPIC_CUSTOM_HEADERS, 'X-Trace: ambient-value')
+})
+
+test('openai launch withholds ambient credentials from a look-alike canonical path', async () => {
+  // `/V1` resolves to the aimlapi route by host, so the launch carries the
+  // identity — but the strict canonical predicate rejects the path, so it is
+  // treated as a proxy and the ambient canonical credential is withheld.
+  const env = await buildLaunchEnv({
+    profile: 'openai',
+    persisted: profile('openai', {
+      CLAUDE_CODE_PROVIDER_ROUTE_ID: 'aimlapi',
+      OPENAI_BASE_URL: 'https://api.aimlapi.com/v1',
+      OPENAI_MODEL: 'gpt-4o',
+    }),
+    goal: 'coding',
+    processEnv: {
+      OPENAI_BASE_URL: 'https://api.aimlapi.com/V1',
+      OPENAI_API_KEY: 'ambient-openai-key',
+      AIMLAPI_API_KEY: 'ambient-aimlapi-key',
+    },
+  })
+
+  assert.equal(env.OPENAI_BASE_URL, 'https://api.aimlapi.com/V1')
+  assert.equal(env.OPENAI_API_KEY, undefined)
+  assert.equal(env.AIMLAPI_API_KEY, undefined)
+})
+
+test('openai launch withholds ambient custom auth from a keyless proxy aimlapi profile', async () => {
+  // Custom authentication is a second credential channel: the shim sends
+  // OPENAI_AUTH_HEADER_VALUE as the request credential whenever
+  // OPENAI_AUTH_HEADER names a header. An ambient pair must not ride along into
+  // a proxy session that the profile never configured for it.
+  const env = await buildLaunchEnv({
+    profile: 'openai',
+    persisted: profile('openai', {
+      CLAUDE_CODE_PROVIDER_ROUTE_ID: 'aimlapi',
+      OPENAI_BASE_URL: 'https://proxy.example.com/v1',
+      OPENAI_MODEL: 'gpt-4o',
+    }),
+    goal: 'coding',
+    processEnv: {
+      OPENAI_BASE_URL: 'https://proxy.example.com/v1',
+      OPENAI_AUTH_HEADER: 'X-Ambient-Auth',
+      OPENAI_AUTH_SCHEME: 'raw',
+      OPENAI_AUTH_HEADER_VALUE: 'ambient-canonical-secret',
+    },
+  })
+
+  assert.equal(env.CLAUDE_CODE_PROVIDER_ROUTE_ID, 'aimlapi')
+  assert.equal(env.OPENAI_AUTH_HEADER, undefined)
+  assert.equal(env.OPENAI_AUTH_SCHEME, undefined)
+  assert.equal(env.OPENAI_AUTH_HEADER_VALUE, undefined)
+
+  // The profile's OWN custom auth is still applied — the user configured it for
+  // that proxy — and an ambient value must not override it.
+  const owned = await buildLaunchEnv({
+    profile: 'openai',
+    persisted: profile('openai', {
+      CLAUDE_CODE_PROVIDER_ROUTE_ID: 'aimlapi',
+      OPENAI_BASE_URL: 'https://proxy.example.com/v1',
+      OPENAI_MODEL: 'gpt-4o',
+      OPENAI_AUTH_HEADER: 'X-Proxy-Auth',
+      OPENAI_AUTH_SCHEME: 'raw',
+      OPENAI_AUTH_HEADER_VALUE: 'profile-own-proxy-secret',
+    }),
+    goal: 'coding',
+    processEnv: {
+      OPENAI_BASE_URL: 'https://proxy.example.com/v1',
+      OPENAI_AUTH_HEADER: 'X-Ambient-Auth',
+      OPENAI_AUTH_HEADER_VALUE: 'ambient-canonical-secret',
+    },
+  })
+  assert.equal(owned.OPENAI_AUTH_HEADER, 'X-Proxy-Auth')
+  assert.equal(owned.OPENAI_AUTH_HEADER_VALUE, 'profile-own-proxy-secret')
+
+  // On the canonical endpoint ambient custom auth keeps its existing behaviour.
+  const canonical = await buildLaunchEnv({
+    profile: 'openai',
+    persisted: profile('openai', {
+      CLAUDE_CODE_PROVIDER_ROUTE_ID: 'aimlapi',
+      OPENAI_BASE_URL: 'https://api.aimlapi.com/v1',
+      OPENAI_MODEL: 'gpt-4o',
+    }),
+    goal: 'coding',
+    processEnv: {
+      OPENAI_BASE_URL: 'https://api.aimlapi.com/v1',
+      OPENAI_AUTH_HEADER: 'X-Ambient-Auth',
+      OPENAI_AUTH_HEADER_VALUE: 'ambient-canonical-secret',
+    },
+  })
+  assert.equal(canonical.OPENAI_AUTH_HEADER_VALUE, 'ambient-canonical-secret')
+})
+
 test('xai launch uses descriptor defaults and persisted xAI key', async () => {
   const env = await buildLaunchEnv({
     profile: 'xai',

@@ -35,10 +35,16 @@ const MID_MAX_CHARS = 2_000
 // here keeps the stub size bounded even when callers pass oversized arguments.
 const STUB_ARGS_MAX_CHARS = 200
 
+// Inline image payloads can be megabytes long. Older tool history must not
+// retain them merely because they are structured rather than text.
+const OMITTED_INLINE_IMAGE_MARKER = '[Inline image omitted from tool history]'
+
 type AnyMessage = {
   role?: string
   message?: { role?: string; content?: unknown }
   content?: unknown
+  toolUseResult?: unknown
+  imagePermissionToolUseIds?: Array<string | null>
 }
 
 type ToolResultBlock = {
@@ -83,7 +89,7 @@ export function setToolHistoryCompressionEnabledOverrideForTest(
   toolHistoryCompressionEnabledOverrideForTest = enabled
 }
 
-function extractText(content: unknown): string {
+function extractText(content: unknown, separator: string): string {
   if (typeof content === 'string') return content
   if (Array.isArray(content)) {
     return content
@@ -92,9 +98,140 @@ function extractText(content: unknown): string {
           b?.type === 'text' && typeof b.text === 'string',
       )
       .map((b: { text?: string }) => b.text ?? '')
-      .join('\n')
+      .join(separator)
   }
   return ''
+}
+
+function isInlineImagePayload(part: unknown): boolean {
+  if (!part || typeof part !== 'object' || (part as { type?: string }).type !== 'image') {
+    return false
+  }
+
+  const source = (part as { source?: { type?: string; url?: string } }).source
+  return source?.type === 'base64' ||
+    (source?.type === 'url' && typeof source.url === 'string' &&
+      /^data:image\//i.test(source.url))
+}
+
+function omitInlineImagePayloads(block: ToolResultBlock): ToolResultBlock {
+  if (!Array.isArray(block.content)) return block
+
+  let omittedImage = false
+  const content = block.content.map(part => {
+    if (isInlineImagePayload(part)) {
+      omittedImage = true
+      return { type: 'text', text: OMITTED_INLINE_IMAGE_MARKER }
+    }
+    return part
+  })
+
+  return omittedImage ? { ...block, content } : block
+}
+
+function sanitizeClearedBlock(block: ToolResultBlock): ToolResultBlock {
+  if (!Array.isArray(block.content)) return block
+  const content = block.content.filter(part => !isInlineImagePayload(part))
+  return content.length === block.content.length ? block : { ...block, content }
+}
+
+function replaceTextContent(
+  block: ToolResultBlock,
+  replacementText: string,
+): ToolResultBlock {
+  block = omitInlineImagePayloads(block)
+  if (!Array.isArray(block.content)) {
+    return {
+      ...block,
+      content: [{ type: 'text', text: replacementText }],
+    }
+  }
+
+  let replacedText = false
+  const content = block.content.flatMap(part => {
+    if (
+      part &&
+      typeof part === 'object' &&
+      (part as { type?: string }).type === 'text'
+    ) {
+      if (replacedText) return []
+      replacedText = true
+      return [{ ...part, text: replacementText }]
+    }
+    return [part]
+  })
+
+  if (!replacedText && content.length === 0) {
+    return {
+      ...block,
+      content: [{ type: 'text', text: replacementText }],
+    }
+  }
+
+  return { ...block, content }
+}
+
+function truncateTextContent(
+  block: ToolResultBlock,
+  maxChars: number,
+  originalLength: number,
+  separator: string,
+): ToolResultBlock {
+  const marker = `\n[…truncated ${originalLength - maxChars} chars from tool history]`
+  if (!Array.isArray(block.content)) {
+    const text = typeof block.content === 'string' ? block.content : ''
+    return {
+      ...block,
+      content: [{ type: 'text', text: `${text.slice(0, maxChars)}${marker}` }],
+    }
+  }
+
+  const content: unknown[] = []
+  let remaining = maxChars
+  let sawText = false
+  let truncated = false
+  let lastTextIndex = -1
+
+  const appendMarker = (): void => {
+    const part = content[lastTextIndex] as { text?: string } | undefined
+    if (part && typeof part.text === 'string') {
+      content[lastTextIndex] = { ...part, text: `${part.text}${marker}` }
+    }
+  }
+
+  for (const part of block.content) {
+    if (
+      !part ||
+      typeof part !== 'object' ||
+      (part as { type?: string }).type !== 'text' ||
+      typeof (part as { text?: unknown }).text !== 'string'
+    ) {
+      content.push(part)
+      continue
+    }
+    if (truncated) continue
+
+    const text = (part as { text: string }).text
+    const separatorChars = sawText ? separator.length : 0
+    sawText = true
+    if (remaining <= separatorChars) {
+      appendMarker()
+      truncated = true
+      continue
+    }
+
+    remaining -= separatorChars
+    const retained = text.slice(0, remaining)
+    remaining -= retained.length
+    content.push({ ...part, text: retained })
+    lastTextIndex = content.length - 1
+    if (retained.length < text.length || remaining === 0) {
+      appendMarker()
+      truncated = true
+    }
+  }
+
+  return { ...block, content }
 }
 
 // Old-tier compression strategy. Replaces content entirely with a one-line
@@ -105,22 +242,18 @@ function extractText(content: unknown): string {
 function buildStub(
   block: ToolResultBlock,
   toolUsesById: Map<string, ToolUseBlock>,
+  separator: string,
 ): ToolResultBlock {
-  const original = extractText(block.content)
+  const original = extractText(block.content, separator)
   const toolUse = toolUsesById.get(block.tool_use_id ?? '')
   const name = toolUse?.name ?? 'tool'
   const args = toolUse?.input
     ? JSON.stringify(toolUse.input).slice(0, STUB_ARGS_MAX_CHARS)
     : '{}'
-  return {
-    ...block,
-    content: [
-      {
-        type: 'text',
-        text: `[${name} args=${args} → ${original.length} chars omitted]`,
-      },
-    ],
-  }
+  return replaceTextContent(
+    block,
+    `[${name} args=${args} → ${original.length} chars omitted]`,
+  )
 }
 
 // Mid-tier compression. The trailing marker is load-bearing: without it, the
@@ -130,19 +263,12 @@ function buildStub(
 function truncateBlock(
   block: ToolResultBlock,
   maxChars: number,
+  separator: string,
 ): ToolResultBlock {
-  const text = extractText(block.content)
+  block = omitInlineImagePayloads(block)
+  const text = extractText(block.content, separator)
   if (text.length <= maxChars) return block
-  const omitted = text.length - maxChars
-  return {
-    ...block,
-    content: [
-      {
-        type: 'text',
-        text: `${text.slice(0, maxChars)}\n[…truncated ${omitted} chars from tool history]`,
-      },
-    ],
-  }
+  return truncateTextContent(block, maxChars, text.length, separator)
 }
 
 function getInner(msg: AnyMessage): { role?: string; content?: unknown } {
@@ -163,18 +289,19 @@ function indexToolUses(messages: AnyMessage[]): Map<string, ToolUseBlock> {
   return map
 }
 
-function indexToolResultMessages(messages: AnyMessage[]): number[] {
-  const indices: number[] = []
+function indexToolResults(
+  messages: AnyMessage[],
+): Array<{ messageIndex: number; blockIndex: number }> {
+  const indices: Array<{ messageIndex: number; blockIndex: number }> = []
   for (let i = 0; i < messages.length; i++) {
     const inner = getInner(messages[i])
     const role = inner.role ?? messages[i].role
     const content = inner.content
-    if (
-      role === 'user' &&
-      Array.isArray(content) &&
-      content.some((b: { type?: string }) => b?.type === 'tool_result')
-    ) {
-      indices.push(i)
+    if (role !== 'user' || !Array.isArray(content)) continue
+    for (let blockIndex = 0; blockIndex < content.length; blockIndex++) {
+      if ((content[blockIndex] as { type?: string })?.type === 'tool_result') {
+        indices.push({ messageIndex: i, blockIndex })
+      }
     }
   }
   return indices
@@ -195,7 +322,7 @@ function rewriteMessage<T extends AnyMessage>(
 // Re-compressing produces a stub over a marker (e.g. `[Read args={} → 40
 // chars omitted]`), wasteful and less informative than the canonical marker.
 function isAlreadyCleared(block: ToolResultBlock): boolean {
-  const text = extractText(block.content)
+  const text = extractText(block.content, '\n\n')
   return text === TOOL_RESULT_CLEARED_MESSAGE
 }
 
@@ -217,7 +344,10 @@ function shouldCompressBlock(
 export function compressToolHistory<T extends AnyMessage>(
   messages: T[],
   model: string,
-  options: { effectiveContextWindowSize?: number } = {},
+  options: {
+    effectiveContextWindowSize?: number
+    textBlockSeparator?: string
+  } = {},
 ): T[] {
   // Master kill-switch. Returns the original reference so callers skip a
   // defensive copy when the feature is disabled.
@@ -229,39 +359,67 @@ export function compressToolHistory<T extends AnyMessage>(
   const tiers = getTiers(
     options.effectiveContextWindowSize ?? getEffectiveContextWindowSize(model),
   )
+  const textBlockSeparator = options.textBlockSeparator ?? '\n\n'
 
-  const toolResultIndices = indexToolResultMessages(messages)
-  const total = toolResultIndices.length
+  const toolResults = indexToolResults(messages)
+  const total = toolResults.length
   // If every tool-result fits in the recent tier, no boundary crosses; return
   // the same reference for the same copy-elision reason.
   if (total <= tiers.recent) return messages
 
-  // O(1) lookup: messageIndex → tool-result position (0 = oldest). Replaces
-  // the naive Array.indexOf(i) that was O(n²) across the .map below.
-  const positionByIndex = new Map<number, number>()
-  for (let pos = 0; pos < toolResultIndices.length; pos++) {
-    positionByIndex.set(toolResultIndices[pos], pos)
+  // O(1) lookup within each carrier message: blockIndex → tool-result position
+  // (0 = oldest). Parallel results share a message but receive distinct tiers.
+  const positionsByMessage = new Map<number, Map<number, number>>()
+  for (let pos = 0; pos < toolResults.length; pos++) {
+    const { messageIndex, blockIndex } = toolResults[pos]
+    let positions = positionsByMessage.get(messageIndex)
+    if (!positions) {
+      positions = new Map<number, number>()
+      positionsByMessage.set(messageIndex, positions)
+    }
+    positions.set(blockIndex, pos)
   }
 
   const toolUsesById = indexToolUses(messages)
 
   return messages.map((msg, i) => {
-    const pos = positionByIndex.get(i)
-    if (pos === undefined) return msg
+    const positions = positionsByMessage.get(i)
+    if (!positions) return msg
+    const firstPos = positions.values().next().value
+    if (firstPos === undefined || total - 1 - firstPos < tiers.recent) return msg
 
-    const fromEnd = total - 1 - pos
-    if (fromEnd < tiers.recent) return msg
-
-    const inMidWindow = fromEnd < tiers.recent + tiers.mid
     const content = getInner(msg).content as unknown[]
-    const newContent = content.map(block => {
-      const b = block as { type?: string }
-      if (b?.type !== 'tool_result') return block
+    const pendingImagePermissionToolUseIds = [
+      ...(msg.imagePermissionToolUseIds ?? []),
+    ]
+    const omittedPermissionImageToolUseIds = new Set<string>()
+    const newContent = content.map((block, blockIndex) => {
+      if ((block as { type?: string })?.type === 'image') {
+        const toolUseId = pendingImagePermissionToolUseIds.shift()
+        if (
+          toolUseId &&
+          omittedPermissionImageToolUseIds.has(toolUseId) &&
+          isInlineImagePayload(block)
+        ) {
+          return { type: 'text', text: OMITTED_INLINE_IMAGE_MARKER }
+        }
+        return block
+      }
+
+      const pos = positions.get(blockIndex)
+      if (pos === undefined) return block
+      const fromEnd = total - 1 - pos
+      if (fromEnd < tiers.recent) return block
+
       const tr = block as ToolResultBlock
+      if (tr.tool_use_id) omittedPermissionImageToolUseIds.add(tr.tool_use_id)
+      if (isAlreadyCleared(tr)) {
+        return sanitizeClearedBlock(tr)
+      }
       if (!shouldCompressBlock(tr, toolUsesById)) return block
-      return inMidWindow
-        ? truncateBlock(tr, MID_MAX_CHARS)
-        : buildStub(tr, toolUsesById)
+      return fromEnd < tiers.recent + tiers.mid
+        ? truncateBlock(tr, MID_MAX_CHARS, textBlockSeparator)
+        : buildStub(tr, toolUsesById, textBlockSeparator)
     })
 
     return rewriteMessage(msg, newContent)

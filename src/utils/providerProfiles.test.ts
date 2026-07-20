@@ -1029,7 +1029,7 @@ describe('applyProviderProfileToProcessEnv', () => {
     expect(getFreshAPIProvider()).toBe('openai')
   }, 20_000)
 
-  test('keyless custom AIMLAPI profile preserves route identity with ambient OpenAI key', async () => {
+  test('keyless custom AIMLAPI profile preserves route identity without forwarding the ambient key', async () => {
     const { applyProviderProfileToProcessEnv } =
       await importFreshProviderProfileModules()
     process.env.OPENAI_API_KEY = 'ambient-openai-key'
@@ -1045,8 +1045,52 @@ describe('applyProviderProfileToProcessEnv', () => {
 
     expect(process.env.OPENAI_BASE_URL).toBe('https://proxy.example.com/v1')
     expect(process.env.OPENAI_MODEL).toBe('gpt-4o')
-    expect(process.env.OPENAI_API_KEY).toBe('ambient-openai-key')
-    expect(process.env.AIMLAPI_API_KEY).toBe('ambient-openai-key')
+    // The base URL is a user-controlled proxy, not the canonical inference
+    // host, so the canonical AIMLAPI credential must not be forwarded to it.
+    expect(process.env.OPENAI_API_KEY).toBeUndefined()
+    expect(process.env.AIMLAPI_API_KEY).toBeUndefined()
+    expect(process.env.CLAUDE_CODE_PROVIDER_ROUTE_ID).toBe('aimlapi')
+  }, 20_000)
+
+  test('keyless AIMLAPI profile resolves AIMLAPI_API_KEY without persisting it', async () => {
+    const { applyProviderProfileToProcessEnv } =
+      await importFreshProviderProfileModules()
+    process.env.AIMLAPI_API_KEY = 'ambient-aimlapi-key'
+
+    applyProviderProfileToProcessEnv(
+      buildProfile({
+        name: 'AI/ML API',
+        provider: 'aimlapi',
+        baseUrl: 'https://api.aimlapi.com/v1',
+        model: 'gpt-4o',
+        apiKey: undefined,
+      }),
+    )
+
+    expect(process.env.OPENAI_API_KEY).toBe('ambient-aimlapi-key')
+    expect(process.env.AIMLAPI_API_KEY).toBe('ambient-aimlapi-key')
+    expect(process.env.CLAUDE_CODE_PROVIDER_ROUTE_ID).toBe('aimlapi')
+  }, 20_000)
+
+  test('keyless AIMLAPI profile without a base URL resolves the ambient key as canonical', async () => {
+    const { applyProviderProfileToProcessEnv } =
+      await importFreshProviderProfileModules()
+    process.env.AIMLAPI_API_KEY = 'ambient-aimlapi-key'
+
+    // A missing base URL resolves to the canonical aimlapi default; the guard
+    // must treat it as canonical rather than crash on undefined.trim().
+    applyProviderProfileToProcessEnv(
+      buildProfile({
+        name: 'AI/ML API',
+        provider: 'aimlapi',
+        baseUrl: undefined,
+        model: 'gpt-4o',
+        apiKey: undefined,
+      }),
+    )
+
+    expect(process.env.AIMLAPI_API_KEY).toBe('ambient-aimlapi-key')
+    expect(process.env.OPENAI_API_KEY).toBe('ambient-aimlapi-key')
     expect(process.env.CLAUDE_CODE_PROVIDER_ROUTE_ID).toBe('aimlapi')
   }, 20_000)
 
@@ -2422,7 +2466,7 @@ describe('getProviderPresetDefaults', () => {
     const defaults = getProviderPresetDefaults('aimlapi')
 
     expect(defaults.provider).toBe('aimlapi')
-    expect(defaults.name).toBe('AI/ML API')
+    expect(defaults.name).toBe('aimlapi.com')
     expect(defaults.baseUrl).toBe('https://api.aimlapi.com/v1')
     expect(defaults.model).toBe('gpt-4o')
     expect(defaults.apiKey).toBe('aimlapi-live-key')
@@ -3129,7 +3173,7 @@ describe('setActiveProviderProfile', () => {
     }
   })
 
-  test('keyless custom (proxy) AI/ML API profiles preserve AIMLAPI route identity', async () => {
+  test('keyless custom (proxy) AI/ML API profiles keep route identity but withhold the ambient key', async () => {
     const tempDir = mkdtempSync(join(tmpdir(), 'openclaude-provider-'))
     const configDir = mkdtempSync(join(tmpdir(), 'openclaude-provider-config-'))
     process.chdir(tempDir)
@@ -3175,7 +3219,9 @@ describe('setActiveProviderProfile', () => {
         },
       })
 
-      expect(startupEnv.AIMLAPI_API_KEY).toBe('ambient-aimlapi-key')
+      // Route identity is preserved, but the ambient canonical AIMLAPI key must
+      // NOT be forwarded to a user-controlled proxy host.
+      expect(startupEnv.AIMLAPI_API_KEY).toBeUndefined()
       expect(startupEnv.CLAUDE_CODE_PROVIDER_ROUTE_ID).toBe('aimlapi')
     } finally {
       process.chdir(originalCwd)

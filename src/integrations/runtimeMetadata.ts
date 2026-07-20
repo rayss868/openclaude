@@ -28,6 +28,20 @@ import { parseCustomHeadersEnv } from '../utils/providerCustomHeaders.js'
 import { firstUsableCredential } from '../services/api/credentialPool.js'
 import { ZAI_GLM_OPENAI_SHIM } from './transport/zaiGlmShim.js'
 import { getInitialSettings } from '../utils/settings/settings.js'
+import { resolveAimlapiAttributionHeaders } from './aimlapi/config.js'
+
+function resolveRouteOpenAIShimConfig(
+  routeId: string | null,
+  baseUrl: string | undefined,
+  config: OpenAIShimTransportConfig,
+): OpenAIShimTransportConfig {
+  if (routeId !== 'aimlapi' || !config.headers) return config
+
+  return {
+    ...config,
+    headers: resolveAimlapiAttributionHeaders(config.headers, baseUrl),
+  }
+}
 
 function normalizeModelApiName(
   value: string | undefined,
@@ -282,6 +296,8 @@ export function resolveOpenAIShimRuntimeContext(options?: {
     routeId && routeId !== 'anthropic'
       ? getRouteDescriptor(routeId)
       : null
+  const effectiveBaseUrl =
+    options?.baseUrl ?? runtimeEnv.OPENAI_BASE_URL ?? runtimeEnv.OPENAI_API_BASE
   const catalogEntry =
     descriptor && routeId
       ? getCatalogEntryForModel(routeId, options?.model)
@@ -297,10 +313,17 @@ export function resolveOpenAIShimRuntimeContext(options?: {
     routeId,
     descriptor,
     catalogEntry,
-    openaiShimConfig: mergeOpenAIShimConfig(
-      descriptor?.transportConfig.openaiShim,
-      catalogEntry?.transportOverrides?.openaiShim,
-      inferredConfig,
+    // Sanitize AIMLAPI attribution headers AFTER merging every layer: a
+    // catalog- or model-level `openaiShim.headers` override could otherwise
+    // reintroduce the partner/attribution headers on a proxy endpoint.
+    openaiShimConfig: resolveRouteOpenAIShimConfig(
+      routeId,
+      effectiveBaseUrl,
+      mergeOpenAIShimConfig(
+        descriptor?.transportConfig.openaiShim,
+        catalogEntry?.transportOverrides?.openaiShim,
+        inferredConfig,
+      ),
     ),
   }
 }
