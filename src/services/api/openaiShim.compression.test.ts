@@ -215,25 +215,48 @@ afterEach(() => {
 async function captureRequestBody(
   messages: Array<{ role: string; content: unknown }>,
   model: string,
+  options: { useModelWindow?: boolean } = {},
 ): Promise<Record<string, unknown>> {
-  setCompressionEnabledForTest(mockState.enabled)
-  setEffectiveWindowForTest(mockState.effectiveWindow)
-  let captured: Record<string, unknown> | undefined
+  const originalAutoCompactWindow = process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
+  const originalMaxOutputTokens = process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS
+  const originalFetch = globalThis.fetch
+  try {
+    setCompressionEnabledForTest(mockState.enabled)
+    if (options.useModelWindow) {
+      delete process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
+      delete process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS
+    } else {
+      setEffectiveWindowForTest(mockState.effectiveWindow)
+    }
+    let captured: Record<string, unknown> | undefined
 
-  globalThis.fetch = (async (_input, init) => {
-    captured = JSON.parse(String(init?.body))
-    return makeFakeResponse()
-  }) as FetchType
+    globalThis.fetch = (async (_input, init) => {
+      captured = JSON.parse(String(init?.body))
+      return makeFakeResponse()
+    }) as FetchType
 
-  const client = createOpenAIShimClient({}) as OpenAIShimClient
-  await client.beta.messages.create({
-    model,
-    system: 'system prompt',
-    messages,
-  })
+    const client = createOpenAIShimClient({}) as OpenAIShimClient
+    await client.beta.messages.create({
+      model,
+      system: 'system prompt',
+      messages,
+    })
 
-  if (!captured) throw new Error('request not captured')
-  return captured
+    if (!captured) throw new Error('request not captured')
+    return captured
+  } finally {
+    if (originalAutoCompactWindow === undefined) {
+      delete process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
+    } else {
+      process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = originalAutoCompactWindow
+    }
+    if (originalMaxOutputTokens === undefined) {
+      delete process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS
+    } else {
+      process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS = originalMaxOutputTokens
+    }
+    globalThis.fetch = originalFetch
+  }
 }
 
 async function captureResponsesRequestBody(
@@ -460,6 +483,21 @@ test('FIX: 1M context model with 30 exchanges → only first 5 mid-truncated', a
   for (let i = 5; i < 30; i++) {
     expect(toolMessages[i].content.length).toBe(5_000)
   }
+})
+
+test('Kimi K3 256K selection uses its own compression window while sending the k3 API name', async () => {
+  mockState.enabled = true
+  process.env.OPENAI_BASE_URL = 'https://api.kimi.com/coding/v1'
+  const messages = buildLongConversation(50, 5_000)
+
+  const body = await captureRequestBody(messages, 'k3-256k', {
+    useModelWindow: true,
+  })
+  const toolMessages = getToolMessages(body)
+
+  expect(body.model).toBe('k3')
+  expect(toolMessages).toHaveLength(50)
+  expect(toolMessages[0].content).toContain('chars omitted')
 })
 
 // ============================================================================

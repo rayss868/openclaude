@@ -46,6 +46,7 @@ import { isBareMode, isEnvTruthy } from '../../utils/envUtils.js'
 import {
   resolveModelReasoningControl,
   resolveOpenAIShimReasoningRequestPlan,
+  type OpenAIShimEffortLevel,
 } from '../../utils/effort.js'
 import { resolveGeminiCredential } from '../../utils/geminiAuth.js'
 import { hydrateGeminiAccessTokenFromSecureStorage } from '../../utils/geminiCredentials.js'
@@ -54,8 +55,13 @@ import {
   refreshCopilotTokenOn401,
 } from '../../utils/githubModelsCredentials.js'
 import { resolveXaiAccessToken } from '../../utils/xaiCredentials.js'
-import { resolveOpenAIShimRuntimeContext } from '../../integrations/runtimeMetadata.js'
 import {
+  resolveModelRuntimeLimits,
+  resolveOpenAIShimRuntimeContext,
+} from '../../integrations/runtimeMetadata.js'
+import {
+  getRouteDescriptor,
+  isLongcatBaseUrl,
   isXaiBaseUrl,
   resolveRouteCredentialValue,
 } from '../../integrations/routeMetadata.js'
@@ -1343,6 +1349,7 @@ function joinTextContentParts(parts: OpenAIContentPart[]): string {
 function convertToolResultContent(
   content: unknown,
   isError?: boolean,
+  options?: { supportsImageInputs?: boolean },
 ): string | OpenAIContentPart[] {
   if (typeof content === 'string') {
     return isError ? `Error: ${content}` : content
@@ -1371,6 +1378,11 @@ function convertToolResultContent(
     }
 
     if (block?.type === 'image') {
+      if (options?.supportsImageInputs === false) {
+        throw new Error(
+          'The active provider accepts text-only messages and does not support image inputs.',
+        )
+      }
       const source = block.source
       if (source?.type === 'url' && source.url) {
         parts.push({ type: 'image_url', image_url: { url: source.url } })
@@ -1420,6 +1432,7 @@ function convertToolResultContent(
 
 function convertContentBlocks(
   content: unknown,
+  options?: { supportsImageInputs?: boolean },
 ): string | OpenAIContentPart[] {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return String(content ?? '')
@@ -1431,6 +1444,11 @@ function convertContentBlocks(
         parts.push({ type: 'text', text: block.text ?? '' })
         break
       case 'image': {
+        if (options?.supportsImageInputs === false) {
+          throw new Error(
+            'The active provider accepts text-only messages and does not support image inputs.',
+          )
+        }
         const src = block.source
         if (src?.type === 'base64') {
           parts.push({
@@ -1544,11 +1562,13 @@ function convertMessages(
     preserveReasoningContent?: boolean
     reasoningContentFallback?: '' | 'omit'
     preserveGeminiThoughtSignature?: boolean
+    supportsImageInputs?: boolean
   },
 ): OpenAIMessage[] {
   const preserveReasoningContent = options?.preserveReasoningContent === true
   const reasoningContentFallback = options?.reasoningContentFallback
   const preserveGeminiThoughtSignature = options?.preserveGeminiThoughtSignature === true
+  const supportsImageInputs = options?.supportsImageInputs
   const result: OpenAIMessage[] = []
   const knownToolCallIds = new Set<string>()
 
@@ -1606,7 +1626,7 @@ function convertMessages(
               result.push({
                 role: 'tool',
                 tool_call_id: id,
-                content: convertToolResultContent(tr.content, tr.is_error),
+                content: convertToolResultContent(tr.content, tr.is_error, { supportsImageInputs }),
               })
             } else {
               logForDebugging(
@@ -1623,13 +1643,13 @@ function convertMessages(
         if (otherContent && otherContent.length > 0) {
           result.push({
             role: 'user',
-            content: convertContentBlocks(otherContent),
+            content: convertContentBlocks(otherContent, { supportsImageInputs }),
           })
         }
       } else {
         result.push({
           role: 'user',
-          content: convertContentBlocks(content),
+          content: convertContentBlocks(content, { supportsImageInputs }),
         })
       }
     } else if (role === 'assistant') {
@@ -1679,7 +1699,7 @@ function convertMessages(
         const assistantMsg: OpenAIMessage = {
           role: 'assistant',
           content: (() => {
-            const c = convertContentBlocks(textContent ?? [])
+            const c = convertContentBlocks(textContent ?? [], { supportsImageInputs })
             return typeof c === 'string'
               ? c
               : Array.isArray(c)
@@ -1780,7 +1800,7 @@ function convertMessages(
         const assistantMsg: OpenAIMessage = {
           role: 'assistant',
           content: (() => {
-            const c = convertContentBlocks(content)
+            const c = convertContentBlocks(content, { supportsImageInputs })
             return typeof c === 'string'
               ? c
               : Array.isArray(c)
@@ -3978,12 +3998,12 @@ class OpenAIShimStream {
 
 class OpenAIShimMessages {
   private defaultHeaders: Record<string, string>
-  private reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
+  private reasoningEffort?: OpenAIShimEffortLevel
   private providerOverride?: { model: string; baseURL: string; apiKey: string }
   private credentialPool?: CredentialPool
   private credentialPoolRaw?: string
 
-  constructor(defaultHeaders: Record<string, string>, reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh', providerOverride?: { model: string; baseURL: string; apiKey: string }) {
+  constructor(defaultHeaders: Record<string, string>, reasoningEffort?: OpenAIShimEffortLevel, providerOverride?: { model: string; baseURL: string; apiKey: string }) {
     this.defaultHeaders = filterAnthropicHeaders(defaultHeaders)
     this.reasoningEffort = reasoningEffort
     this.providerOverride = providerOverride
@@ -4301,12 +4321,19 @@ class OpenAIShimMessages {
       message?: { role?: string; content?: unknown }
       content?: unknown
     }>
+    const runtimeModel = request.requestedModel
     const runtimeShimContext = resolveOpenAIShimRuntimeContext({
       processEnv: requestProcessEnv,
       baseUrl: request.baseUrl,
-      model: request.resolvedModel,
+      model: runtimeModel,
       treatAsLocal: isLocalProviderUrl(request.baseUrl),
       preferBaseUrlRoute: Boolean(this.providerOverride),
+    })
+    const runtimeLimits = resolveModelRuntimeLimits({
+      model: runtimeModel,
+      baseUrl: request.baseUrl,
+      processEnv: requestProcessEnv,
+      activeProfileProvider: runtimeShimContext.routeId ?? undefined,
     })
     const shimConfig = runtimeShimContext.openaiShimConfig
     // When endpointPath is overridden, the body format must match the target
@@ -4326,9 +4353,10 @@ class OpenAIShimMessages {
       rawMessages,
       () => fastPath.skipToolHistoryCompression
         ? rawMessages
-        : compressToolHistory(rawMessages, request.resolvedModel, {
+        : compressToolHistory(rawMessages, runtimeModel, {
           textBlockSeparator:
             effectiveTransport === 'chat_completions' ? '\n\n' : '\n',
+          runtimeLimits,
         }),
     )
     const useNativeOllamaChat =
@@ -4345,10 +4373,11 @@ class OpenAIShimMessages {
           request.resolvedModel,
           request.baseUrl,
         ),
+        supportsImageInputs: shimConfig.supportsImageInputs,
       }),
     )
 
-    const reasoningControl = resolveModelReasoningControl(request.resolvedModel, {
+    const reasoningControl = resolveModelReasoningControl(runtimeModel, {
       routeId: runtimeShimContext.routeId,
       useRuntimeFallback: false,
       openaiShimConfig: shimConfig,
@@ -4365,7 +4394,7 @@ class OpenAIShimMessages {
       modelRequiresResponsesApi(request.resolvedModel) &&
       baseUrlSupportsResponsesAutoRoute(request.baseUrl, requestProcessEnv)
     const reasoningRequestPlan = resolveOpenAIShimReasoningRequestPlan({
-      model: request.resolvedModel,
+      model: runtimeModel,
       requestedEffort: suppressReasoningForForcedChat ? undefined : request.reasoning?.effort,
       requestThinkingType: (params.thinking as { type?: string } | undefined)?.type,
       defaultThinkingType: request.thinking?.type,
@@ -4387,6 +4416,13 @@ class OpenAIShimMessages {
      // most OpenAI-compatible endpoints read it from this top-level field.
     if (reasoningRequestPlan.wireFormat === 'reasoning_effort' && reasoningRequestPlan.reasoningEffort) {
       body.reasoning_effort = reasoningRequestPlan.reasoningEffort
+    }
+    if (
+      reasoningRequestPlan.wireFormat === 'reasoning_effort' &&
+      reasoningRequestPlan.thinkingType === 'disabled'
+    ) {
+      body.thinking = { type: 'disabled' }
+      delete body.reasoning_effort
     }
     // Convert max_tokens to max_completion_tokens for OpenAI API compatibility.
     // Azure OpenAI requires max_completion_tokens and does not accept max_tokens.
@@ -4476,7 +4512,11 @@ class OpenAIShimMessages {
       delete body[field]
     }
 
-    if (params.tools && params.tools.length > 0) {
+    if (
+      !(shimConfig.removeBodyFields ?? []).includes('tools') &&
+      params.tools &&
+      params.tools.length > 0
+    ) {
       const converted = convertTools(
         params.tools as Array<{
           name: string
@@ -4793,7 +4833,12 @@ class OpenAIShimMessages {
     // sent as a Bearer to api.x.ai/v1 — same surface as an API key.
     const isXaiRoute =
       runtimeShimContext.routeId === 'xai' || isXaiBaseUrl(request.baseUrl)
+    const routeAcceptsGenericOpenAICredentials =
+      runtimeShimContext.routeId === null ||
+      getRouteDescriptor(runtimeShimContext.routeId)?.setup
+        .dedicatedCredentialsOnly !== true
     const openAIApiKeysPoolRaw =
+      routeAcceptsGenericOpenAICredentials &&
       parseCredentialList(process.env.OPENAI_API_KEYS).length > 0
         ? process.env.OPENAI_API_KEYS
         : undefined
@@ -4824,6 +4869,7 @@ class OpenAIShimMessages {
           process.env.ATLAS_CLOUD_API_KEY,
           process.env.NEARAI_API_KEY,
           process.env.FIREWORKS_API_KEY,
+          process.env.LONGCAT_API_KEY,
         ].some(value => value?.trim() === openAIApiKeyRawUsable),
       )
     const routeCredentialIsCopiedProviderKey =
@@ -4847,13 +4893,20 @@ class OpenAIShimMessages {
         openAIApiKeyRawUsable &&
         routeCredential === openAIApiKeyRawUsable,
       )
+    const copiedProviderCredential =
+      openAIApiKeyIsCopiedProviderKey &&
+      (routeAcceptsGenericOpenAICredentials || routeCredentialIsCopiedProviderKey)
+        ? openAIApiKeyRawUsable
+        : undefined
     const apiKeyRaw =
       this.providerOverride?.apiKey ??
-      (openAIApiKeyIsCopiedProviderKey ? openAIApiKeyRawUsable : undefined) ??
+      copiedProviderCredential ??
       (routeCredentialIsGenericOpenAIFallback ? undefined : routeCredential) ??
       openAIApiKeysPoolRaw ??
       routeCredential ??
-      (openAIApiKeyRawUsable || xaiOAuthToken || '')
+      (routeAcceptsGenericOpenAICredentials
+        ? openAIApiKeyRawUsable || xaiOAuthToken || ''
+        : '')
     // A catalog-level auth header is part of the selected model's transport
     // contract. Ignore global custom auth left behind by another route so it
     // cannot replace that model-specific header or credential.
@@ -4993,7 +5046,26 @@ class OpenAIShimMessages {
         return `${normalizedBase}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`
       }
 
-      return `${baseUrl}/chat/completions`
+      const normalizedBase = baseUrl.replace(/\/+$/, '')
+      // LongCat documents both `/openai/v1/chat/completions` and the
+      // CodeBuddy-specific `/openai/chat/completions` endpoint forms.
+      if (
+        runtimeShimContext.routeId === 'longcat' &&
+        isLongcatBaseUrl(normalizedBase) &&
+        /^\/openai\/?$/.test(new URL(normalizedBase).pathname)
+      ) {
+        return `${normalizedBase}/v1/chat/completions`
+      }
+      if (
+        runtimeShimContext.routeId === 'longcat' &&
+        isLongcatBaseUrl(normalizedBase) &&
+        /^\/openai(?:\/v1)?\/chat\/completions$/.test(
+          new URL(normalizedBase).pathname,
+        )
+      ) {
+        return normalizedBase
+      }
+      return `${normalizedBase}/chat/completions`
     }
 
     // Azure serves the Responses API only on the v1 surface
@@ -5660,9 +5732,9 @@ class OpenAIShimMessages {
 
 class OpenAIShimBeta {
   messages: OpenAIShimMessages
-  reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
+  reasoningEffort?: OpenAIShimEffortLevel
 
-  constructor(defaultHeaders: Record<string, string>, reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh', providerOverride?: { model: string; baseURL: string; apiKey: string }) {
+  constructor(defaultHeaders: Record<string, string>, reasoningEffort?: OpenAIShimEffortLevel, providerOverride?: { model: string; baseURL: string; apiKey: string }) {
     this.messages = new OpenAIShimMessages(defaultHeaders, reasoningEffort, providerOverride)
     this.reasoningEffort = reasoningEffort
   }
@@ -5672,7 +5744,7 @@ export function createOpenAIShimClient(options: {
   defaultHeaders?: Record<string, string>
   maxRetries?: number
   timeout?: number
-  reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
+  reasoningEffort?: OpenAIShimEffortLevel
   providerOverride?: { model: string; baseURL: string; apiKey: string }
 }): unknown {
   hydrateGeminiAccessTokenFromSecureStorage()

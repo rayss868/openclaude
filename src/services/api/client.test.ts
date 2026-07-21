@@ -66,6 +66,7 @@ const originalEnv = {
   MIMO_API_KEY: process.env.MIMO_API_KEY,
   VENICE_API_KEY: process.env.VENICE_API_KEY,
   FIREWORKS_API_KEY: process.env.FIREWORKS_API_KEY,
+  LONGCAT_API_KEY: process.env.LONGCAT_API_KEY,
   AIMLAPI_API_KEY: process.env.AIMLAPI_API_KEY,
   NVIDIA_NIM: process.env.NVIDIA_NIM,
   NVIDIA_API_KEY: process.env.NVIDIA_API_KEY,
@@ -118,6 +119,7 @@ function clearEnvForMiniMaxOnlyTest(): void {
   delete process.env.MIMO_API_KEY
   delete process.env.VENICE_API_KEY
   delete process.env.FIREWORKS_API_KEY
+  delete process.env.LONGCAT_API_KEY
   delete process.env.AIMLAPI_API_KEY
   delete process.env.NVIDIA_NIM
   delete process.env.NVIDIA_API_KEY
@@ -158,6 +160,7 @@ beforeEach(async () => {
   delete process.env.MIMO_API_KEY
   delete process.env.VENICE_API_KEY
   delete process.env.FIREWORKS_API_KEY
+  delete process.env.LONGCAT_API_KEY
   delete process.env.AIMLAPI_API_KEY
   delete process.env.OPENAI_AUTH_HEADER
   delete process.env.OPENAI_AUTH_SCHEME
@@ -206,6 +209,7 @@ afterEach(() => {
     restoreEnv('MIMO_API_KEY', originalEnv.MIMO_API_KEY)
     restoreEnv('VENICE_API_KEY', originalEnv.VENICE_API_KEY)
     restoreEnv('FIREWORKS_API_KEY', originalEnv.FIREWORKS_API_KEY)
+    restoreEnv('LONGCAT_API_KEY', originalEnv.LONGCAT_API_KEY)
     restoreEnv('AIMLAPI_API_KEY', originalEnv.AIMLAPI_API_KEY)
     restoreEnv('NVIDIA_NIM', originalEnv.NVIDIA_NIM)
     restoreEnv('NVIDIA_API_KEY', originalEnv.NVIDIA_API_KEY)
@@ -2076,6 +2080,262 @@ test('providerOverride Kimi Code clamps unsupported xhigh effort to high', async
     })
 
     expect(requestBody?.reasoning_effort).toBe('high')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('providerOverride K3 preserves max reasoning from its model query', async () => {
+  let requestBody: Record<string, unknown> | undefined
+  let requestUrl: string | undefined
+
+  globalThis.fetch = (async (input, init) => {
+    requestUrl = String(input)
+    requestBody = JSON.parse(String(init?.body))
+    return new Response(JSON.stringify({
+      id: 'chatcmpl-provider-override-k3',
+      model: 'k3',
+      choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 8, completion_tokens: 3, total_tokens: 11 },
+    }), { headers: { 'Content-Type': 'application/json' } })
+  }) as FetchType
+
+  try {
+    const client = (await getAnthropicClient({
+      maxRetries: 0,
+      providerOverride: {
+        model: 'k3?reasoning=max',
+        baseURL: 'https://api.kimi.com/coding/v1',
+        apiKey: 'kimi-test-key',
+      },
+    })) as unknown as ShimClient
+
+    await client.beta.messages.create({
+      model: 'unused',
+      system: 'test system',
+      messages: [{ role: 'user', content: 'hello' }],
+      max_tokens: 64,
+      stream: false,
+    })
+
+    expect(requestBody?.reasoning_effort).toBe('max')
+    expect(requestBody?.model).toBe('k3')
+    expect(requestUrl).toStartWith('https://api.kimi.com/coding/v1/')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('providerOverride K3 maps xhigh effort to max', async () => {
+  let requestBody: Record<string, unknown> | undefined
+  let requestUrl: string | undefined
+  globalThis.fetch = (async (input, init) => {
+    requestUrl = String(input)
+    requestBody = JSON.parse(String(init?.body))
+    return new Response(JSON.stringify({ id: 'chatcmpl-provider-override-k3-xhigh', model: 'k3', choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }], usage: { prompt_tokens: 8, completion_tokens: 3, total_tokens: 11 } }), { headers: { 'Content-Type': 'application/json' } })
+  }) as FetchType
+  try {
+    const client = (await getAnthropicClient({ maxRetries: 0, effortValue: 'xhigh', providerOverride: { model: 'k3', baseURL: 'https://api.kimi.com/coding/v1', apiKey: 'kimi-test-key' } })) as unknown as ShimClient
+    await client.beta.messages.create({ model: 'unused', system: 'test system', messages: [{ role: 'user', content: 'hello' }], max_tokens: 64, stream: false })
+    expect(requestBody?.reasoning_effort).toBe('max')
+    expect(requestBody?.model).toBe('k3')
+    expect(requestUrl).toStartWith('https://api.kimi.com/coding/v1/')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('providerOverride K3 leaves its default reasoning to the provider', async () => {
+  let requestBody: Record<string, unknown> | undefined
+  const originalFetch = globalThis.fetch
+
+  try {
+    globalThis.fetch = (async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body))
+      return new Response(JSON.stringify({
+        id: 'chatcmpl-provider-override-k3-default',
+        model: 'k3',
+        choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 8, completion_tokens: 3, total_tokens: 11 },
+      }), { headers: { 'Content-Type': 'application/json' } })
+    }) as FetchType
+
+    const client = (await getAnthropicClient({
+      maxRetries: 0,
+      providerOverride: {
+        model: 'k3',
+        baseURL: 'https://api.kimi.com/coding/v1',
+        apiKey: 'kimi-test-key',
+      },
+    })) as unknown as ShimClient
+
+    await client.beta.messages.create({
+      model: 'unused',
+      system: 'test system',
+      messages: [{ role: 'user', content: 'hello' }],
+      max_tokens: 64,
+      stream: false,
+    })
+
+    expect(requestBody?.reasoning_effort).toBeUndefined()
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('providerOverride Hicap keeps multi-level max as xhigh on the wire', async () => {
+  let requestBody: Record<string, unknown> | undefined
+  const originalFetch = globalThis.fetch
+
+  try {
+    globalThis.fetch = (async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body))
+      return new Response(JSON.stringify({
+        id: 'chatcmpl-provider-override-hicap-max',
+        model: 'claude-opus-4.8',
+        choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 8, completion_tokens: 3, total_tokens: 11 },
+      }), { headers: { 'Content-Type': 'application/json' } })
+    }) as FetchType
+
+    const client = (await getAnthropicClient({
+      maxRetries: 0,
+      effortValue: 'max',
+      providerOverride: {
+        model: 'claude-opus-4.8',
+        baseURL: 'https://api.hicap.ai/v1',
+        apiKey: 'hicap-test-key',
+      },
+    })) as unknown as ShimClient
+
+    await client.beta.messages.create({
+      model: 'unused',
+      system: 'test system',
+      messages: [{ role: 'user', content: 'hello' }],
+      max_tokens: 64,
+      stream: false,
+    })
+
+    expect(requestBody?.reasoning_effort).toBe('xhigh')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('providerOverride K3 preserves supported model-query reasoning', async () => {
+  let requestBody: Record<string, unknown> | undefined
+  let requestUrl: string | undefined
+
+  globalThis.fetch = (async (input, init) => {
+    requestUrl = String(input)
+    requestBody = JSON.parse(String(init?.body))
+    return new Response(JSON.stringify({
+      id: 'chatcmpl-provider-override-k3-low',
+      model: 'k3',
+      choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 8, completion_tokens: 3, total_tokens: 11 },
+    }), { headers: { 'Content-Type': 'application/json' } })
+  }) as FetchType
+
+  try {
+    const client = (await getAnthropicClient({
+      maxRetries: 0,
+      providerOverride: {
+        model: 'k3?reasoning=low',
+        baseURL: 'https://api.kimi.com/coding/v1',
+        apiKey: 'kimi-test-key',
+      },
+    })) as unknown as ShimClient
+
+    await client.beta.messages.create({
+      model: 'unused',
+      system: 'test system',
+      messages: [{ role: 'user', content: 'hello' }],
+      max_tokens: 64,
+      stream: false,
+    })
+
+    expect(requestBody?.reasoning_effort).toBe('low')
+    expect(requestBody?.model).toBe('k3')
+    expect(requestUrl).toStartWith('https://api.kimi.com/coding/v1/')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('providerOverride K3 forwards disabled thinking to the Kimi API', async () => {
+  let requestBody: Record<string, unknown> | undefined
+  globalThis.fetch = (async (_input, init) => {
+    requestBody = JSON.parse(String(init?.body))
+    return new Response(JSON.stringify({
+      id: 'chatcmpl-provider-override-k3-thinking-disabled',
+      model: 'k3',
+      choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 8, completion_tokens: 3, total_tokens: 11 },
+    }), { headers: { 'Content-Type': 'application/json' } })
+  }) as FetchType
+
+  try {
+    const client = (await getAnthropicClient({
+      maxRetries: 0,
+      providerOverride: {
+        model: 'k3?thinking=disabled',
+        baseURL: 'https://api.kimi.com/coding/v1',
+        apiKey: 'kimi-test-key',
+      },
+    })) as unknown as ShimClient
+    await client.beta.messages.create({
+      model: 'unused',
+      system: 'test system',
+      messages: [{ role: 'user', content: 'hello' }],
+      max_tokens: 64,
+      stream: false,
+    })
+
+    expect(requestBody?.model).toBe('k3')
+    expect(requestBody?.thinking).toEqual({ type: 'disabled' })
+    expect(requestBody?.reasoning_effort).toBeUndefined()
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('providerOverride direct Moonshot K3 preserves supported model-query reasoning', async () => {
+  let requestBody: Record<string, unknown> | undefined
+  let requestUrl: string | undefined
+
+  globalThis.fetch = (async (input, init) => {
+    requestUrl = String(input)
+    requestBody = JSON.parse(String(init?.body))
+    return new Response(JSON.stringify({
+      id: 'chatcmpl-provider-override-moonshot-k3',
+      model: 'kimi-k3',
+      choices: [{ message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 8, completion_tokens: 3, total_tokens: 11 },
+    }), { headers: { 'Content-Type': 'application/json' } })
+  }) as FetchType
+
+  try {
+    const client = (await getAnthropicClient({
+      maxRetries: 0,
+      providerOverride: {
+        model: 'kimi-k3?reasoning=low',
+        baseURL: 'https://api.moonshot.ai/v1',
+        apiKey: 'moonshot-test-key',
+      },
+    })) as unknown as ShimClient
+
+    await client.beta.messages.create({
+      model: 'unused',
+      system: 'test system',
+      messages: [{ role: 'user', content: 'hello' }],
+      max_tokens: 64,
+      stream: false,
+    })
+
+    expect(requestBody?.reasoning_effort).toBe('low')
+    expect(requestBody?.model).toBe('kimi-k3')
+    expect(requestUrl).toStartWith('https://api.moonshot.ai/v1/')
   } finally {
     globalThis.fetch = originalFetch
   }

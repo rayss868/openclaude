@@ -24,6 +24,7 @@ import {
   buildOpenAIProfileEnv,
   clearPersistedCodexOAuthProfile,
   createProfileFile,
+  DEFAULT_STARTUP_PROVIDER_ENV_VAR,
   deleteProfileFile,
   getDefaultProfileFilePath,
   isDefaultStartupProviderEnv,
@@ -306,6 +307,34 @@ test('openai launch carries AIMLAPI_API_KEY only when the route resolves to aiml
   })
 
   assert.equal(onRoute.AIMLAPI_API_KEY, 'aimlapi-key')
+})
+
+test('openai launch carries LONGCAT_API_KEY only when the route resolves to LongCat', async () => {
+  const offRoute = await buildLaunchEnv({
+    profile: 'openai',
+    persisted: profile('openai', {
+      OPENAI_BASE_URL: 'https://api.openai.com/v1',
+      OPENAI_API_KEY: 'sk-openai',
+      LONGCAT_API_KEY: 'longcat-persisted',
+    }),
+    goal: 'coding',
+    processEnv: { LONGCAT_API_KEY: 'longcat-ambient' },
+  })
+
+  assert.equal(offRoute.LONGCAT_API_KEY, undefined)
+
+  const onRoute = await buildLaunchEnv({
+    profile: 'openai',
+    persisted: profile('openai', {
+      OPENAI_BASE_URL: 'https://api.longcat.chat/openai/v1',
+      OPENAI_API_KEY: 'longcat-key',
+      LONGCAT_API_KEY: 'longcat-key',
+    }),
+    goal: 'coding',
+    processEnv: {},
+  })
+
+  assert.equal(onRoute.LONGCAT_API_KEY, 'longcat-key')
 })
 
 test('openai launch mirrors rotated OPENAI_API_KEY into AIMLAPI_API_KEY on aimlapi route', async () => {
@@ -773,7 +802,7 @@ test('buildStartupEnvFromProfile fresh-install OpenGateway env is invalid withou
   assert.ok(error!.includes('OPENGATEWAY_API_KEY'))
 })
 
-test('applyStartupEnvFromProfile ignores invalid startup env and warns (issue #1651)', async () => {
+test('applyStartupEnvFromProfile ignores the invalid fresh-install default SILENTLY (issue #1651 + zero-warning install)', async () => {
   const processEnv: NodeJS.ProcessEnv = {}
   const warnings: string[] = []
 
@@ -783,12 +812,64 @@ test('applyStartupEnvFromProfile ignores invalid startup env and warns (issue #1
     onValidationError: message => warnings.push(message),
   })
 
+  // Still ignored (not applied), but a brand-new machine must not see a
+  // "saved provider profile" warning on every command — nothing was saved.
   assert.notEqual(error, null)
   assert.ok(error!.includes('OPENGATEWAY_API_KEY'))
+  assert.deepEqual(warnings, [])
+  assert.deepEqual(processEnv, {})
+})
+
+test('applyStartupEnvFromProfile still warns when a genuinely saved profile fails validation', async () => {
+  const processEnv: NodeJS.ProcessEnv = {}
+  const warnings: string[] = []
+
+  const error = await applyStartupEnvFromProfile({
+    persisted: {
+      profile: 'openai',
+      env: { OPENAI_BASE_URL: 'https://api.openai.com/v1' },
+      createdAt: '2026-01-01T00:00:00.000Z',
+    },
+    processEnv,
+    onValidationError: message => warnings.push(message),
+  })
+
+  assert.notEqual(error, null)
   assert.deepEqual(warnings, [
     `Warning: ignoring saved provider profile. ${error}`,
   ])
   assert.deepEqual(processEnv, {})
+})
+
+test('applyStartupEnvFromProfile warns for a saved Opengateway-shaped profile even when the default-startup marker leaks in from a parent process', async () => {
+  // Collision guard: a persisted profile's launch env spreads processEnv, so
+  // a CLAUDE_CODE_DEFAULT_STARTUP_PROVIDER marker inherited from a parent CLI
+  // process can make the saved profile's env indistinguishable from the
+  // injected fresh-install default by marker-sniffing alone. Provenance
+  // (persisted !== null) must win: this saved-but-invalid profile warns.
+  const processEnv: NodeJS.ProcessEnv = {
+    [DEFAULT_STARTUP_PROVIDER_ENV_VAR]: 'gitlawb-opengateway',
+  }
+  const warnings: string[] = []
+
+  const error = await applyStartupEnvFromProfile({
+    persisted: {
+      profile: 'openai',
+      env: { OPENAI_BASE_URL: 'https://opengateway.gitlawb.com/v1' },
+      createdAt: '2026-01-01T00:00:00.000Z',
+    },
+    processEnv,
+    onValidationError: message => warnings.push(message),
+  })
+
+  assert.notEqual(error, null)
+  assert.deepEqual(warnings, [
+    `Warning: ignoring saved provider profile. ${error}`,
+  ])
+  // The invalid env is ignored: only the pre-existing marker remains.
+  assert.deepEqual(processEnv, {
+    [DEFAULT_STARTUP_PROVIDER_ENV_VAR]: 'gitlawb-opengateway',
+  })
 })
 
 test('applyStartupEnvFromProfile applies valid startup env (issue #1651)', async () => {
@@ -993,6 +1074,23 @@ test('buildStartupEnvFromProfile preserves env-only NEAR AI setup without a save
   })
 
   assert.equal(env.NEARAI_API_KEY, 'nearai-key')
+  assert.equal(
+    env.OPENAI_BASE_URL,
+    undefined,
+    'should not inject Gitlawb Opengateway base URL',
+  )
+  assert.equal(isDefaultStartupProviderEnv(env), false)
+})
+
+test('buildStartupEnvFromProfile preserves env-only LongCat setup without a saved profile', async () => {
+  const env = await buildStartupEnvFromProfile({
+    persisted: null,
+    processEnv: {
+      LONGCAT_API_KEY: 'longcat-key',
+    },
+  })
+
+  assert.equal(env.LONGCAT_API_KEY, 'longcat-key')
   assert.equal(
     env.OPENAI_BASE_URL,
     undefined,

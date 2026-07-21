@@ -25,6 +25,7 @@ import { getErrnoCode } from './errors.js'
 import {
   getRouteDefaultBaseUrl,
   getRouteDefaultModel,
+  isLongcatBaseUrl,
   normalizeXiaomiMimoBaseUrl,
   resolveRouteCredentialValue,
   resolveRouteIdFromBaseUrl,
@@ -112,6 +113,7 @@ const PROFILE_ENV_KEYS = [
   'ATLAS_CLOUD_API_KEY',
   'NEARAI_API_KEY',
   'FIREWORKS_API_KEY',
+  'LONGCAT_API_KEY',
   'CLINE_API_KEY',
   'OPENCODE_API_KEY',
   'CLAUDE_CODE_PROVIDER_ROUTE_ID',
@@ -197,6 +199,7 @@ export type ProfileEnv = {
   CLINE_API_KEY?: string
   NEARAI_API_KEY?: string
   FIREWORKS_API_KEY?: string
+  LONGCAT_API_KEY?: string
   OPENCODE_API_KEY?: string
   CLOUDFLARE_API_TOKEN?: string
   CLAUDE_CODE_OPENAI_CONTEXT_WINDOWS?: string
@@ -1346,7 +1349,8 @@ function hasConcreteProviderSelection(
   // Env-only provider setups — no CLAUDE_CODE_USE_* flag needed
   return (
     sanitizeApiKey(processEnv.FIREWORKS_API_KEY) !== undefined ||
-    sanitizeApiKey(processEnv.NEARAI_API_KEY) !== undefined
+    sanitizeApiKey(processEnv.NEARAI_API_KEY) !== undefined ||
+    sanitizeApiKey(processEnv.LONGCAT_API_KEY) !== undefined
   )
 }
 
@@ -2045,6 +2049,7 @@ export async function buildLaunchEnv(options: {
     'ATLAS_CLOUD_API_KEY',
     'NEARAI_API_KEY',
     'FIREWORKS_API_KEY',
+    'LONGCAT_API_KEY',
     'AIMLAPI_API_KEY',
     'MIMO_API_KEY',
     'NVIDIA_API_KEY',
@@ -2058,6 +2063,12 @@ export async function buildLaunchEnv(options: {
       continue
     }
     if (dedicatedKey === 'NVIDIA_API_KEY' && effectiveOpenAIRouteId !== 'nvidia-nim') {
+      continue
+    }
+    if (
+      dedicatedKey === 'LONGCAT_API_KEY' &&
+      (effectiveOpenAIRouteId !== 'longcat' || !isLongcatBaseUrl(env.OPENAI_BASE_URL))
+    ) {
       continue
     }
     // On a non-canonical (proxy) aimlapi base URL, never source AIMLAPI_API_KEY
@@ -2230,8 +2241,18 @@ export async function applyStartupEnvFromProfile(options?: StartupEnvOptions & {
 }): Promise<string | null> {
   const processEnv = options?.processEnv ?? process.env
   const { onValidationError, ...startupOptions } = options ?? {}
+  // Resolve the persisted profile HERE (once) so the warning gate below has
+  // explicit provenance. Sniffing the DEFAULT_STARTUP_PROVIDER_ENV_VAR marker
+  // alone is not enough: a persisted profile's launch env spreads processEnv,
+  // so a marker inherited from a parent CLI process (pane/teammate children)
+  // could make a genuinely saved profile look like the injected default.
+  const persisted =
+    startupOptions && 'persisted' in startupOptions
+      ? startupOptions.persisted
+      : loadProfileFile()
   const startupEnv = await buildStartupEnvFromProfile({
     ...startupOptions,
+    persisted,
     processEnv,
   })
   if (startupEnv === processEnv) {
@@ -2240,9 +2261,20 @@ export async function applyStartupEnvFromProfile(options?: StartupEnvOptions & {
 
   const validationError = await getProviderValidationError(startupEnv)
   if (validationError) {
-    onValidationError?.(
-      `Warning: ignoring saved provider profile. ${validationError}`,
-    )
+    // The injected fresh-install Opengateway default failing validation is the
+    // EXPECTED state for a brand-new machine with no OPENGATEWAY_API_KEY —
+    // nothing was "saved", so warning on every command (even --help) is
+    // first-boot noise, not signal (#1651 chose ignore+warn; the warn half
+    // broke the zero-warning install contract). Onboarding surfaces provider
+    // setup instead. Genuinely persisted profiles that fail validation still
+    // warn: the user configured something that no longer works. Both checks
+    // are required — `!persisted` is the provenance, the marker check keeps
+    // non-default fallback envs (e.g. the nvidia-nim rescue path) warning.
+    if (persisted || !isDefaultStartupProviderEnv(startupEnv)) {
+      onValidationError?.(
+        `Warning: ignoring saved provider profile. ${validationError}`,
+      )
+    }
     return validationError
   }
 

@@ -695,3 +695,55 @@ describe('Dev-channels dialog coverage', () => {
     )
   })
 })
+
+// ---------------------------------------------------------------------------
+// Fix: onboarding + trust dialog skipped entirely for third-party providers
+// ---------------------------------------------------------------------------
+// Behavioral coverage lives in src/utils/setupScreenGates.test.ts — the
+// gating decisions were extracted into that provider-free seam because this
+// module's import chain cannot be loaded under bun test (compile-time
+// feature() macro checker, same constraint as the dev-channels tests above).
+// These wiring checks assert showSetupScreens actually consults the seam and
+// that no provider gate was re-introduced around the dialogs.
+describe('Onboarding and trust dialog — third-party providers', () => {
+  test('showSetupScreens routes both dialogs through the provider-free seam', async () => {
+    const content = await file('interactiveHelpers.tsx').text()
+
+    expect(content).toContain('getRequiredSetupScreens({')
+    expect(content).toContain('if (setupScreens.onboarding)')
+    expect(content).toContain('if (setupScreens.trustDialog)')
+  })
+
+  test('the env-config option never renders the raw endpoint', async () => {
+    // OPENAI_BASE_URL/OPENAI_API_BASE can carry credentials (userinfo or
+    // token query params) and everything rendered lands in terminal
+    // scrollback. Redaction behavior is tested in envProviderOption.test.ts;
+    // this guards the wiring — the raw `envBaseUrl` may only reach profile
+    // persistence (addProviderProfile/getProviderProfiles/label), never a
+    // rendered label or status message.
+    const content = await file('components/ConsoleOAuthFlow.tsx').text()
+
+    expect(content).toContain('getEnvProviderOption()')
+    // Rendered sites use the redacted value.
+    expect(content).toMatch(/\{envBaseUrlVarName\}=\{envBaseUrlForDisplay\}/)
+    expect(content).toMatch(/\$\{envBaseUrlForDisplay\}\) as your active provider/)
+    // No rendered site interpolates the raw endpoint.
+    expect(content).not.toMatch(/\{envBaseUrl\}/)
+    expect(content).not.toMatch(/\$\{envBaseUrl\}/)
+  })
+
+  test('no dialog is gated behind usesAnthropicSetup', async () => {
+    const content = await file('interactiveHelpers.tsx').text()
+
+    // Theme choice + security notes are universal, and workspace trust is
+    // orthogonal to the API provider: an untrusted repo is exactly as
+    // dangerous over a local model as over Anthropic. The seam takes no
+    // provider input, so the only way to regress is to add a gate at the
+    // call sites — which this guards against.
+    expect(content).not.toMatch(/usesAnthropicSetup\s*&&\s*\(?\s*setupScreens/)
+    expect(content).not.toMatch(/usesAnthropicSetup\s*&&\s*\(\s*!config\.theme/)
+    expect(content).not.toMatch(
+      /usesAnthropicSetup\s*&&\s*!checkHasTrustDialogAccepted/,
+    )
+  })
+})

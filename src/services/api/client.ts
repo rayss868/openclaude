@@ -13,10 +13,11 @@ import {
   convertEffortValueToLevel,
   type EffortValue,
   resolveAppliedEffort,
+  resolveModelReasoningControl,
   modelSupportsShimReasoningEffort,
   modelSupportsWireEffort,
   standardEffortToOpenAI,
-  type OpenAIEffortLevel,
+  type OpenAIShimEffortLevel,
 } from 'src/utils/effort.js'
 import { getUserAgent } from 'src/utils/http.js'
 import { getSmallFastModel } from 'src/utils/model/model.js'
@@ -39,6 +40,7 @@ import {
 } from '../../utils/envUtils.js'
 import {
   getFireworksBaseUrlOverride,
+  getLongcatBaseUrlOverride,
   getMiniMaxBaseUrlOverride,
   getNearaiBaseUrlOverride,
   getRouteDefaultBaseUrl,
@@ -327,6 +329,32 @@ function applyFireworksEnvOnlyDefaults(): void {
   delete process.env.OPENAI_AUTH_HEADER_VALUE
 }
 
+function isLongcatModelName(value: string | undefined): boolean {
+  const normalized = value?.trim().toLowerCase()
+  return Boolean(normalized && normalized.startsWith('longcat'))
+}
+
+function applyLongcatEnvOnlyDefaults(): void {
+  const baseUrlOverride = getLongcatBaseUrlOverride()
+  const hasLongcatBaseOverride = baseUrlOverride !== undefined
+  const modelOverride = process.env.OPENAI_MODEL?.trim() || undefined
+
+  process.env.CLAUDE_CODE_USE_OPENAI = '1'
+  process.env.OPENAI_BASE_URL =
+    baseUrlOverride ?? getRouteDefaultBaseUrl('longcat')
+  process.env.OPENAI_MODEL =
+    (hasLongcatBaseOverride || isLongcatModelName(modelOverride)
+      ? modelOverride
+      : undefined) ??
+    getRouteDefaultModel('longcat')
+  process.env.OPENAI_API_KEY = process.env.LONGCAT_API_KEY
+  delete process.env.OPENAI_API_FORMAT
+  delete process.env.OPENAI_AZURE_STYLE
+  delete process.env.OPENAI_AUTH_HEADER
+  delete process.env.OPENAI_AUTH_SCHEME
+  delete process.env.OPENAI_AUTH_HEADER_VALUE
+}
+
 function applyAimlapiEnvOnlyDefaults(): void {
   const baseUrlOverride =
     process.env.OPENAI_BASE_URL?.trim() ||
@@ -407,6 +435,16 @@ export async function getAnthropicClient({
       )
       : modelSupportsWireEffort(effortModel)
     : false
+  const reasoningControl = effortModel
+    ? resolveModelReasoningControl(effortModel, effortContext)
+    : undefined
+  const k3ReasoningControl =
+    reasoningControl?.source === 'metadata' &&
+    reasoningControl.wireFormat === 'reasoning_effort' &&
+    reasoningControl.levels.length === 3 &&
+    reasoningControl.levels.includes('low') &&
+    reasoningControl.levels.includes('high') &&
+    reasoningControl.levels.includes('max')
   const appliedEffort = effortModel && effortValue !== undefined
     ? resolveAppliedEffort(
       effortModel,
@@ -414,9 +452,17 @@ export async function getAnthropicClient({
       effortContext,
     )
     : undefined
-  const shimReasoningEffort: OpenAIEffortLevel | undefined =
-    appliedEffort !== undefined && supportsShimReasoningEffort
-      ? standardEffortToOpenAI(convertEffortValueToLevel(appliedEffort))
+  const appliedEffortLevel = appliedEffort === undefined
+    ? undefined
+    : convertEffortValueToLevel(appliedEffort)
+  const shimReasoningEffort: OpenAIShimEffortLevel | undefined =
+    appliedEffortLevel !== undefined && supportsShimReasoningEffort
+      ? (reasoningControl?.source === 'metadata' &&
+          reasoningControl.wireFormat === 'reasoning_effort' &&
+          appliedEffortLevel === 'max' &&
+          k3ReasoningControl
+            ? 'max'
+          : standardEffortToOpenAI(appliedEffortLevel))
       : undefined
   const containerId = process.env.CLAUDE_CODE_CONTAINER_ID
   const remoteSessionId = process.env.CLAUDE_CODE_REMOTE_SESSION_ID
@@ -461,6 +507,8 @@ export async function getAnthropicClient({
     envOnlyProviderRouteId === 'nearai' && !useMiniMaxEnvOnlyProvider
   const useFireworksEnvOnlyProvider =
     envOnlyProviderRouteId === 'fireworks' && !useMiniMaxEnvOnlyProvider
+  const useLongcatEnvOnlyProvider =
+    envOnlyProviderRouteId === 'longcat' && !useMiniMaxEnvOnlyProvider
   const useAimlapiEnvOnlyProvider =
     envOnlyProviderRouteId === 'aimlapi' && !useMiniMaxEnvOnlyProvider
   if (useMiniMaxEnvOnlyProvider) {
@@ -477,6 +525,9 @@ export async function getAnthropicClient({
   }
   if (useFireworksEnvOnlyProvider) {
     applyFireworksEnvOnlyDefaults()
+  }
+  if (useLongcatEnvOnlyProvider) {
+    applyLongcatEnvOnlyDefaults()
   }
   if (useAimlapiEnvOnlyProvider) {
     applyAimlapiEnvOnlyDefaults()

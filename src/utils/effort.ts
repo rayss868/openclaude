@@ -44,6 +44,9 @@ export const OPENAI_EFFORT_LEVELS = [
 ] as const
 
 export type OpenAIEffortLevel = typeof OPENAI_EFFORT_LEVELS[number]
+// OpenAI-compatible shims also serve providers such as Kimi that accept the
+// provider-specific `max` value in the same `reasoning_effort` wire field.
+export type OpenAIShimEffortLevel = OpenAIEffortLevel | 'max'
 export type EffortValue = EffortLevel | number
 
 export type ReasoningControlResolution = {
@@ -53,6 +56,7 @@ export type ReasoningControlResolution = {
   levels: EffortLevel[]
   defaultLevel?: EffortValue
   wireFormat?: ReasoningWireFormat
+  disableFormat?: ReasoningControlMetadata['disableFormat']
   source: 'metadata' | 'capability' | 'compat' | 'legacy' | 'none'
 }
 
@@ -197,15 +201,15 @@ function normalizeReasoningThinkingType(
 }
 
 function normalizeDeepSeekReasoningEffort(
-  effort: 'low' | 'medium' | 'high' | 'xhigh',
+  effort: OpenAIShimEffortLevel,
 ): 'high' | 'max' {
-  return effort === 'xhigh' ? 'max' : 'high'
+  return effort === 'xhigh' || effort === 'max' ? 'max' : 'high'
 }
 
 function normalizeZaiReasoningEffort(
-  effort: 'low' | 'medium' | 'high' | 'xhigh',
+  effort: OpenAIShimEffortLevel,
 ): 'high' | 'max' {
-  return effort === 'xhigh' ? 'max' : 'high'
+  return effort === 'xhigh' || effort === 'max' ? 'max' : 'high'
 }
 
 function resolveCompatibilityWireFormat(
@@ -405,6 +409,7 @@ function resolveMetadataReasoningControl(
     levels,
     defaultLevel: normalizeReasoningDefaultLevel(reasoning.defaultLevel, levels),
     wireFormat,
+    disableFormat: reasoning.disableFormat,
     source: 'metadata',
   }
 }
@@ -580,13 +585,13 @@ export function modelSupportsWireEffort(model: string, context?: ReasoningContro
 
 export function resolveOpenAIShimReasoningRequestPlan(options: {
   model: string
-  requestedEffort?: OpenAIEffortLevel
+  requestedEffort?: OpenAIShimEffortLevel
   requestThinkingType?: string
   defaultThinkingType?: string
   thinkingRequestFormat?: OpenAIShimThinkingRequestFormat
   routeId?: string | null
   useRuntimeFallback?: boolean
-  reasoningControl?: Pick<ReasoningControlResolution, 'source' | 'wireFormat' | 'levels'>
+  reasoningControl?: Pick<ReasoningControlResolution, 'source' | 'wireFormat' | 'levels' | 'disableFormat'>
 }): OpenAIShimReasoningRequestPlan {
   const metadataWireFormat = options.reasoningControl?.source === 'metadata'
     ? options.reasoningControl.wireFormat
@@ -657,9 +662,27 @@ export function resolveOpenAIShimReasoningRequestPlan(options: {
   }
 
   return {
-    reasoningEffort: options.requestedEffort,
-    wireFormat: options.requestedEffort ? 'reasoning_effort' : undefined,
-    source: options.requestedEffort ? 'legacy' : 'none',
+    thinkingType:
+      (requestedThinkingType ?? defaultThinkingType) === 'disabled' &&
+      options.reasoningControl?.disableFormat === 'thinking_type_disabled'
+        ? 'disabled'
+        : undefined,
+    reasoningEffort:
+      (requestedThinkingType ?? defaultThinkingType) === 'disabled'
+        ? undefined
+        : options.requestedEffort,
+    wireFormat:
+      options.requestedEffort ||
+      ((requestedThinkingType ?? defaultThinkingType) === 'disabled' &&
+        options.reasoningControl?.disableFormat === 'thinking_type_disabled')
+        ? 'reasoning_effort'
+        : undefined,
+    source:
+      options.requestedEffort ||
+      ((requestedThinkingType ?? defaultThinkingType) === 'disabled' &&
+        options.reasoningControl?.disableFormat === 'thinking_type_disabled')
+        ? 'metadata'
+        : 'none',
   }
 }
 // @[MODEL LAUNCH]: Add the new model to the allowlist if it supports 'max' effort.
@@ -962,6 +985,17 @@ export function resolveAppliedEffort(
   const resolved =
     envOverride ?? appStateEffortValue ?? getDefaultEffortForModel(model, context)
   const control = resolveModelReasoningControl(model, context)
+  if (
+    resolved === 'xhigh' &&
+    control.source === 'metadata' &&
+    control.wireFormat === 'reasoning_effort' &&
+    control.levels.length === 3 &&
+    control.levels.includes('low') &&
+    control.levels.includes('high') &&
+    control.levels.includes('max')
+  ) {
+    return 'max'
+  }
   if (
     typeof resolved === 'string' &&
     (control.source === 'metadata' || control.source === 'capability' || control.source === 'compat') &&

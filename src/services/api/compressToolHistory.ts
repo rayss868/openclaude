@@ -17,8 +17,14 @@
  * Reuses isCompactableTool from microCompact to avoid touching tools the
  * project already classifies as unsafe to compress (e.g. Task, Agent).
  * Skips blocks already cleared by microCompact (TOOL_RESULT_CLEARED_MESSAGE).
- *
- * Anthropic native bypasses both shims, so it is unaffected by this module.
+ * Blocks this module already compressed are handled tier-aware: over the SAME
+ * input a second pass is a no-op (stubs and mid-tier truncations are at their
+ * target form), but as new exchanges age a truncated block into the old tier
+ * it still upgrades to a stub — carrying the pre-truncation length recovered
+ * from the marker. That idempotence-without-staleness matters because
+ * claude.ts also calls this for Anthropic-native transports when prompt
+ * caching is inactive — layered call sites must not re-mangle output, yet
+ * aging blocks must keep shrinking.
  */
 import { getEffectiveContextWindowSize } from '../compact/autoCompact.js'
 import { isCompactableTool } from '../compact/microCompact.js'
@@ -243,6 +249,10 @@ function buildStub(
   block: ToolResultBlock,
   toolUsesById: Map<string, ToolUseBlock>,
   separator: string,
+  // For blocks already truncated on an earlier pass: the true pre-truncation
+  // length recovered from the marker, so the stub reports what the tool
+  // actually returned instead of the truncated remnant's size.
+  originalLengthOverride?: number,
 ): ToolResultBlock {
   const original = extractText(block.content, separator)
   const toolUse = toolUsesById.get(block.tool_use_id ?? '')
@@ -252,7 +262,7 @@ function buildStub(
     : '{}'
   return replaceTextContent(
     block,
-    `[${name} args=${args} → ${original.length} chars omitted]`,
+    `[${name} args=${args} → ${originalLengthOverride ?? original.length} chars omitted]`,
   )
 }
 
@@ -326,6 +336,40 @@ function isAlreadyCleared(block: ToolResultBlock): boolean {
   return text === TOOL_RESULT_CLEARED_MESSAGE
 }
 
+// Output of buildStub / truncateBlock from a previous pass. Idempotency across
+// layered call sites (claude.ts + the shim can both run this) is TIER-AWARE,
+// not a blanket skip: a stub is the terminal form and is never re-stubbed
+// (that would replace `→ 45000 chars omitted` with a misleading `→ 58 chars
+// omitted`), and a truncated block is left alone only while it is still in
+// the mid tier — when later exchanges age it into the old tier it upgrades to
+// a stub, with the omitted-chars count recovered from the truncation marker
+// so it reflects the ORIGINAL output length, not the truncated remnant.
+const STUB_MARKER_RE = /^\[[^\n]* args=[^\n]* → \d+ chars omitted\]$/
+const TRUNCATION_MARKER_RE = /\n\[…truncated (\d+) chars from tool history\]$/
+
+type CompressedState =
+  | { kind: 'fresh' }
+  | { kind: 'stub' }
+  | { kind: 'truncated'; originalLength: number }
+
+function getCompressedState(
+  block: ToolResultBlock,
+  separator: string,
+): CompressedState {
+  const text = extractText(block.content, separator)
+  if (STUB_MARKER_RE.test(text)) return { kind: 'stub' }
+  const truncation = text.match(TRUNCATION_MARKER_RE)
+  if (truncation) {
+    // truncateTextContent kept `original - omitted` visible chars and encodes
+    // the omitted remainder in the marker; stripping the marker text itself
+    // recovers the pre-truncation length exactly.
+    const omitted = Number(truncation[1])
+    const visible = text.replace(TRUNCATION_MARKER_RE, '').length
+    return { kind: 'truncated', originalLength: visible + omitted }
+  }
+  return { kind: 'fresh' }
+}
+
 function shouldCompressBlock(
   block: ToolResultBlock,
   toolUsesById: Map<string, ToolUseBlock>,
@@ -347,6 +391,7 @@ export function compressToolHistory<T extends AnyMessage>(
   options: {
     effectiveContextWindowSize?: number
     textBlockSeparator?: string
+    runtimeLimits?: { contextWindow?: number; maxOutputTokens?: number }
   } = {},
 ): T[] {
   // Master kill-switch. Returns the original reference so callers skip a
@@ -357,7 +402,10 @@ export function compressToolHistory<T extends AnyMessage>(
   if (!compressionEnabled) return messages
 
   const tiers = getTiers(
-    options.effectiveContextWindowSize ?? getEffectiveContextWindowSize(model),
+    options.effectiveContextWindowSize ?? getEffectiveContextWindowSize(
+      model,
+      options.runtimeLimits,
+    ),
   )
   const textBlockSeparator = options.textBlockSeparator ?? '\n\n'
 
@@ -417,7 +465,18 @@ export function compressToolHistory<T extends AnyMessage>(
         return sanitizeClearedBlock(tr)
       }
       if (!shouldCompressBlock(tr, toolUsesById)) return block
-      return fromEnd < tiers.recent + tiers.mid
+      const inMidTier = fromEnd < tiers.recent + tiers.mid
+      const state = getCompressedState(tr, textBlockSeparator)
+      // Stubs are terminal. Truncated blocks are at target while mid-tier;
+      // once aged into the old tier they upgrade to a stub carrying the
+      // recovered pre-truncation length.
+      if (state.kind === 'stub') return block
+      if (state.kind === 'truncated') {
+        return inMidTier
+          ? block
+          : buildStub(tr, toolUsesById, textBlockSeparator, state.originalLength)
+      }
+      return inMidTier
         ? truncateBlock(tr, MID_MAX_CHARS, textBlockSeparator)
         : buildStub(tr, toolUsesById, textBlockSeparator)
     })

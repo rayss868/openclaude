@@ -7,6 +7,7 @@ import {
   getRouteDefaultModel,
   getRouteProviderTypeLabel,
   isCloudflareBaseUrl,
+  isLongcatBaseUrl,
   resolveActiveRouteIdFromEnv,
   resolveRouteCredentialValue,
   resolveRouteIdFromBaseUrl,
@@ -65,6 +66,28 @@ test('isCloudflareBaseUrl matches Workers AI host but not the shared AI Gateway'
       'http://api.cloudflare.com/client/v4/accounts/abc123/ai/v1',
     ),
   ).toBe(false)
+})
+
+test('isLongcatBaseUrl requires the documented HTTPS OpenAI API path', () => {
+  expect(isLongcatBaseUrl('https://api.longcat.chat/openai')).toBe(true)
+  expect(isLongcatBaseUrl('https://api.longcat.chat/openai/')).toBe(true)
+  expect(isLongcatBaseUrl('https://api.longcat.chat/openai/v1')).toBe(true)
+  expect(isLongcatBaseUrl('https://api.longcat.chat/openai/v1/chat/completions')).toBe(true)
+  expect(isLongcatBaseUrl('https://api.longcat.chat/openai/chat/completions')).toBe(true)
+  expect(isLongcatBaseUrl('https://api.longcat.chat/openai/other')).toBe(false)
+  expect(isLongcatBaseUrl('https://api.longcat.chat/openai/v1?query=value')).toBe(false)
+  expect(isLongcatBaseUrl('https://api.longcat.chat/openai/v1#fragment')).toBe(false)
+  expect(isLongcatBaseUrl('https://api.longcat.chat:8443/openai/v1')).toBe(false)
+  expect(isLongcatBaseUrl('http://api.longcat.chat/openai/v1')).toBe(false)
+  expect(isLongcatBaseUrl('https://api.longcat.chat/v1')).toBe(false)
+  expect(isLongcatBaseUrl('https://api.longcat.chat.evil.test/openai/v1')).toBe(false)
+})
+
+test('resolveActiveRouteIdFromEnv keeps generic OpenAI credentials ahead of env-only LongCat', () => {
+  expect(resolveActiveRouteIdFromEnv({
+    OPENAI_API_KEY: 'generic-key',
+    LONGCAT_API_KEY: 'longcat-key',
+  })).not.toBe('longcat')
 })
 
 test('getRouteProviderTypeLabel uses descriptor transport kinds for provider labels', () => {

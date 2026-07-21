@@ -13,7 +13,10 @@ import type { CacheSafeParams } from '../../utils/forkedAgent.js'
 import { logError } from '../../utils/log.js'
 import { tokenCountWithEstimation } from '../../utils/tokens.js'
 import { partitionContext } from '../../utils/contextPartitioning.js'
-import { pruneByRelevance } from '../../utils/relevancePruning.js'
+import {
+  normalizeCompactTailTurns,
+  pruneByRelevance,
+} from '../../utils/relevancePruning.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../analytics/growthbook.js'
 import { getMaxOutputTokensForModel } from '../api/claude.js'
 import { notifyCompaction } from '../api/promptCacheBreakDetection.js'
@@ -32,12 +35,19 @@ import { trySessionMemoryCompaction } from './sessionMemoryCompact.js'
 const MAX_OUTPUT_TOKENS_FOR_SUMMARY = 20_000
 
 // Returns the context window size minus the max output tokens for the model
-export function getEffectiveContextWindowSize(model: string): number {
+export function getEffectiveContextWindowSize(
+  model: string,
+  runtimeLimits?: { contextWindow?: number; maxOutputTokens?: number },
+): number {
   const reservedTokensForSummary = Math.min(
-    getMaxOutputTokensForModel(model),
+    runtimeLimits?.maxOutputTokens ?? getMaxOutputTokensForModel(model),
     MAX_OUTPUT_TOKENS_FOR_SUMMARY,
   )
-  let contextWindow = getContextWindowForModel(model, getSdkBetas())
+  let contextWindow = getContextWindowForModel(
+    model,
+    getSdkBetas(),
+    runtimeLimits,
+  )
 
   const autoCompactWindow = process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
   if (autoCompactWindow) {
@@ -488,9 +498,12 @@ export async function autoCompactIfNeeded(
     const systemMessages = messages.filter(m => m.message?.role === 'system')
     const nonSystemMessages = messages.filter(m => m.message?.role !== 'system')
     
+    // Config may be hand-edited; normalizeCompactTailTurns is the single
+    // rule (shared with the /config UI) — a stray `0.5` must not floor to a
+    // zero-message tail, and invalid values fall back to the default.
     const pruned = pruneByRelevance(nonSystemMessages, {
       targetTokens: availableSpace,
-      preserveRecent: 3,
+      preserveRecent: normalizeCompactTailTurns(getGlobalConfig().compactTailTurns),
       preserveTools: true,
       preserveErrors: true,
     })

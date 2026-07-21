@@ -55,6 +55,8 @@ const originalEnv = {
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
   DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
   MIMO_API_KEY: process.env.MIMO_API_KEY,
+  LONGCAT_API_KEY: process.env.LONGCAT_API_KEY,
+  CLINE_API_KEY: process.env.CLINE_API_KEY,
   OPENGATEWAY_API_KEY: process.env.OPENGATEWAY_API_KEY,
   OPENGATEWAY_BASE_URL: process.env.OPENGATEWAY_BASE_URL,
   OPENCODE_API_KEY: process.env.OPENCODE_API_KEY,
@@ -516,6 +518,8 @@ beforeEach(async () => {
   delete process.env.OPENROUTER_API_KEY
   delete process.env.DEEPSEEK_API_KEY
   delete process.env.MIMO_API_KEY
+  delete process.env.LONGCAT_API_KEY
+  delete process.env.CLINE_API_KEY
   delete process.env.OPENGATEWAY_API_KEY
   delete process.env.OPENGATEWAY_BASE_URL
   delete process.env.OPENCODE_API_KEY
@@ -561,6 +565,8 @@ afterEach(() => {
     restoreEnv('OPENROUTER_API_KEY', originalEnv.OPENROUTER_API_KEY)
     restoreEnv('DEEPSEEK_API_KEY', originalEnv.DEEPSEEK_API_KEY)
     restoreEnv('MIMO_API_KEY', originalEnv.MIMO_API_KEY)
+    restoreEnv('LONGCAT_API_KEY', originalEnv.LONGCAT_API_KEY)
+    restoreEnv('CLINE_API_KEY', originalEnv.CLINE_API_KEY)
     restoreEnv('OPENGATEWAY_API_KEY', originalEnv.OPENGATEWAY_API_KEY)
     restoreEnv('OPENGATEWAY_BASE_URL', originalEnv.OPENGATEWAY_BASE_URL)
     restoreEnv('OPENCODE_API_KEY', originalEnv.OPENCODE_API_KEY)
@@ -3271,6 +3277,7 @@ test('preserves Gemini tool call extra_content in follow-up requests', async () 
       {
         role: 'assistant',
         content: [
+          { type: 'thinking', thinking: 'I should inspect the working tree first.' },
           {
             type: 'tool_use',
             id: 'call_1',
@@ -4666,6 +4673,197 @@ test('gitlawb opengateway provider flag prefers OPENGATEWAY_API_KEY over generic
 
   expect(captured.url).toBe('http://localhost:8181/v1/chat/completions')
   expect(captured.authorization).toBe('Bearer fake-ogw-key')
+})
+
+test('longcat provider flag prefers LONGCAT_API_KEY over generic OPENAI_API_KEYS pool', async () => {
+  process.env.LONGCAT_API_KEY = 'fake-longcat-key'
+  process.env.OPENAI_API_KEYS = 'fake-openai-pool-a,fake-openai-pool-b'
+  delete process.env.OPENAI_BASE_URL
+  delete process.env.OPENAI_API_KEY
+
+  const result = applyProviderFlag('longcat', [])
+  expect(result.error).toBeUndefined()
+
+  const captured = await captureChatCompletionRequest()
+
+  expect(captured.url).toBe('https://api.longcat.chat/openai/v1/chat/completions')
+  expect(captured.authorization).toBe('Bearer fake-longcat-key')
+})
+
+test('longcat provider flag strips unsupported tool definitions', async () => {
+  let requestBody: Record<string, unknown> | undefined
+  globalThis.fetch = (async (_input, init) => {
+    requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+    return makeChatCompletionResponse('LongCat-2.0')
+  }) as unknown as FetchType
+
+  process.env.LONGCAT_API_KEY = 'fake-longcat-key'
+  delete process.env.OPENAI_BASE_URL
+  delete process.env.OPENAI_API_KEY
+
+  expect(applyProviderFlag('longcat', []).error).toBeUndefined()
+
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+  await client.beta.messages.create({
+    model: 'LongCat-2.0',
+    messages: [
+      { role: 'user', content: 'List files' },
+    ],
+    tools: [{
+      name: 'Bash',
+      description: 'Run a shell command',
+      input_schema: {
+        type: 'object',
+        properties: { command: { type: 'string' } },
+        required: ['command'],
+      },
+    }],
+    max_tokens: 32,
+    stream: false,
+  })
+
+  expect(requestBody?.tools).toBeUndefined()
+})
+
+test('longcat rejects image input before dispatch', async () => {
+  process.env.LONGCAT_API_KEY = 'fake-longcat-key'
+  delete process.env.OPENAI_BASE_URL
+  delete process.env.OPENAI_API_KEY
+
+  expect(applyProviderFlag('longcat', []).error).toBeUndefined()
+
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+  await expect(client.beta.messages.create({
+    model: 'LongCat-2.0',
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'text', text: 'Describe this image.' },
+        { type: 'image', source: { type: 'url', url: 'https://example.com/image.png' } },
+      ],
+    }],
+    max_tokens: 32,
+    stream: false,
+  })).rejects.toThrow('does not support image inputs')
+})
+
+test('longcat rejects image tool results before dispatch', async () => {
+  process.env.LONGCAT_API_KEY = 'fake-longcat-key'
+  delete process.env.OPENAI_BASE_URL
+  delete process.env.OPENAI_API_KEY
+  expect(applyProviderFlag('longcat', []).error).toBeUndefined()
+
+  const client = createOpenAIShimClient({}) as OpenAIShimClient
+  await expect(client.beta.messages.create({
+    model: 'LongCat-2.0',
+    messages: [
+      { role: 'user', content: 'Inspect the screenshot' },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'call_screenshot', name: 'Screenshot', input: {} }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'call_screenshot', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'aGVsbG8=' } }] }] },
+    ],
+    tools: [{ name: 'Screenshot', description: 'Capture a screenshot', input_schema: { type: 'object', properties: {} } }],
+    max_tokens: 32,
+    stream: false,
+  })).rejects.toThrow('does not support image inputs')
+})
+
+test('longcat accepts the documented bare OpenAI SDK base URL', async () => {
+  process.env.LONGCAT_API_KEY = 'fake-longcat-key'
+  process.env.OPENAI_BASE_URL = 'https://api.longcat.chat/openai'
+  delete process.env.OPENAI_API_KEY
+
+  expect(applyProviderFlag('longcat', []).error).toBeUndefined()
+
+  const captured = await captureChatCompletionRequest()
+
+  expect(captured.url).toBe('https://api.longcat.chat/openai/v1/chat/completions')
+  expect(captured.authorization).toBe('Bearer fake-longcat-key')
+})
+
+test('longcat accepts the documented bare OpenAI SDK base URL with a trailing slash', async () => {
+  process.env.LONGCAT_API_KEY = 'fake-longcat-key'
+  process.env.OPENAI_BASE_URL = 'https://api.longcat.chat/openai/'
+  delete process.env.OPENAI_API_KEY
+
+  expect(applyProviderFlag('longcat', []).error).toBeUndefined()
+
+  const captured = await captureChatCompletionRequest()
+
+  expect(captured.url).toBe('https://api.longcat.chat/openai/v1/chat/completions')
+  expect(captured.authorization).toBe('Bearer fake-longcat-key')
+})
+
+test('longcat does not append chat completions to a configured endpoint URL', async () => {
+  process.env.LONGCAT_API_KEY = 'fake-longcat-key'
+  process.env.OPENAI_BASE_URL = 'https://api.longcat.chat/openai/v1/chat/completions'
+  delete process.env.OPENAI_API_KEY
+
+  expect(applyProviderFlag('longcat', []).error).toBeUndefined()
+
+  const captured = await captureChatCompletionRequest()
+
+  expect(captured.url).toBe('https://api.longcat.chat/openai/v1/chat/completions')
+  expect(captured.authorization).toBe('Bearer fake-longcat-key')
+})
+
+test('longcat normalizes a configured endpoint URL with a trailing slash', async () => {
+  process.env.LONGCAT_API_KEY = 'fake-longcat-key'
+  process.env.OPENAI_BASE_URL = 'https://api.longcat.chat/openai/v1/chat/completions/'
+  delete process.env.OPENAI_API_KEY
+
+  expect(applyProviderFlag('longcat', []).error).toBeUndefined()
+  const captured = await captureChatCompletionRequest()
+  expect(captured.url).toBe('https://api.longcat.chat/openai/v1/chat/completions')
+})
+
+test('longcat accepts the documented CodeBuddy endpoint URL', async () => {
+  process.env.LONGCAT_API_KEY = 'fake-longcat-key'
+  process.env.OPENAI_BASE_URL = 'https://api.longcat.chat/openai/chat/completions'
+  delete process.env.OPENAI_API_KEY
+
+  expect(applyProviderFlag('longcat', []).error).toBeUndefined()
+  const captured = await captureChatCompletionRequest()
+  expect(captured.url).toBe('https://api.longcat.chat/openai/chat/completions')
+})
+
+test('longcat prefers its dedicated credential over a copied key from another provider', async () => {
+  process.env.LONGCAT_API_KEY = 'fake-longcat-key'
+  process.env.MIMO_API_KEY = 'fake-mimo-key'
+  process.env.OPENAI_API_KEY = 'fake-mimo-key'
+  process.env.OPENAI_BASE_URL = 'https://api.longcat.chat/openai/v1'
+
+  const captured = await captureChatCompletionRequest('LongCat-2.0')
+
+  expect(captured.authorization).toBe('Bearer fake-longcat-key')
+})
+
+test('longcat provider flag never falls back to an OPENAI_API_KEYS pool', async () => {
+  process.env.OPENAI_API_KEYS = 'other-provider-secret'
+  delete process.env.LONGCAT_API_KEY
+  delete process.env.OPENAI_BASE_URL
+  delete process.env.OPENAI_API_KEY
+
+  const result = applyProviderFlag('longcat', [])
+  expect(result.error).toBeUndefined()
+
+  const captured = await captureChatCompletionRequest()
+
+  expect(captured.authorization).not.toBe('Bearer other-provider-secret')
+})
+
+test('dedicated-only ClinePass route never falls back to generic OpenAI credentials', async () => {
+  process.env.CLAUDE_CODE_USE_OPENAI = '1'
+  process.env.OPENAI_BASE_URL = 'https://api.cline.bot/api/v1'
+  process.env.OPENAI_MODEL = 'cline-pass/deepseek-v4-flash'
+  process.env.OPENAI_API_KEY = 'generic-openai-key'
+  process.env.OPENAI_API_KEYS = 'generic-openai-pool-a,generic-openai-pool-b'
+  delete process.env.CLINE_API_KEY
+
+  const captured = await captureChatCompletionRequest(
+    'cline-pass/deepseek-v4-flash',
+  )
+
+  expect(captured.authorization).toBeNull()
 })
 
 test('gitlawb opengateway provider flag uses generic OPENAI_API_KEYS pool before generic OPENAI_API_KEY fallback', async () => {
