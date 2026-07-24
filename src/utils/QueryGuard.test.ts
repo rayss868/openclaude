@@ -350,7 +350,7 @@ describe('QueryGuard', () => {
   test('larger hard maximum does not abort at the default hard max boundary', () => {
     vi.useFakeTimers()
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    const configuredHardMaxMs = DEFAULT_QUERY_HARD_MAX_MS + 1_000
+    const configuredHardMaxMs = 5_000
     const guard = new QueryGuard({
       idleTimeoutMs: 100,
       hardMaxQueryMs: configuredHardMaxMs,
@@ -359,22 +359,23 @@ describe('QueryGuard', () => {
     const onTimeout = vi.fn()
     guard.setTimeoutHandler(onTimeout)
     const gen = guard.tryStart()!
+    // Lease longer than hard max so the hard max fires first
     guard.acquireLease(
       {
         owner: 'api',
         id: 'stream',
-        timeoutMs: configuredHardMaxMs,
+        timeoutMs: configuredHardMaxMs + 10_000,
       },
       gen,
     )
 
-    vi.advanceTimersByTime(DEFAULT_QUERY_HARD_MAX_MS)
-
+    // Just before configured hard max — query still active
+    vi.advanceTimersByTime(configuredHardMaxMs - 1)
     expect(guard.isActive).toBe(true)
     expect(onTimeout).not.toHaveBeenCalled()
 
-    vi.advanceTimersByTime(1_000)
-
+    // Advance past the configured hard max — hard_max timeout fires
+    vi.advanceTimersByTime(1)
     expect(guard.isActive).toBe(false)
     expect(onTimeout).toHaveBeenCalledWith(
       expect.objectContaining({
