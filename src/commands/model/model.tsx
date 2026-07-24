@@ -444,7 +444,7 @@ async function loadDescriptorDiscoveryContext(
     return null
   }
 
-  if (routeId === 'custom') {
+  if (routeId === 'custom' && getAdditionalModelOptionsCacheScope()?.startsWith('openai:')) {
     return null
   }
 
@@ -549,8 +549,7 @@ async function loadModelDiscoveryContext(): Promise<ModelDiscoveryContext | null
   }
 
   if (
-    getAdditionalModelOptionsCacheScope()?.startsWith('openai:') ||
-    routeId === 'custom'
+    getAdditionalModelOptionsCacheScope()?.startsWith('openai:')
   ) {
     const { baseUrl } = getOpenAIDiscoveryRequestOptions()
     const activeProfile = getActiveProviderProfile()
