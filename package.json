@@ -23,6 +23,7 @@
     "scripts/windows/openclaude-aliases.ps1",
     "vendor/node-domexception-shim/",
     "docs/windows-aliases-and-launchers.md",
+    "config/defaults/",
     "README.md"
   ],
   "scripts": {

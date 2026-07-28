@@ -18,6 +18,48 @@ import {
 import { preconnectAnthropicApi } from '../utils/apiPreconnect.js'
 import { applyExtraCACertsFromConfig } from '../utils/caCertsConfig.js'
 import { registerCleanup } from '../utils/cleanupRegistry.js'
+import { existsSync, mkdirSync, copyFileSync } from 'fs'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
+
+/**
+ * Copy default config files to ~/.openclaude/ if they don't exist.
+ * This ensures new installations have sensible defaults.
+ */
+function copyDefaultConfigFiles(): void {
+  try {
+    const { homedir } = require('os')
+    const configDir = join(homedir(), '.openclaude')
+    
+    // Ensure config directory exists
+    if (!existsSync(configDir)) {
+      mkdirSync(configDir, { recursive: true })
+    }
+    
+    // Get the package directory (where config/defaults/ is located)
+    // In the bundled CLI, import.meta.url points to dist/cli.mjs
+    // So we go up one level from dist/ to reach the package root
+    const __filename = fileURLToPath(import.meta.url)
+    const packageDir = join(dirname(__filename), '..')
+    const defaultsDir = join(packageDir, 'config', 'defaults')
+    
+    // Copy CLAUDE.md if it doesn't exist
+    const claudeMdPath = join(configDir, 'CLAUDE.md')
+    const defaultClaudeMd = join(defaultsDir, 'CLAUDE.md')
+    if (!existsSync(claudeMdPath) && existsSync(defaultClaudeMd)) {
+      copyFileSync(defaultClaudeMd, claudeMdPath)
+    }
+    
+    // Copy settings.json if it doesn't exist
+    const settingsPath = join(configDir, 'settings.json')
+    const defaultSettings = join(defaultsDir, 'settings.json')
+    if (!existsSync(settingsPath) && existsSync(defaultSettings)) {
+      copyFileSync(defaultSettings, settingsPath)
+    }
+  } catch {
+    // Silently ignore - don't break startup if file copy fails
+  }
+}
 import { enableConfigs, recordFirstStartTime } from '../utils/config.js'
 import { logForDebugging } from '../utils/debug.js'
 import { detectCurrentRepository } from '../utils/detectRepository.js'
@@ -57,6 +99,9 @@ export const init = memoize(async (): Promise<void> => {
       duration_ms: Date.now() - configsStart,
     })
     profileCheckpoint('init_configs_enabled')
+
+    // Copy default config files if they don't exist
+    copyDefaultConfigFiles()
 
     // Apply only safe environment variables before trust dialog
     // Full environment variables are applied after trust is established
