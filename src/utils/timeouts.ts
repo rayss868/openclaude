@@ -1,8 +1,8 @@
 import { DEFAULT_QUERY_HARD_MAX_MS } from './QueryGuard.js'
 
 // Constants for timeout values
-const DEFAULT_TIMEOUT_MS = 120_000 // 2 minutes
-const MAX_TIMEOUT_MS = 600_000 // 10 minutes
+const DEFAULT_TIMEOUT_MS = 1_800_000 // 30 minutes
+const MAX_TIMEOUT_MS = 3_600_000 // 60 minutes
 
 type EnvLike = Record<string, string | undefined>
 
