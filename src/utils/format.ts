@@ -47,6 +47,9 @@ export function formatDuration(
   ms: number,
   options?: { hideTrailingZeros?: boolean; mostSignificantOnly?: boolean },
 ): string {
+  if (!Number.isFinite(ms)) {
+    return '∞'
+  }
   if (ms < 60000) {
     // Special case for 0
     if (ms === 0) {

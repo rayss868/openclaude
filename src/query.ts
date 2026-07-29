@@ -3038,8 +3038,15 @@ async function* queryLoop(
 
     queryCheckpoint('query_recursive_call')
 
+    // Add a continuation nudge after tool results to prevent the model
+    // from stopping prematurely after executing tools.
+    const nudgeAfterTools = createUserMessage({
+      content: 'Continue with the task. Use the appropriate tools to proceed to the next step.',
+      isMeta: true,
+    })
+
     const next: State = {
-      messages: [...messagesForQuery, ...assistantMessages, ...toolResults],
+      messages: [...messagesForQuery, ...assistantMessages, ...toolResults, nudgeAfterTools],
       toolUseContext: toolUseContextWithQueryTracking,
       autoCompactTracking: tracking,
       turnCount: nextTurnCount,

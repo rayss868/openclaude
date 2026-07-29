@@ -310,11 +310,13 @@ class ShellCommandImpl implements ShellCommand {
     this.#childProcess.once('exit', this.#exitHandler.bind(this))
     this.#childProcess.once('error', this.#errorHandler.bind(this))
 
-    this.#timeoutId = setTimeout(
-      ShellCommandImpl.#handleTimeout,
-      this.#timeout,
-      this,
-    ) as NodeJS.Timeout
+    this.#timeoutId = Number.isFinite(this.#timeout)
+      ? (setTimeout(
+          ShellCommandImpl.#handleTimeout,
+          this.#timeout,
+          this,
+        ) as NodeJS.Timeout)
+      : null
 
     const exitPromise = new Promise<number>(resolve => {
       this.#exitCodeResolver = resolve
@@ -379,7 +381,9 @@ class ShellCommandImpl implements ShellCommand {
       )
     } else if (code === SIGTERM) {
       result.stderr = prependStderr(
-        `Command timed out after ${formatDuration(this.#timeout)}`,
+        Number.isFinite(this.#timeout)
+          ? `Command timed out after ${formatDuration(this.#timeout)}`
+          : 'Command was terminated',
         result.stderr,
       )
     }
