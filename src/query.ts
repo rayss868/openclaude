@@ -109,6 +109,7 @@ import {
 import { ESCALATED_MAX_TOKENS } from './utils/context.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from './services/analytics/growthbook.js'
 import { SLEEP_TOOL_NAME } from './tools/SleepTool/prompt.js'
+import { TASK_COMPLETE_TOOL_NAME } from './tools/TaskCompleteTool/constants.js'
 import { executePostSamplingHooks } from './utils/hooks/postSamplingHooks.js'
 import { executeStopFailureHooks } from './utils/hooks.js'
 import type { QuerySource } from './constants/querySource.js'
@@ -2435,7 +2436,7 @@ async function* queryLoop(
             )
             const nudge = createUserMessage({
               content:
-                'Continue with the task. If you were interrupted, resume your thought. Otherwise, use the appropriate tools to proceed to the next step.',
+                'If you have completed the task, call the TaskComplete tool to signal completion. Otherwise, continue with your work using the available tools.',
               isMeta: true,
             })
             const next: State = {
@@ -2474,7 +2475,7 @@ async function* queryLoop(
             )
             const nudge = createUserMessage({
               content:
-                'Continue with the task. If you were interrupted, resume your thought. Otherwise, use the appropriate tools to proceed to the next step.',
+                'If you have completed the task, call the TaskComplete tool to signal completion. Otherwise, continue with your work using the available tools.',
               isMeta: true,
             })
             const next: State = {
@@ -3036,14 +3037,20 @@ async function* queryLoop(
       }))
     }
 
-    queryCheckpoint('query_recursive_call')
+	    queryCheckpoint('query_recursive_call')
 
-    // Add a continuation nudge after tool results to prevent the model
-    // from stopping prematurely after executing tools.
-    const nudgeAfterTools = createUserMessage({
-      content: 'Continue with the task. Use the appropriate tools to proceed to the next step.',
-      isMeta: true,
-    })
+	    // If TaskComplete was called, the AI has explicitly signaled completion.
+	    // Return completed immediately instead of nudging for continuation.
+	    if (toolUseBlocks.some(b => b.name === TASK_COMPLETE_TOOL_NAME)) {
+	      return { reason: 'completed' }
+	    }
+
+	    // Add a continuation nudge after tool results to prevent the model
+	    // from stopping prematurely after executing tools.
+	    const nudgeAfterTools = createUserMessage({
+	      content: 'If you have completed the task, call the TaskComplete tool to signal completion. Otherwise, continue with your work using the available tools.',
+	      isMeta: true,
+	    })
 
     const next: State = {
       messages: [...messagesForQuery, ...assistantMessages, ...toolResults, nudgeAfterTools],

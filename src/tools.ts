@@ -45,6 +45,7 @@ const SubscribePRTool = feature('KAIROS_GITHUB_WEBHOOKS')
 import { TaskOutputTool } from './tools/TaskOutputTool/TaskOutputTool.js'
 import { WebSearchTool } from './tools/WebSearchTool/WebSearchTool.js'
 import { TodoWriteTool } from './tools/TodoWriteTool/TodoWriteTool.js'
+import { TaskCompleteTool } from './tools/TaskCompleteTool/TaskCompleteTool.js'
 import { ExitPlanModeV2Tool } from './tools/ExitPlanModeTool/ExitPlanModeV2Tool.js'
 import { TestingPermissionTool } from './tools/testing/TestingPermissionTool.js'
 import { GrepTool } from './tools/GrepTool/GrepTool.js'
@@ -199,6 +200,7 @@ export function getAllBaseTools(): Tools {
     TodoWriteTool,
     WebSearchTool,
     TaskStopTool,
+    TaskCompleteTool,
     AskUserQuestionTool,
     SkillTool,
     EnterPlanModeTool,

@@ -6,6 +6,7 @@ import { ENTER_PLAN_MODE_TOOL_NAME } from '../tools/EnterPlanModeTool/constants.
 import { AGENT_TOOL_NAME } from '../tools/AgentTool/constants.js'
 import { ASK_USER_QUESTION_TOOL_NAME } from '../tools/AskUserQuestionTool/prompt.js'
 import { TASK_STOP_TOOL_NAME } from '../tools/TaskStopTool/prompt.js'
+import { TASK_COMPLETE_TOOL_NAME } from '../tools/TaskCompleteTool/constants.js'
 import { FILE_READ_TOOL_NAME } from '../tools/FileReadTool/prompt.js'
 import { WEB_SEARCH_TOOL_NAME } from '../tools/WebSearchTool/prompt.js'
 import { TODO_WRITE_TOOL_NAME } from '../tools/TodoWriteTool/constants.js'
@@ -63,10 +64,11 @@ export const ASYNC_AGENT_ALLOWED_TOOLS = new Set([
   NOTEBOOK_EDIT_TOOL_NAME,
   SKILL_TOOL_NAME,
   SYNTHETIC_OUTPUT_TOOL_NAME,
-  TOOL_SEARCH_TOOL_NAME,
-  ENTER_WORKTREE_TOOL_NAME,
-  EXIT_WORKTREE_TOOL_NAME,
-])
+	  TOOL_SEARCH_TOOL_NAME,
+	  TASK_COMPLETE_TOOL_NAME,
+	  ENTER_WORKTREE_TOOL_NAME,
+	  EXIT_WORKTREE_TOOL_NAME,
+	])
 /**
  * Tools allowed only for in-process teammates (not general async agents).
  * These are injected by inProcessRunner.ts and allowed through filterToolsForAgent

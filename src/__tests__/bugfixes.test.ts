@@ -139,13 +139,13 @@ describe('Agent loop continuation nudge', () => {
     expect(analyzeContinuationIntent("Here is the code:\n```typescript\nfunction test() {").shouldNudge).toBe(true)
   })
 
-  test('nudge creates a meta user message to continue', async () => {
-    const content = await file('query.ts').text()
+	test('nudge creates a meta user message to continue', async () => {
+	    const content = await file('query.ts').text()
 
-    expect(content).toContain(
-      'Continue with the task. If you were interrupted, resume your thought. Otherwise, use the appropriate tools to proceed to the next step.',
-    )
-  })
+	    expect(content).toContain(
+	      'If you have completed the task, call the TaskComplete tool to signal completion. Otherwise, continue with your work using the available tools.',
+	    )
+	  })
 })
 
 // ---------------------------------------------------------------------------
