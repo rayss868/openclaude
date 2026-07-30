@@ -79,6 +79,31 @@ function getCompiledValidator(schema: object) {
   return compiled
 }
 
+/**
+ * Format a simplified JSON schema summary showing properties, types and required
+ * fields. Helps the AI understand what parameters are valid when a call fails.
+ * Skips large/complex schemas to avoid bloating the error message.
+ */
+function formatSimplifiedSchema(schema: object): string | null {
+  const s = schema as Record<string, unknown>
+  const props = s.properties as Record<string, unknown> | undefined
+  const required = s.required as string[] | undefined
+  if (!props || Object.keys(props).length === 0) return null
+  if (Object.keys(props).length > 30) return null // too complex
+
+  const lines: string[] = ['Valid parameters:']
+  for (const [key, val] of Object.entries(props)) {
+    const prop = val as Record<string, unknown>
+    const type = Array.isArray(prop.type) ? prop.type.join('|') : (prop.type ?? 'any')
+    const desc = typeof prop.description === 'string' ? ` — ${prop.description}` : ''
+    lines.push(`  ${key} (${type})${desc}`)
+  }
+  if (required && required.length > 0) {
+    lines.push(`Required: ${required.join(', ')}`)
+  }
+  return lines.join('\n')
+}
+
 export const MCPTool = buildTool({
   isMcp: true,
   // Overridden in mcpClient.ts with the real MCP tool name + args
@@ -121,9 +146,14 @@ export const MCPTool = buildTool({
           this.inputJSONSchema,
         )
         if (!validate(input)) {
+          const errorMsg = errorsText(validate.errors)
+          const schemaHint = formatSimplifiedSchema(this.inputJSONSchema)
+          const message = schemaHint
+            ? `${errorMsg}\n\n${schemaHint}`
+            : errorMsg
           return {
             result: false,
-            message: errorsText(validate.errors),
+            message,
             errorCode: 400,
           }
         }
