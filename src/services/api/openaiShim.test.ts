@@ -1328,12 +1328,12 @@ test('uses OpenAI-compatible responses endpoint with text chunk types when OPENA
 test('uses correct empty input fallback schema for standard responses and responses_compat', async () => {
   let capturedBody: Record<string, unknown> | undefined
 
-  globalThis.fetch = (async (input, init) => {
+  globalThis.fetch = (async (_input, init) => {
     capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>
     return new Response(JSON.stringify({
       id: 'resp-1',
       model: 'test',
-      output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'ok' }] }]
+      output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'ok' }] }],
     }), { headers: { 'Content-Type': 'application/json' } })
   }) as unknown as FetchType
 
@@ -1369,6 +1369,7 @@ test('uses correct empty input fallback schema for standard responses and respon
     },
   ])
 })
+
 // openaiShim test extraction seam 005 end
 
 

@@ -274,6 +274,10 @@ export type AgentMetadata = {
   agentType: string
   /** Worktree path if the agent was spawned with isolation: "worktree" */
   worktreePath?: string
+  /** Explicit AgentTool cwd override for the agent's working directory.
+   * Persisted even when a worktree exists so resume can fall back to the
+   * child-repo directory after worktree cleanup (multi-repo parents). */
+  cwd?: string
   /** Original task description from the AgentTool input. Persisted so a
    * resumed agent's notification can show the original description instead
    * of a placeholder. Optional — older metadata files lack this field. */
