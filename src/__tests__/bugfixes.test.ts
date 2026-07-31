@@ -143,7 +143,7 @@ describe('Agent loop continuation nudge', () => {
 	    const content = await file('query.ts').text()
 
 	    expect(content).toContain(
-	      'write a brief final summary of what you accomplished, then call the TaskComplete tool to signal completion.',
+	      'When the task is fully complete, call TaskComplete with a final summary.',
 	    )
 	  })
 })

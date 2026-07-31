@@ -2441,7 +2441,7 @@ async function* queryLoop(
             )
             const nudge = createUserMessage({
               content:
-                'If you have completed the task, write a brief final summary of what you accomplished, then call the TaskComplete tool to signal completion. Otherwise, continue with your work using the available tools.',
+                'Continue with the task. Use the appropriate tools to proceed to the next step. When the task is fully complete, call TaskComplete with a final summary.',
               isMeta: true,
             })
             const next: State = {
@@ -2480,7 +2480,7 @@ async function* queryLoop(
             )
             const nudge = createUserMessage({
               content:
-                'If you have completed the task, write a brief final summary of what you accomplished, then call the TaskComplete tool to signal completion. Otherwise, continue with your work using the available tools.',
+                'Continue with the task. Use the appropriate tools to proceed to the next step. When the task is fully complete, call TaskComplete with a final summary.',
               isMeta: true,
             })
             const next: State = {
@@ -2530,7 +2530,7 @@ async function* queryLoop(
         )
         const nudge = createUserMessage({
           content:
-            'You did not call the TaskComplete tool after your last tool calls. If you have completed the task, write a brief final summary of what you accomplished, then call TaskComplete to signal completion. Otherwise, continue with your work using the available tools.',
+            'You did not call the TaskComplete tool after your last tool calls. Continue with the task using the available tools. When the task is fully complete, call TaskComplete with a final summary.',
           isMeta: true,
         })
         const next: State = {
@@ -3097,9 +3097,12 @@ async function* queryLoop(
 	    }
 
 	    // Add a continuation nudge after tool results to prevent the model
-	    // from stopping prematurely after executing tools.
+	    // from stopping prematurely after executing tools. Deliberately
+	    // pro-continue: giving the model a "if done, summarize and complete"
+	    // escape hatch here lets it prematurely wrap up mid-task. The model
+	    // signals real completion by calling TaskComplete itself.
 	    const nudgeAfterTools = createUserMessage({
-	      content: 'If you have completed the task, write a brief final summary of what you accomplished, then call the TaskComplete tool to signal completion. Otherwise, continue with your work using the available tools.',
+	      content: 'Continue with the task. Use the appropriate tools to proceed to the next step. When the task is fully complete, call TaskComplete with a final summary.',
 	      isMeta: true,
 	    })
 
