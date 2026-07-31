@@ -642,6 +642,11 @@ async function* queryLoop(
   // trigger point. Loop-local (not on State) to avoid touching the 7 continue
   // sites.
   let taskBudgetRemaining: number | undefined = undefined
+  // Set true the first time any tool executes in this query turn. Persists
+  // across loop iterations (loop-local, survives State rebuilds). Used by the
+  // completion path to nudge the model after real tool work so it can't stop
+  // prematurely mid-task — plain conversational turns never set it.
+  let hasExecutedTools = false
   // Request-only context can be invalidated by a full conversation rewrite.
   // Keep it outside the loop so that invalidation survives every retry state.
   let requestOnlyMessages = params.requestOnlyMessages
@@ -2510,13 +2515,13 @@ async function* queryLoop(
         }
       }
 
-      // If the AI just finished executing tools (transition 'next_turn') but
-      // then stopped without calling TaskComplete or any other tool, it may
-      // have stopped prematurely mid-task. Nudge it to either explicitly
-      // signal completion or continue working. Conversational turns (no prior
-      // tool execution) are not nudged. Guard: capped at MAX_CONTINUATION_NUDGES.
+      // If the AI executed tools earlier in this turn but then stopped without
+      // calling TaskComplete or any other tool, it may have stopped prematurely
+      // mid-task. Nudge it to either explicitly signal completion or continue
+      // working. Conversational turns (no tool execution) are not nudged.
+      // Guard: capped at MAX_CONTINUATION_NUDGES to prevent infinite loops.
       if (
-        state.transition?.reason === 'next_turn' &&
+        hasExecutedTools &&
         assistantMessages.length > 0 &&
         state.continuationNudgeCount < MAX_CONTINUATION_NUDGES
       ) {
@@ -2637,6 +2642,13 @@ async function* queryLoop(
           queryTracking,
         }
       }
+    }
+
+    // Any tool that actually executed counts as real work. This flag survives
+    // loop iterations and tells the completion path to nudge if the model stops
+    // without TaskComplete.
+    if (toolUseBlocksToExecute.length > 0) {
+      hasExecutedTools = true
     }
 
     if (nextAgentStepLimit && blockedToolUseBlocks.length > 0) {
