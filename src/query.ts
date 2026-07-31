@@ -2441,7 +2441,7 @@ async function* queryLoop(
             )
             const nudge = createUserMessage({
               content:
-                'If you have completed the task, call the TaskComplete tool to signal completion. Otherwise, continue with your work using the available tools.',
+                'If you have completed the task, write a brief final summary of what you accomplished, then call the TaskComplete tool to signal completion. Otherwise, continue with your work using the available tools.',
               isMeta: true,
             })
             const next: State = {
@@ -2480,7 +2480,7 @@ async function* queryLoop(
             )
             const nudge = createUserMessage({
               content:
-                'If you have completed the task, call the TaskComplete tool to signal completion. Otherwise, continue with your work using the available tools.',
+                'If you have completed the task, write a brief final summary of what you accomplished, then call the TaskComplete tool to signal completion. Otherwise, continue with your work using the available tools.',
               isMeta: true,
             })
             const next: State = {
@@ -2530,7 +2530,7 @@ async function* queryLoop(
         )
         const nudge = createUserMessage({
           content:
-            'You did not call the TaskComplete tool after your last tool calls. If you have completed the task, call TaskComplete to signal completion. Otherwise, continue with your work using the available tools.',
+            'You did not call the TaskComplete tool after your last tool calls. If you have completed the task, write a brief final summary of what you accomplished, then call TaskComplete to signal completion. Otherwise, continue with your work using the available tools.',
           isMeta: true,
         })
         const next: State = {
@@ -3099,7 +3099,7 @@ async function* queryLoop(
 	    // Add a continuation nudge after tool results to prevent the model
 	    // from stopping prematurely after executing tools.
 	    const nudgeAfterTools = createUserMessage({
-	      content: 'If you have completed the task, call the TaskComplete tool to signal completion. Otherwise, continue with your work using the available tools.',
+	      content: 'If you have completed the task, write a brief final summary of what you accomplished, then call the TaskComplete tool to signal completion. Otherwise, continue with your work using the available tools.',
 	      isMeta: true,
 	    })
 

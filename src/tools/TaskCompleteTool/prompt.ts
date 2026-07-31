@@ -14,4 +14,12 @@ export const DESCRIPTION = `- Signals that you have completed the current task
 - If you need to continue with more steps
 - If you are waiting for tool results before proceeding
 
-Always call TaskComplete when you are truly done. This signals to the system that your work is finished and no further action is needed.`
+## IMPORTANT: Always summarize before completing
+Before calling TaskComplete, ALWAYS write a concise final summary in your
+response text (same message or just before the tool call) covering:
+1. What was accomplished
+2. Key results or outcomes
+3. Any follow-up actions or notes for the user
+
+Do NOT call TaskComplete with an empty or silent message. The user should
+always see a clear closing summary of your work when you complete.`
