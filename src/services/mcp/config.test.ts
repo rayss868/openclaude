@@ -17,6 +17,9 @@ afterEach(() => {
   try {
     delete (getGlobalConfig() as Record<string, unknown>).disabledMcpServers
     saveCurrentProjectConfig(() => ({
+      allowedTools: [],
+      mcpContextUris: [],
+      projectOnboardingSeenCount: 0,
       mcpServers: {},
       disabledMcpServers: undefined,
     }))
