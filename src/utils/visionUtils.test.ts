@@ -105,6 +105,39 @@ describe('isVisionSupported', () => {
       }
     }
   })
+
+  test('returns false for non-vision catalog aliases that share a vision-model prefix', () => {
+    expect(isVisionSupported('mimo-v2.5-free')).toBe(false)
+  })
+
+  test('returns false for route-specific catalog aliases that collide with global vision models', () => {
+    expect(
+      isVisionSupported('mimo-v2.5', {
+        baseUrl: 'https://opencode.ai/zen/go/v1',
+      }),
+    ).toBe(false)
+  })
+
+  test('returns false for the text-only MiniMax M2.7 model on the MiniMax route', () => {
+    expect(
+      isVisionSupported('MiniMax-M2.7', {
+        baseUrl: 'https://api.minimax.io/anthropic',
+      }),
+    ).toBe(false)
+  })
+
+  test('returns true for Claude models', () => {
+    expect(isVisionSupported('claude-sonnet-4-6')).toBe(true)
+  })
+
+  test('returns true for Gemini models', () => {
+    expect(isVisionSupported('gemini-2.5-pro')).toBe(true)
+  })
+
+  test('falls open for unknown models so custom / non-registered providers keep working', () => {
+    expect(isVisionSupported('custom-vision-corp/secret-model-v1')).toBe(true)
+    expect(isVisionSupported('not-a-real-model-xyz')).toBe(true)
+  })
 })
 
 describe('checkVisionCapabilityForFile (issue #1421)', () => {
