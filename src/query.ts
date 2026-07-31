@@ -2510,6 +2510,45 @@ async function* queryLoop(
         }
       }
 
+      // If the AI just finished executing tools (transition 'next_turn') but
+      // then stopped without calling TaskComplete or any other tool, it may
+      // have stopped prematurely mid-task. Nudge it to either explicitly
+      // signal completion or continue working. Conversational turns (no prior
+      // tool execution) are not nudged. Guard: capped at MAX_CONTINUATION_NUDGES.
+      if (
+        state.transition?.reason === 'next_turn' &&
+        assistantMessages.length > 0 &&
+        state.continuationNudgeCount < MAX_CONTINUATION_NUDGES
+      ) {
+        logForDebugging(
+          `TaskComplete nudge triggered (${state.continuationNudgeCount + 1}/${MAX_CONTINUATION_NUDGES}): stopped after tool execution without TaskComplete`,
+        )
+        const nudge = createUserMessage({
+          content:
+            'You did not call the TaskComplete tool after your last tool calls. If you have completed the task, call TaskComplete to signal completion. Otherwise, continue with your work using the available tools.',
+          isMeta: true,
+        })
+        const next: State = {
+          messages: [...messagesForQuery, ...assistantMessages, nudge],
+          toolUseContext,
+          autoCompactTracking: tracking,
+          maxOutputTokensRecoveryCount: 0,
+          hasAttemptedReactiveCompact: false,
+          hasAttemptedContextOverflowRecovery: false,
+          hasAttemptedProviderFallback: false,
+          maxOutputTokensOverride: undefined,
+          providerMaxOutputTokensCap,
+          pendingToolUseSummary: undefined,
+          stopHookActive: undefined,
+          turnCount,
+          continuationNudgeCount: state.continuationNudgeCount + 1,
+          agentStepLimit,
+          transition: { reason: 'continuation_nudge' },
+        }
+        state = next
+        continue
+      }
+
       return { reason: 'completed' }
     }
 
