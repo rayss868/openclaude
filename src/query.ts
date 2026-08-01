@@ -2442,9 +2442,16 @@ async function* queryLoop(
           // continuation nudge to prevent premature task completion.
           // General guard — catches empty responses regardless of context.
           if (lastText.length === 0) {
+            const nudgeCount = state.continuationNudgeCount + 1
             logForDebugging(
-              `Continuation nudge triggered (${state.continuationNudgeCount + 1}/${MAX_CONTINUATION_NUDGES}): empty response`,
+              `Continuation nudge triggered (${nudgeCount}/${MAX_CONTINUATION_NUDGES}): empty response`,
             )
+            if (nudgeCount === 1) {
+              yield createSystemMessage(
+                'OpenClaude noticed the AI returned an empty response without finishing. Waiting for it to continue — press Esc to intervene.',
+                'warning',
+              )
+            }
             const nudge = createUserMessage({
               content:
                 'Continue with the task. Use the appropriate tools to proceed to the next step. When the task is fully complete, call TaskComplete with a final summary.',
@@ -2467,8 +2474,7 @@ async function* queryLoop(
               pendingToolUseSummary: undefined,
               stopHookActive: undefined,
               turnCount,
-              continuationNudgeCount:
-                state.continuationNudgeCount + 1,
+              continuationNudgeCount: nudgeCount,
               agentStepLimit,
               transition: { reason: 'continuation_nudge' },
             }
@@ -2481,9 +2487,16 @@ async function* queryLoop(
           )
 
           if (shouldNudge) {
+            const nudgeCount = state.continuationNudgeCount + 1
             logForDebugging(
-              `Continuation nudge triggered (${state.continuationNudgeCount + 1}/${MAX_CONTINUATION_NUDGES}): ${nudgeReason} detected in "${lastText.slice(-120)}" without tool calls`,
+              `Continuation nudge triggered (${nudgeCount}/${MAX_CONTINUATION_NUDGES}): ${nudgeReason} detected in "${lastText.slice(-120)}" without tool calls`,
             )
+            if (nudgeCount === 1) {
+              yield createSystemMessage(
+                'OpenClaude noticed the AI stopped mid-thought without finishing or using tools. Waiting for it to continue — press Esc to intervene.',
+                'warning',
+              )
+            }
             const nudge = createUserMessage({
               content:
                 'Continue with the task. Use the appropriate tools to proceed to the next step. When the task is fully complete, call TaskComplete with a final summary.',
@@ -2502,7 +2515,7 @@ async function* queryLoop(
               pendingToolUseSummary: undefined,
               stopHookActive: undefined,
               turnCount,
-              continuationNudgeCount: state.continuationNudgeCount + 1,
+              continuationNudgeCount: nudgeCount,
               agentStepLimit,
               transition: { reason: 'continuation_nudge' },
             }
