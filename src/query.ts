@@ -3091,9 +3091,43 @@ async function* queryLoop(
 	    queryCheckpoint('query_recursive_call')
 
 	    // If TaskComplete was called, the AI has explicitly signaled completion.
-	    // Return completed immediately instead of nudging for continuation.
+	    // Require the same assistant message to carry a text summary so the user
+	    // always sees closing words — otherwise nudge for the summary instead of
+	    // completing silently.
 	    if (toolUseBlocks.some(b => b.name === TASK_COMPLETE_TOOL_NAME)) {
-	      return { reason: 'completed' }
+	      const hasSummaryText = assistantMessages.at(-1)?.message.content.some(
+	        block => block.type === 'text' && block.text.trim().length > 0,
+	      )
+	      if (hasSummaryText) {
+	        return { reason: 'completed' }
+	      }
+	      logForDebugging(
+	        'TaskComplete called without a text summary — nudging to write one',
+	      )
+	      const nudge = createUserMessage({
+	        content:
+          'You called TaskComplete but did not include a final summary. Write a concise final summary of what you accomplished (what was done, key results, any follow-ups), then call TaskComplete again.',
+	        isMeta: true,
+	      })
+	      const next: State = {
+	        messages: [...messagesForQuery, ...assistantMessages, nudge],
+	        toolUseContext: toolUseContextWithQueryTracking,
+	        autoCompactTracking: tracking,
+	        turnCount: nextTurnCount,
+	        maxOutputTokensRecoveryCount: 0,
+	        hasAttemptedReactiveCompact: false,
+	        hasAttemptedContextOverflowRecovery: false,
+	        hasAttemptedProviderFallback: false,
+	        continuationNudgeCount: state.continuationNudgeCount + 1,
+	        pendingToolUseSummary: nextPendingToolUseSummary,
+	        maxOutputTokensOverride: undefined,
+	        providerMaxOutputTokensCap,
+	        stopHookActive,
+	        agentStepLimit: nextAgentStepLimit,
+	        transition: { reason: 'continuation_nudge' },
+	      }
+	      state = next
+	      continue
 	    }
 
 	    // Add a continuation nudge after tool results to prevent the model
