@@ -43,6 +43,7 @@ import { FILE_EDIT_TOOL_NAME } from '../../tools/FileEditTool/constants.js'
 import { FILE_READ_TOOL_NAME } from '../../tools/FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from '../../tools/FileWriteTool/prompt.js'
 import { NOTEBOOK_EDIT_TOOL_NAME } from '../../tools/NotebookEditTool/constants.js'
+import { TASK_COMPLETE_TOOL_NAME } from '../../tools/TaskCompleteTool/constants.js'
 import { POWERSHELL_TOOL_NAME } from '../../tools/PowerShellTool/toolName.js'
 import { SKILL_TOOL_NAME } from '../../tools/SkillTool/constants.js'
 import { parseGitCommitId } from '../../tools/shared/gitOperationTracking.js'
@@ -483,9 +484,15 @@ export async function* runToolUse(
 
   // Doom loop detection: block after N consecutive identical tool calls.
   // Keyed by agent so concurrent subagents don't pollute each other's counters.
-  const doomLoop = checkDoomLoop(toolName, toolUse.input, {
-    agentKey: toolUseContext.agentId,
-  })
+  // TaskComplete is exempt: its input is always empty ({}), so identical input
+  // is expected — the query loop itself governs how often it may be called.
+  const isTaskCompleteSignal =
+    toolName === TASK_COMPLETE_TOOL_NAME
+  const doomLoop = isTaskCompleteSignal
+    ? { blocked: false, count: 0 }
+    : checkDoomLoop(toolName, toolUse.input, {
+        agentKey: toolUseContext.agentId,
+      })
   if (doomLoop.blocked) {
     logForDebugging(`Doom loop detected for ${toolName} (${doomLoop.count} consecutive identical calls)`)
     // Observability for tuning: a burst of these against varied tools would
