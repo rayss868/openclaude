@@ -3091,12 +3091,14 @@ async function* queryLoop(
 	    queryCheckpoint('query_recursive_call')
 
 	    // If TaskComplete was called, the AI has explicitly signaled completion.
-	    // Require the same assistant message to carry a text summary so the user
-	    // always sees closing words — otherwise nudge for the summary instead of
-	    // completing silently.
+	    // Require a text summary somewhere in this turn's assistant messages so
+	    // the user always sees closing words — otherwise nudge for the summary
+	    // instead of completing silently.
 	    if (toolUseBlocks.some(b => b.name === TASK_COMPLETE_TOOL_NAME)) {
-	      const hasSummaryText = assistantMessages.at(-1)?.message.content.some(
-	        block => block.type === 'text' && block.text.trim().length > 0,
+	      const hasSummaryText = assistantMessages.some(msg =>
+	        msg.message.content.some(
+	          block => block.type === 'text' && block.text.trim().length > 0,
+	        ),
 	      )
 	      if (hasSummaryText) {
 	        return { reason: 'completed' }
@@ -3110,7 +3112,16 @@ async function* queryLoop(
 	        isMeta: true,
 	      })
 	      const next: State = {
-	        messages: [...messagesForQuery, ...assistantMessages, nudge],
+	        // Include toolResults so the TaskComplete tool_result is present in
+	        // the transcript — omitting it leaves an unmatched tool_use that
+	        // ensureToolResultPairing repairs with a synthetic internal-error
+	        // result, which the model misreads as a broken tool.
+	        messages: [
+	          ...messagesForQuery,
+	          ...assistantMessages,
+	          ...toolResults,
+	          nudge,
+	        ],
 	        toolUseContext: toolUseContextWithQueryTracking,
 	        autoCompactTracking: tracking,
 	        turnCount: nextTurnCount,
