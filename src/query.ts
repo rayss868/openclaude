@@ -2532,9 +2532,16 @@ async function* queryLoop(
         if (hasSummaryText || state.continuationNudgeCount >= MAX_CONTINUATION_NUDGES) {
           return { reason: 'completed' }
         }
+        const nudgeCount = state.continuationNudgeCount + 1
         logForDebugging(
-          `TaskComplete summary nudge (${state.continuationNudgeCount + 1}/${MAX_CONTINUATION_NUDGES}): TaskComplete without summary`,
+          `TaskComplete summary nudge (${nudgeCount}/${MAX_CONTINUATION_NUDGES}): TaskComplete without summary`,
         )
+        if (nudgeCount === 1) {
+          yield createSystemMessage(
+            'OpenClaude noticed TaskComplete was called without a final summary. Waiting for the AI to write one — press Esc to intervene.',
+            'warning',
+          )
+        }
         const nudge = createUserMessage({
           content:
             'You called TaskComplete but did not include a final summary. Write a concise final summary of what you accomplished (what was done, key results, any follow-ups), then call TaskComplete again.',
@@ -2580,9 +2587,19 @@ async function* queryLoop(
         assistantMessages.length > 0 &&
         state.continuationNudgeCount < MAX_CONTINUATION_NUDGES
       ) {
+        const nudgeCount = state.continuationNudgeCount + 1
         logForDebugging(
-          `TaskComplete nudge triggered (${state.continuationNudgeCount + 1}/${MAX_CONTINUATION_NUDGES}): stopped after tool execution without TaskComplete`,
+          `TaskComplete nudge triggered (${nudgeCount}/${MAX_CONTINUATION_NUDGES}): stopped after tool execution without TaskComplete`,
         )
+        // Surface the first nudge in the UI — isMeta user messages are hidden
+        // from the transcript, so without this the model looks like it just
+        // stops with no explanation.
+        if (nudgeCount === 1) {
+          yield createSystemMessage(
+            'OpenClaude noticed the AI stopped after using tools without finishing or calling TaskComplete. Waiting for it to continue — press Esc to intervene.',
+            'warning',
+          )
+        }
         const nudge = createUserMessage({
           content:
             'You did not call the TaskComplete tool after your last tool calls. Continue with the task using the available tools. When the task is fully complete, call TaskComplete with a final summary.',
@@ -2601,12 +2618,25 @@ async function* queryLoop(
           pendingToolUseSummary: undefined,
           stopHookActive: undefined,
           turnCount,
-          continuationNudgeCount: state.continuationNudgeCount + 1,
+          continuationNudgeCount: nudgeCount,
           agentStepLimit,
           transition: { reason: 'continuation_nudge' },
         }
         state = next
         continue
+      }
+
+      // If the AI was doing real work but exhausted its nudge budget without
+      // finishing or calling TaskComplete, tell the user instead of silently
+      // ending the turn.
+      if (
+        hasExecutedTools &&
+        state.continuationNudgeCount >= MAX_CONTINUATION_NUDGES
+      ) {
+        yield createSystemMessage(
+          'OpenClaude nudged the AI to continue but it did not respond after the limit. The turn is being ended — the task may be incomplete. Send a message to continue or press Esc to intervene.',
+          'warning',
+        )
       }
 
       return { reason: 'completed' }
