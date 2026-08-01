@@ -647,6 +647,12 @@ async function* queryLoop(
   // completion path to nudge the model after real tool work so it can't stop
   // prematurely mid-task — plain conversational turns never set it.
   let hasExecutedTools = false
+  // Set true once the model calls TaskComplete in this turn. Completion is
+  // honored at the end of the loop (not at the call site) so the model gets a
+  // chance to continue work after the acknowledged result — this prevents
+  // premature wrap-up (e.g. calling TaskComplete before reading a submit
+  // verdict), while still letting a genuinely-finished turn end.
+  let hasCalledTaskComplete = false
   // Request-only context can be invalidated by a full conversation rewrite.
   // Keep it outside the loop so that invalidation survives every retry state.
   let requestOnlyMessages = params.requestOnlyMessages
@@ -2515,6 +2521,55 @@ async function* queryLoop(
         }
       }
 
+      // TaskComplete was called this turn. If a text summary is present, honor
+      // the completion. Otherwise nudge the model to write the summary first.
+      if (hasCalledTaskComplete) {
+        const hasSummaryText = assistantMessages.some(msg =>
+          msg.message.content.some(
+            block => block.type === 'text' && block.text.trim().length > 0,
+          ),
+        )
+        if (hasSummaryText || state.continuationNudgeCount >= MAX_CONTINUATION_NUDGES) {
+          return { reason: 'completed' }
+        }
+        logForDebugging(
+          `TaskComplete summary nudge (${state.continuationNudgeCount + 1}/${MAX_CONTINUATION_NUDGES}): TaskComplete without summary`,
+        )
+        const nudge = createUserMessage({
+          content:
+            'You called TaskComplete but did not include a final summary. Write a concise final summary of what you accomplished (what was done, key results, any follow-ups), then call TaskComplete again.',
+          isMeta: true,
+        })
+        const next: State = {
+          // Include toolResults so the TaskComplete tool_result is present in
+          // the transcript — omitting it leaves an unmatched tool_use that
+          // ensureToolResultPairing repairs with a synthetic internal-error
+          // result, which the model misreads as a broken tool.
+          messages: [
+            ...messagesForQuery,
+            ...assistantMessages,
+            ...toolResults,
+            nudge,
+          ],
+          toolUseContext,
+          autoCompactTracking: tracking,
+          maxOutputTokensRecoveryCount: 0,
+          hasAttemptedReactiveCompact: false,
+          hasAttemptedContextOverflowRecovery: false,
+          hasAttemptedProviderFallback: false,
+          maxOutputTokensOverride: undefined,
+          providerMaxOutputTokensCap,
+          pendingToolUseSummary: undefined,
+          stopHookActive: undefined,
+          turnCount,
+          continuationNudgeCount: state.continuationNudgeCount + 1,
+          agentStepLimit,
+          transition: { reason: 'continuation_nudge' },
+        }
+        state = next
+        continue
+      }
+
       // If the AI executed tools earlier in this turn but then stopped without
       // calling TaskComplete or any other tool, it may have stopped prematurely
       // mid-task. Nudge it to either explicitly signal completion or continue
@@ -3090,55 +3145,13 @@ async function* queryLoop(
 
 	    queryCheckpoint('query_recursive_call')
 
-	    // If TaskComplete was called, the AI has explicitly signaled completion.
-	    // Require a text summary somewhere in this turn's assistant messages so
-	    // the user always sees closing words — otherwise nudge for the summary
-	    // instead of completing silently.
+	    // If TaskComplete was called, remember it. Completion is honored at the
+	    // end of the loop (completion path below), not here — processing it as a
+	    // normal tool lets the acknowledged result flow back and gives the model
+	    // a chance to continue work (e.g. read a submit verdict) before the turn
+	    // actually ends.
 	    if (toolUseBlocks.some(b => b.name === TASK_COMPLETE_TOOL_NAME)) {
-	      const hasSummaryText = assistantMessages.some(msg =>
-	        msg.message.content.some(
-	          block => block.type === 'text' && block.text.trim().length > 0,
-	        ),
-	      )
-	      if (hasSummaryText) {
-	        return { reason: 'completed' }
-	      }
-	      logForDebugging(
-	        'TaskComplete called without a text summary — nudging to write one',
-	      )
-	      const nudge = createUserMessage({
-	        content:
-          'You called TaskComplete but did not include a final summary. Write a concise final summary of what you accomplished (what was done, key results, any follow-ups), then call TaskComplete again.',
-	        isMeta: true,
-	      })
-	      const next: State = {
-	        // Include toolResults so the TaskComplete tool_result is present in
-	        // the transcript — omitting it leaves an unmatched tool_use that
-	        // ensureToolResultPairing repairs with a synthetic internal-error
-	        // result, which the model misreads as a broken tool.
-	        messages: [
-	          ...messagesForQuery,
-	          ...assistantMessages,
-	          ...toolResults,
-	          nudge,
-	        ],
-	        toolUseContext: toolUseContextWithQueryTracking,
-	        autoCompactTracking: tracking,
-	        turnCount: nextTurnCount,
-	        maxOutputTokensRecoveryCount: 0,
-	        hasAttemptedReactiveCompact: false,
-	        hasAttemptedContextOverflowRecovery: false,
-	        hasAttemptedProviderFallback: false,
-	        continuationNudgeCount: state.continuationNudgeCount + 1,
-	        pendingToolUseSummary: nextPendingToolUseSummary,
-	        maxOutputTokensOverride: undefined,
-	        providerMaxOutputTokensCap,
-	        stopHookActive,
-	        agentStepLimit: nextAgentStepLimit,
-	        transition: { reason: 'continuation_nudge' },
-	      }
-	      state = next
-	      continue
+	      hasCalledTaskComplete = true
 	    }
 
 	    // Add a continuation nudge after tool results to prevent the model
