@@ -2595,11 +2595,33 @@ async function* queryLoop(
       // mid-task. Nudge it to either explicitly signal completion or continue
       // working. Conversational turns (no tool execution) are not nudged.
       // Guard: capped at MAX_CONTINUATION_NUDGES to prevent infinite loops.
+      // Exception: if the AI is asking the user a question (text ends with '?'),
+      // it is waiting for input — let the turn end so the user can answer.
       if (
         hasExecutedTools &&
         assistantMessages.length > 0 &&
         state.continuationNudgeCount < MAX_CONTINUATION_NUDGES
       ) {
+        const lastAssistantForNudge = assistantMessages.at(-1)
+        const lastTextForNudge =
+          lastAssistantForNudge?.type === 'assistant'
+            ? lastAssistantForNudge.message.content
+                .filter(
+                  (b): b is Extract<typeof b, { type: 'text' }> =>
+                    b.type === 'text',
+                )
+                .map(b => b.text)
+                .join(' ')
+            : ''
+        if (lastTextForNudge.trim().endsWith('?')) {
+          // The AI is waiting for a user decision — do not nudge it to
+          // continue, or it will answer its own question and act without
+          // confirmation.
+          logForDebugging(
+            'Skipping TaskComplete nudge: AI ended with a question, waiting for user input',
+          )
+          return { reason: 'completed' }
+        }
         const nudgeCount = state.continuationNudgeCount + 1
         logForDebugging(
           `TaskComplete nudge triggered (${nudgeCount}/${MAX_CONTINUATION_NUDGES}): stopped after tool execution without TaskComplete`,
