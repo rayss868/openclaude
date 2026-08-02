@@ -403,7 +403,7 @@ export function ModelPicker(t0) {
   }
   const refreshHint = onRefresh ? <ConfigurableShortcutHint action="modelPicker:refresh" context="ModelPicker" fallback="r" description="refresh models" /> : null;
   const discoveryLine = discoveryState ? <Text color={mapDiscoveryToneToColor(discoveryState.tone)}>{discoveryState.message}{refreshHint ? <Text color="subtle"> {" "}· {refreshHint}</Text> : null}</Text> : refreshHint ? <Text dimColor={true}>{refreshHint}</Text> : null;
-  const t19 = <Box marginBottom={1} flexDirection="column">{t15}{t17}{t18}{discoveryLine}</Box>;
+  const t19 = <Box marginBottom={1} flexDirection="column">{t15}{t17}{t18}{discoveryLine}{viewMode === 'list' ? <Text dimColor={true} >Press / to search</Text> : null}</Box>;
   const t20 = onCancel ?? _temp4;
   let t21;
   if ($[49] !== handleFocus || $[50] !== handleSelect || $[51] !== initialFocusValue || $[52] !== selectOptions || $[53] !== t20 || $[54] !== visibleCount || $[55] !== searchQuery || $[56] !== viewMode || $[57] !== isTerminalFocused || $[58] !== searchCursorOffset) {
