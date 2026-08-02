@@ -2454,7 +2454,7 @@ async function* queryLoop(
             }
             const nudge = createUserMessage({
               content:
-                'Continue with the task. Use the appropriate tools to proceed to the next step. When the task is fully complete, call TaskComplete with a final summary.',
+                'Continue with the task. Use the appropriate tools to proceed to the next step. When the task is fully complete, call TaskComplete with a final summary. If you need to ask the user a question or get confirmation, call AskUserQuestion instead.',
               isMeta: true,
             })
             const next: State = {
@@ -2499,7 +2499,7 @@ async function* queryLoop(
             }
             const nudge = createUserMessage({
               content:
-                'Continue with the task. Use the appropriate tools to proceed to the next step. When the task is fully complete, call TaskComplete with a final summary.',
+                'Continue with the task. Use the appropriate tools to proceed to the next step. When the task is fully complete, call TaskComplete with a final summary. If you need to ask the user a question or get confirmation, call AskUserQuestion instead.',
               isMeta: true,
             })
             const next: State = {
@@ -2637,7 +2637,7 @@ async function* queryLoop(
         }
         const nudge = createUserMessage({
           content:
-            'You did not call the TaskComplete tool after your last tool calls. Continue with the task using the available tools. When the task is fully complete, call TaskComplete with a final summary.',
+            'You did not call the TaskComplete tool after your last tool calls. Continue with the task using the available tools. When the task is fully complete, call TaskComplete with a final summary. If you need to ask the user a question or get confirmation before proceeding, call AskUserQuestion instead of continuing.',
           isMeta: true,
         })
         const next: State = {
@@ -3225,7 +3225,7 @@ async function* queryLoop(
 	    // escape hatch here lets it prematurely wrap up mid-task. The model
 	    // signals real completion by calling TaskComplete itself.
 	    const nudgeAfterTools = createUserMessage({
-	      content: 'Continue with the task. Use the appropriate tools to proceed to the next step. When the task is fully complete, call TaskComplete with a final summary.',
+	      content: 'Continue with the task. Use the appropriate tools to proceed to the next step. When the task is fully complete, call TaskComplete with a final summary. If you need to ask the user a question or get confirmation, call AskUserQuestion instead.',
 	      isMeta: true,
 	    })
 
