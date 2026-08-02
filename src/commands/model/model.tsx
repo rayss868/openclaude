@@ -661,7 +661,7 @@ function legacyDiscoveryStateForOptions(options: {
 }
 
 function ModelPickerWrapper({
-  discoveryContext,
+  discoveryContext: initialDiscoveryContext,
   onDone,
 }: {
   discoveryContext: ModelDiscoveryContext | null
@@ -673,15 +673,40 @@ function ModelPickerWrapper({
   )
   const isFastMode = useAppState((s: AppState) => s.fastMode)
   const setAppState = useSetAppState()
+  const [discoveryContext, setDiscoveryContext] =
+    React.useState<ModelDiscoveryContext | null>(initialDiscoveryContext)
   const [optionsOverride, setOptionsOverride] = React.useState<ModelOption[] | undefined>(
-    discoveryContext && 'optionsOverride' in discoveryContext
-      ? discoveryContext.optionsOverride
+    initialDiscoveryContext && 'optionsOverride' in initialDiscoveryContext
+      ? initialDiscoveryContext.optionsOverride
       : undefined,
   )
   const [discoveryState, setDiscoveryState] =
     React.useState<ModelPickerDiscoveryState | undefined>(
-      discoveryContext?.discoveryState,
+      initialDiscoveryContext?.discoveryState,
     )
+
+  // Non-blocking discovery: when the picker was opened without a precomputed
+  // context (command handler renders immediately), load it in the background
+  // so cache I/O and provider fetches don't delay first paint.
+  React.useEffect(() => {
+    if (initialDiscoveryContext !== null) {
+      return
+    }
+    let cancelled = false
+    void loadModelDiscoveryContext().then(ctx => {
+      if (cancelled || ctx === null) return
+      setDiscoveryContext(ctx)
+      if ('optionsOverride' in ctx) {
+        setOptionsOverride(ctx.optionsOverride)
+      }
+      if (ctx.discoveryState) {
+        setDiscoveryState(ctx.discoveryState)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [initialDiscoveryContext])
 
   const handleCancel = () => {
     logEvent('tengu_model_command_menu', {
@@ -993,9 +1018,11 @@ function ModelPickerWrapper({
     }
 
     void refreshAvailableModels(false)
-    // We only want the initial auto-refresh for the loaded context.
+    // Auto-refresh once per loaded context. Depends on discoveryContext so it
+    // also fires after the background load when the picker opened without a
+    // precomputed context (context changes null -> loaded exactly once).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [discoveryContext])
 
   return (
     <ModelPicker
@@ -1344,6 +1371,8 @@ export const call: LocalJSXCommandCall = async (onDone, _context, args) => {
     return <SetModelAndClose args={trimmedArgs} onDone={onDone} />
   }
 
-  const discoveryContext = await loadModelDiscoveryContext()
-  return <ModelPickerWrapper discoveryContext={discoveryContext} onDone={onDone} />
+  // Render the picker immediately and load discovery context in the
+  // background — awaiting it here makes opening /model block on cache file
+  // I/O and (when stale) a provider model fetch, which feels slow.
+  return <ModelPickerWrapper discoveryContext={null} onDone={onDone} />
 }
