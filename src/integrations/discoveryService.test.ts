@@ -11,7 +11,7 @@ import { publicBuildVersion } from '../utils/version.js'
 
 const originalFetch = globalThis.fetch
 const originalEnv = {
-  CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR,
+  OPENCLAUDE_CONFIG_DIR: process.env.OPENCLAUDE_CONFIG_DIR,
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
   OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
   OPENAI_API_BASE: process.env.OPENAI_API_BASE,
@@ -74,7 +74,7 @@ beforeEach(async () => {
   await acquireSharedMutationLock('discoveryService.test.ts')
   mock.restore()
   tempDir = mkdtempSync(join(tmpdir(), 'openclaude-discovery-service-test-'))
-  process.env.CLAUDE_CONFIG_DIR = tempDir
+  process.env.OPENCLAUDE_CONFIG_DIR = tempDir
   delete process.env.OPENROUTER_API_KEY
   delete process.env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
   clearProviderEnv()
@@ -86,7 +86,7 @@ afterEach(() => {
     mock.restore()
     globalThis.fetch = originalFetch
     rmSync(tempDir, { recursive: true, force: true })
-    restoreEnvValue('CLAUDE_CONFIG_DIR')
+    restoreEnvValue('OPENCLAUDE_CONFIG_DIR')
     restoreEnvValue('OPENROUTER_API_KEY')
     restoreEnvValue('OPENAI_BASE_URL')
     restoreEnvValue('OPENAI_API_BASE')

@@ -22,7 +22,7 @@ import {
   releaseSharedMutationLock,
 } from '../test/sharedMutationLock.js'
 
-const originalConfigDir = process.env.CLAUDE_CONFIG_DIR
+const originalConfigDir = process.env.OPENCLAUDE_CONFIG_DIR
 
 let tempDir: string
 
@@ -37,7 +37,7 @@ function createModel(id: string): ModelCatalogEntry {
 beforeEach(async () => {
   await acquireSharedMutationLock('discoveryCache.test.ts')
   tempDir = mkdtempSync(join(tmpdir(), 'openclaude-discovery-cache-test-'))
-  process.env.CLAUDE_CONFIG_DIR = tempDir
+  process.env.OPENCLAUDE_CONFIG_DIR = tempDir
   setOriginalFsImplementation()
   await clearDiscoveryCache()
 })
@@ -46,9 +46,9 @@ afterEach(() => {
   try {
     setOriginalFsImplementation()
     if (originalConfigDir === undefined) {
-      delete process.env.CLAUDE_CONFIG_DIR
+      delete process.env.OPENCLAUDE_CONFIG_DIR
     } else {
-      process.env.CLAUDE_CONFIG_DIR = originalConfigDir
+      process.env.OPENCLAUDE_CONFIG_DIR = originalConfigDir
     }
     rmSync(tempDir, { recursive: true, force: true })
   } finally {
@@ -181,6 +181,50 @@ describe('discovery cache storage', () => {
 
     await clearDiscoveryCache()
     await expect(getCachedModels('atomic-chat', 60_000)).resolves.toBeNull()
+  })
+
+  test('writing fresh models prunes stale sibling partitions of the same route', async () => {
+    const stale = Date.now() - 8 * 24 * 60 * 60 * 1000
+    await setCachedModels('custom:partitionA', {
+      models: [createModel('old-model')],
+      updatedAt: stale,
+    })
+    await setCachedModels('custom:partitionB', {
+      models: [createModel('recent-model')],
+      updatedAt: Date.now() - 60_000,
+    })
+
+    await setCachedModels('custom:partitionC', {
+      models: [createModel('new-model')],
+      updatedAt: Date.now(),
+    })
+
+    // Stale sibling (partitionA) is pruned; recent sibling (partitionB) stays.
+    await expect(getCachedModels('custom:partitionA', 60_000)).resolves.toBeNull()
+    await expect(
+      getCachedModels('custom:partitionB', 120_000),
+    ).resolves.not.toBeNull()
+    // Unrelated routes are untouched.
+    await expect(getCachedModels('ollama', 60_000)).resolves.toBeNull()
+  })
+
+  test('clearDiscoveryCache clears every partition of a route', async () => {
+    await setCachedModels('custom:partitionA', { models: [createModel('a')] })
+    await setCachedModels('custom:partitionB', { models: [createModel('b')] })
+    await setCachedModels('ollama', { models: [createModel('llama3')] })
+
+    // Clearing with a bare route id clears all its partitions.
+    await clearDiscoveryCache('custom')
+    await expect(getCachedModels('custom:partitionA', 60_000)).resolves.toBeNull()
+    await expect(getCachedModels('custom:partitionB', 60_000)).resolves.toBeNull()
+    await expect(getCachedModels('ollama', 60_000)).resolves.not.toBeNull()
+
+    // Clearing with a full partition key also clears sibling partitions.
+    await setCachedModels('custom:partitionA', { models: [createModel('a')] })
+    await setCachedModels('custom:partitionB', { models: [createModel('b')] })
+    await clearDiscoveryCache('custom:partitionA')
+    await expect(getCachedModels('custom:partitionA', 60_000)).resolves.toBeNull()
+    await expect(getCachedModels('custom:partitionB', 60_000)).resolves.toBeNull()
   })
 
   test('corruption fallback returns empty cache without crashing', async () => {

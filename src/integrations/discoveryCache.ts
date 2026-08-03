@@ -13,6 +13,26 @@ export const DISCOVERY_CACHE_VERSION = 1
 const MIN_MIGRATABLE_VERSION = 1
 const DISCOVERY_CACHE_FILENAME = 'model-discovery-cache.json'
 
+/**
+ * Sibling partition retention: cache keys are `routeId:partitionHash` where the
+ * partition encodes baseUrl/apiKey/headers. When a user changes config, a NEW
+ * key is created for the same route and the old one would otherwise linger
+ * forever, so the cache file piles up instead of being replaced. Prune sibling
+ * partitions older than this when a fresh entry is written.
+ */
+const STALE_PARTITION_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
+
+function getRouteCacheKeyPrefix(cacheKey: string): string {
+  // Cache keys are `routeId:partitionHash`; bare keys (tests, legacy) are
+  // just `routeId`. Route ids never contain a colon.
+  const colonIndex = cacheKey.indexOf(':')
+  return colonIndex === -1 ? cacheKey : cacheKey.slice(0, colonIndex)
+}
+
+function isSameRouteCacheKey(left: string, right: string): boolean {
+  return getRouteCacheKeyPrefix(left) === getRouteCacheKeyPrefix(right)
+}
+
 export type DiscoveryCacheError = {
   message: string
   recordedAt: number
@@ -391,6 +411,25 @@ export async function setCachedModels(
       updatedAt: entry.updatedAt ?? Date.now(),
       error: null,
     }
+    // Prune stale sibling partitions for the same route. A cache key is
+    // `routeId:partitionHash` (partition encodes baseUrl/apiKey/headers), so a
+    // config change creates a NEW key while the old one lingers forever — the
+    // cache file piles up instead of being replaced. Drop siblings older than
+    // the retention window, keeping recent ones so quick key/baseUrl switches
+    // still hit cache.
+    const now = Date.now()
+    for (const [key, cached] of Object.entries(cache.entries)) {
+      if (key === routeId || !isSameRouteCacheKey(key, routeId)) {
+        continue
+      }
+      if (
+        cached.updatedAt !== null &&
+        now - cached.updatedAt <= STALE_PARTITION_RETENTION_MS
+      ) {
+        continue
+      }
+      delete cache.entries[key]
+    }
     await saveDiscoveryCache(cache)
   })
 }
@@ -420,7 +459,15 @@ export async function clearDiscoveryCache(routeId?: string): Promise<void> {
   await withDiscoveryCacheLock(async () => {
     if (routeId) {
       const cache = await loadDiscoveryCache()
-      delete cache.entries[routeId]
+      // Cache keys are `routeId:partitionHash`. Clearing a route clears every
+      // partition for it (a bare `routeId` or a full `routeId:hash` key both
+      // resolve to the same route prefix), so stale partitions don't survive a
+      // manual refresh.
+      for (const key of Object.keys(cache.entries)) {
+        if (key === routeId || isSameRouteCacheKey(key, routeId)) {
+          delete cache.entries[key]
+        }
+      }
       await saveDiscoveryCache(cache)
       return
     }
