@@ -192,12 +192,14 @@ function makeWedgedStream(): {
   }
 }
 
-function makeCompleteStream(): Stream<BetaRawMessageStreamEvent> {
+function makeStreamFromEvents(
+  events: BetaRawMessageStreamEvent[],
+): Stream<BetaRawMessageStreamEvent> {
   const controller = new AbortController()
-  const events = makeCompleteStreamEvents()
+  const queue = [...events]
   const iterator: AsyncIterator<BetaRawMessageStreamEvent> = {
     next() {
-      const value = events.shift()
+      const value = queue.shift()
       return Promise.resolve(
         value === undefined
           ? { done: true, value: undefined }
@@ -210,6 +212,17 @@ function makeCompleteStream(): Stream<BetaRawMessageStreamEvent> {
     controller,
     [Symbol.asyncIterator]: () => iterator,
   } as Stream<BetaRawMessageStreamEvent>
+}
+
+function makeCompleteStream(): Stream<BetaRawMessageStreamEvent> {
+  return makeStreamFromEvents(makeCompleteStreamEvents())
+}
+
+// A provider that terminates the stream mid-way: the content block is fully
+// delivered (content_block_stop) but the final message_delta / message_stop
+// completion events never arrive, so the stream ends truncated.
+function makeTruncatedStream(): Stream<BetaRawMessageStreamEvent> {
+  return makeStreamFromEvents(makeCompleteStreamEvents().slice(0, 4))
 }
 
 function makeWithResponse(stream: Stream<BetaRawMessageStreamEvent>) {
@@ -450,6 +463,43 @@ describe('Claude stream watchdog', () => {
           message !== null &&
           (message as { type?: unknown }).type === 'assistant' &&
           JSON.stringify(message).includes('stream ok'),
+      ),
+    ).toBe(true)
+  })
+
+  test('stream terminated before message_stop triggers non-streaming fallback', async () => {
+    const streamModes: unknown[] = []
+    let fallbackCount = 0
+    createHandler = params => {
+      streamModes.push(params.stream)
+      if (params.stream === true) {
+        return makeWithResponse(makeTruncatedStream())
+      }
+      fallbackCount++
+      return Promise.resolve(
+        makeBetaMessage('msg-fallback', [
+          { type: 'text', text: 'fallback ok', citations: null },
+        ]),
+      )
+    }
+
+    const messages = await collectStreamingMessages(
+      new AbortController().signal,
+      makeOptions(),
+    )
+
+    // The truncated stream must NOT be accepted as the final answer: the turn
+    // re-runs non-streaming and the complete response is produced instead of
+    // the AI stopping mid-thought and ending "done".
+    expect(streamModes).toEqual([true, undefined])
+    expect(fallbackCount).toBe(1)
+    expect(
+      messages.some(
+        message =>
+          typeof message === 'object' &&
+          message !== null &&
+          (message as { type?: unknown }).type === 'assistant' &&
+          JSON.stringify(message).includes('fallback ok'),
       ),
     ).toBe(true)
   })

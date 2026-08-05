@@ -1950,6 +1950,11 @@ async function* queryModel(
   let usage: NonNullableUsage = EMPTY_USAGE
   let costUSD = 0
   let stopReason: BetaStopReason | null = null
+  // Whether the final SSE completion event was received. A well-formed stream
+  // always ends with message_stop; when the provider terminates the stream
+  // mid-way (before message_stop) any content already delivered is truncated
+  // and must NOT be accepted as the final answer.
+  let receivedMessageStop = false
   let didFallBackToNonStreaming = false
   let fallbackMessage: AssistantMessage | undefined
   let maxOutputTokens = 0
@@ -2593,6 +2598,7 @@ async function* queryModel(
             break
           }
           case 'message_stop':
+            receivedMessageStop = true
             break
         }
 
@@ -2661,6 +2667,33 @@ async function* queryModel(
             'unknown') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
         })
         throw new Error('Stream ended without receiving any events')
+      }
+
+      // Detect streams terminated mid-way by the provider: content blocks were
+      // delivered but the final message_stop event never arrived. A well-formed
+      // stream always ends with message_stop, so its absence with content in
+      // hand means the response was cut off before completion. Treat it like
+      // the other incomplete-stream cases: fall back to non-streaming retry so
+      // the full turn re-runs instead of accepting a truncated answer as final
+      // (the AI would otherwise "stop mid-thought and be done").
+      if (newMessages.length > 0 && !receivedMessageStop) {
+        logForDebugging(
+          `Stream terminated before message_stop - response truncated (${newMessages.length} message(s) delivered) - triggering non-streaming fallback`,
+          { level: 'error' },
+        )
+        logEvent('tengu_stream_truncated', {
+          model:
+            options.model as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+          request_id: (streamRequestId ??
+            'unknown') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+          messages_delivered: newMessages.length,
+          stop_reason:
+            (stopReason ??
+              'none') as unknown as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+        })
+        throw new Error(
+          'Stream terminated before completion event - response truncated',
+        )
       }
 
       // Log summary if any stalls occurred during streaming
