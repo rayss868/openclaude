@@ -51,6 +51,48 @@ const ACTION_VERBS = [
   'summarize',
 ] as const
 
+// Indonesian verb forms (meN- prefixed or root) for continuation signals.
+// Kept separate from ACTION_VERBS so the English-only patterns (which build
+// VERB_ALT / VERB_ING from ACTION_VERBS) never match Indonesian words inside
+// English contexts.
+const INDONESIAN_VERBS = [
+  'membuat',
+  'menulis',
+  'mengedit',
+  'memperbarui',
+  'memperbaiki',
+  'menambahkan',
+  'menjalankan',
+  'memeriksa',
+  'mengecek',
+  'memproses',
+  'menguji',
+  'mengimplementasikan',
+  'mengerjakan',
+  'memverifikasi',
+  'membaca',
+  'mencari',
+  'mengunduh',
+  'mengunggah',
+  'mengonversi',
+  'menggabungkan',
+  'menerapkan',
+  'menginstal',
+  'mengonfigurasi',
+  'merefaktor',
+  'mengoptimalkan',
+  'menganalisis',
+  'meninjau',
+  'merangkum',
+  'memastikan',
+  'menyiapkan',
+  'melanjutkan',
+  'lanjut',
+  'mulai',
+] as const
+
+const INDONESIAN_VERB_ALT = INDONESIAN_VERBS.join('|')
+
 // Base verb alternatives used across most regexes (no "summarize" in older patterns, but harmless)
 const VERB_ALT = ACTION_VERBS.join('|')
 
@@ -95,12 +137,27 @@ function buildContinuationSignals(): RegExp[] {
     new RegExp(`(?<!\\b(?:you|i|we|they|he|she|it)\\s+)\\bneed to (${v})\\b`, 'i'),
     new RegExp(`\\bnow (${v})\\b(?!\\s+you\\b)`, 'i'),
     new RegExp(`\\bnext (i|we)\\s+(need to|will|shall|should|must)?\\s*(${v})\\b`, 'i'),
+    // Indonesian: strong first-person intent ("saya akan membuat", "saya perlu memeriksa")
+    new RegExp(`\\bsaya (akan|ingin|harus|perlu|mau|sedang|berencana) (segera |dulu |sekarang )?(${INDONESIAN_VERB_ALT})\\b`, 'i'),
+    // Indonesian: colloquial check/read actions ("saya cek sebentar", "saya lihat dulu")
+    new RegExp(`\\bsaya (cek|periksa|lihat|baca|tanyakan)\\b`, 'i'),
+    // Indonesian: transition + optional subject + verb ("lalu mulai implementasi",
+    // "kemudian saya akan membuat", "setelah itu saya menjalankan test")
+    new RegExp(`\\b(lalu|kemudian|selanjutnya|setelah (itu|ini)|sesudah itu|sekarang|berikutnya) (saya |kita )?(akan |ingin |harus |perlu |mau )?(${INDONESIAN_VERB_ALT})\\b`, 'i'),
+    // Indonesian: "mari (kita) <verb>" ("mari kita mulai")
+    new RegExp(`\\bmari (kita )?(${INDONESIAN_VERB_ALT})\\b`, 'i'),
+    // Indonesian: "langkah berikutnya adalah ..."
+    new RegExp(`\\blangkah (berikutnya|selanjutnya) (adalah|yakni|:)\\b`, 'i'),
+    // Indonesian: "waktunya (untuk) <verb>"
+    new RegExp(`\\bwaktunya (untuk )?(${INDONESIAN_VERB_ALT}|melanjutkan)\\b`, 'i'),
+    // Indonesian: progressive ("sedang memeriksa", "sedang mengerjakan")
+    new RegExp(`\\bsedang (${INDONESIAN_VERB_ALT})\\b`, 'i'),
   ]
 }
 
 export const CONTINUATION_SIGNALS = buildContinuationSignals()
 
-export const COMPLETION_MARKERS = /\b(done|finished|completed|complete|summary|that's all|that is all|all set|hope this helps|let me know if|no issues|lgtm)\b/i
+export const COMPLETION_MARKERS = /\b(done|finished|completed|complete|summary|that's all|that is all|all set|hope this helps|let me know if|no issues|lgtm|selesai|lengkap|beres|tuntas)\b/i
 
 export type ContinuationResult = {
   shouldNudge: boolean
@@ -112,6 +169,8 @@ export const UNFINISHED_SENTIMENT_SIGNALS = [
   /\b(and|with|the|to|of|for|at|by|in|on|a|an|is|are|was|were|my|your|his|her|its|our|their|if|as|but|or|so|which|that)\s*$/i,
   // French trailing connectors
   /\b(et|avec|le|la|les|un|une|de|du|des|pour|au|aux|dans|sur|par|à|en|si|car|mais|ou|donc|ni|que|ce|ma|ta|sa|mes|tes|ses|notre|votre|leur|nos|vos|leurs)\s*$/i,
+  // Indonesian trailing connectors ("Saya sedang memeriksa file dan", "...supaya styling-nya")
+  /\b(yang|untuk|supaya|agar|dengan|lalu|kemudian|serta|beserta|ataupun|dari|ke|di|pada|sebagai|adalah|itu|ini|saya|kita|dan|atau|karena|ketika|setelah|sebelum|selama|melalui|bahwa)\s*$/i,
   // Trailing non-terminal punctuation
   /[,;]\s*$/,
   // Unclosed code block starter
@@ -165,8 +224,11 @@ export function analyzeContinuationIntent(
     const afterMatch = lateText.slice(match.index! + match[0].length)
     const hasLaterCompletion = COMPLETION_MARKERS.test(afterMatch)
     
-    // Very strong action intents (I will now, Let me, Je vais) override any later markers
-    const strongAction = /\b(let me|i will|i'll|je vais|je suis en train)\b/i.test(match[0])
+    // Very strong action intents (I will now, Let me, Je vais, saya akan, lalu saya)
+    // override any later markers
+    const strongAction =
+      /\b(let me|i will|i'll|je vais|je suis en train)\b/i.test(match[0]) ||
+      /\b(saya (akan|ingin|mau|harus|perlu|sedang|cek|periksa|lihat|baca)|mari kita|lalu (saya|kita)|langkah (berikutnya|selanjutnya))\b/i.test(match[0])
     
     return strongAction || !hasLaterCompletion
   })
@@ -176,15 +238,21 @@ export function analyzeContinuationIntent(
     // it's a strong 1st person intent or open tasks are present.
     const hasTerminalPunctuation = /[.!??"'`)\]]\s*$/.test(lastText) || lastText.endsWith('`')
     if (hasTerminalPunctuation) {
-      const strongIntent = /\b(i (will|shall|need to|must|should|now)|let (me|us)|je (vais|reviens)|passons à|moving on to|continuing with|proceeding to|next step is to)\b/i.test(lowerText) || 
-                           /je suis en train d'/i.test(lowerText) || /◻/.test(lastText)
-      const presentProgressive = new RegExp(`\\bnow (?:${VERB_ING})\\b`, 'i').test(lateText)
+      const strongIntent =
+        /\b(i (will|shall|need to|must|should|now)|let (me|us)|je (vais|reviens)|passons à|moving on to|continuing with|proceeding to|next step is to)\b/i.test(lowerText) ||
+        /\b(saya (akan|ingin|mau|harus|perlu|sedang|cek|periksa|lihat|baca)|mari (kita)?|lalu (saya|kita)|langkah (berikutnya|selanjutnya)|mulai|melanjutkan|lanjut)\b/i.test(lowerText) ||
+        /je suis en train d'/i.test(lowerText) || /◻/.test(lastText)
+      const presentProgressive =
+        new RegExp(`\\bnow (?:${VERB_ING})\\b`, 'i').test(lateText) ||
+        new RegExp(`\\bsedang (?:${INDONESIAN_VERB_ALT})\\b`, 'i').test(lateText)
       // Imperative/declarative patterns also signal intent when punctuated
       // (e.g. "Need to process files.", "Now create the component.", "Next we need to add tests.")
       // Use lateText (last 120 chars) for consistency with the late-window intent check above.
-      const hasImperativeSignal = new RegExp(`(?<!\\b(?:you|i|we|they|he|she|it)\\s+)\\bneed to (?:${VERB_ALT})\\b`, 'i').test(lateText) ||
+      const hasImperativeSignal =
+        new RegExp(`(?<!\\b(?:you|i|we|they|he|she|it)\\s+)\\bneed to (?:${VERB_ALT})\\b`, 'i').test(lateText) ||
         new RegExp(`\\bnow (?:${VERB_ALT})\\b(?!\\s+you\\b)`, 'i').test(lateText) ||
-        new RegExp(`\\bnext (?:i|we)\\s+(?:need to|will|shall|should|must)?\\s*(?:${VERB_ALT})\\b`, 'i').test(lateText)
+        new RegExp(`\\bnext (?:i|we)\\s+(?:need to|will|shall|should|must)?\\s*(?:${VERB_ALT})\\b`, 'i').test(lateText) ||
+        new RegExp(`\\b(?:lanjut|lanjutkan|melanjutkan|mulai)\\b`, 'i').test(lateText)
       const endsWithColon = /:\s*$/.test(lastText)
       if (strongIntent || endsWithColon || presentProgressive || hasImperativeSignal) {
         return { shouldNudge: true, reason: 'continuation_signal' }
