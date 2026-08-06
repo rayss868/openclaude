@@ -893,6 +893,17 @@ function shouldRetry(error: APIError, persistentRetryEnabled: boolean): boolean 
     return false
   }
 
+  // A retryable OpenAI-compat category means the shim classified a transient
+  // transport failure (network_error, request_timeout, connection_refused,
+  // localhost_resolution_failed, rate_limited, provider_unavailable) and
+  // wrapped it in a status-0 APIError. Without this branch the status-based
+  // checks below reject it (status 0 is falsy), so the whole turn dies
+  // instead of retrying after a mid-stream connection termination (e.g.
+  // undici "TypeError: terminated").
+  if (openAICategory) {
+    return true
+  }
+
   // CCR mode: auth is via infrastructure-provided JWTs, so a 401/403 is a
   // transient blip (auth service flap, network hiccup) rather than bad
   // credentials. Bypass x-should-retry:false — the server assumes we'd retry

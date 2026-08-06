@@ -371,6 +371,40 @@ describe('OpenAI-compatible retry classification', () => {
     expect(attempts).toBe(1)
   })
 
+  test('retries OpenAI transport failures carrying a retryable category marker', async () => {
+    process.env.OPENCLAUDE_RETRY_DELAY_MS = '1'
+    const { withRetry } = await importFreshWithRetryModule('openai')
+    // The shim wraps transient transport failures (e.g. a mid-stream undici
+    // "TypeError: terminated") in a status-0 APIError marked with a retryable
+    // openai_category. shouldRetry must retry these instead of rejecting the
+    // falsy status 0 — otherwise the whole turn dies after a dropped stream.
+    const error = APIError.generate(
+      0,
+      undefined,
+      'OpenAI API transport error: terminated [openai_category=network_error,host=opencode.ai]',
+      new Headers(),
+    )
+    let attempts = 0
+
+    await drainAsyncGenerator(
+      withRetry(
+        async () => ({} as Anthropic),
+        async () => {
+          attempts++
+          if (attempts === 1) throw error
+          return 'ok'
+        },
+        {
+          maxRetries: 2,
+          model: 'deepseek-v4-flash-free',
+          thinkingConfig: { type: 'disabled' },
+        },
+      ),
+    )
+
+    expect(attempts).toBe(2)
+  })
+
   test('does not retry quota/allotment exhaustion failures', async () => {
     process.env.OPENCLAUDE_RETRY_DELAY_MS = '1'
     const { CannotRetryError, withRetry } =
