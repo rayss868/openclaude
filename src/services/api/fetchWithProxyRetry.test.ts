@@ -84,6 +84,34 @@ test('isRetryableFetchError matches Bun socket-closed failures', () => {
   ).toBe(true)
 })
 
+test('isRetryableFetchError matches undici terminated connection failures', () => {
+  expect(isRetryableFetchError(new TypeError('terminated'))).toBe(true)
+  expect(
+    isRetryableFetchError(new Error('request terminated by the server')),
+  ).toBe(true)
+})
+
+test('fetchWithProxyRetry retries once with keepalive disabled after a terminated connection', async () => {
+  const calls: Array<RequestInit | undefined> = []
+
+  globalThis.fetch = (async (_input, init) => {
+    calls.push(init)
+    if (calls.length === 1) {
+      throw new TypeError('terminated')
+    }
+    return new Response('ok')
+  }) as unknown as FetchType
+
+  const response = await fetchWithProxyRetry('https://example.com/search', {
+    method: 'POST',
+  })
+
+  expect(await response.text()).toBe('ok')
+  expect(calls).toHaveLength(2)
+  expect((calls[0] as RequestInit).keepalive).toBeUndefined()
+  expect((calls[1] as RequestInit).keepalive).toBe(false)
+})
+
 test('fetchWithProxyRetry retries once with keepalive disabled after socket closure', async () => {
   const calls: Array<RequestInit | undefined> = []
 

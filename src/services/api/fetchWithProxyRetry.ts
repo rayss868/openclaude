@@ -1,7 +1,11 @@
 import { disableKeepAlive, getProxyFetchOptions } from '../../utils/proxy.js'
 
+// undici throws `TypeError: terminated` when the connection is terminated
+// mid-flight (server/proxy closed the socket, e.g. a gateway that killed an
+// upstream request). Like ECONNRESET, the pooled keep-alive socket is then
+// dead, so the retry must disable keep-alive to force a fresh connection.
 const RETRYABLE_FETCH_ERROR_PATTERN =
-  /socket connection was closed unexpectedly|ECONNRESET|EPIPE|socket hang up|Connection reset by peer|fetch failed/i
+  /socket connection was closed unexpectedly|ECONNRESET|EPIPE|socket hang up|Connection reset by peer|fetch failed|\bterminated\b/i
 
 export type ProxyRetryFetcher = (
   input: string | URL | Request,
