@@ -3732,7 +3732,9 @@ export function REPL({
     fromKeybinding?: boolean;
     slashCommandOverride?: Command;
     allowInterruptionCorrection?: boolean;
+    inputModeOverride?: PromptInputMode;
   }) => {
+    const effectiveInputMode = options?.inputModeOverride ?? inputMode;
     // Re-pin scroll to bottom on submit so the user always sees the new
     // exchange (matches OpenCode's auto-scroll behavior).
     repinScroll();
@@ -3902,12 +3904,12 @@ export function REPL({
     // Skip history for keybinding-triggered commands (user didn't type the command).
     if (!options?.fromKeybinding) {
       addToHistory({
-        display: speculationAccept ? input : prependModeCharacterToInput(input, inputMode),
+        display: speculationAccept ? input : prependModeCharacterToInput(input, effectiveInputMode),
         pastedContents: speculationAccept ? {} : pastedContents
       });
       // Add the just-submitted command to the front of the ghost-text
       // cache so it's suggested immediately (not after the 60s TTL).
-      if (inputMode === 'bash') {
+      if (effectiveInputMode === 'bash') {
         prependToShellHistoryCache(input.trim());
       }
     }
@@ -3946,7 +3948,7 @@ export function REPL({
       setInputMode('prompt');
       setIDESelection(undefined);
       setSubmitCount(_ => _ + 1);
-      if (isBuddyEnabled() && !isSlashCommand && inputMode === 'prompt') {
+      if (isBuddyEnabled() && !isSlashCommand && effectiveInputMode === 'prompt') {
         // Change token for the companion's signature action (one Enter = one
         // shot; queued messages intentionally don't re-fire on dequeue).
         // Real prompts only — slash commands and bash lines aren't "sending
@@ -3959,7 +3961,7 @@ export function REPL({
       // Show the placeholder in the same React batch as setInputValue('').
       // Skip for slash/bash (they have their own echo), speculation and remote
       // mode (both setMessages directly with no gap to bridge).
-      if (!isSlashCommand && inputMode === 'prompt' && !speculationAccept && !activeRemote.isRemoteMode) {
+      if (!isSlashCommand && effectiveInputMode === 'prompt' && !speculationAccept && !activeRemote.isRemoteMode) {
         setUserInputOnProcessing(input);
         // showSpinner includes userInputOnProcessing, so the spinner appears
         // on this render. Reset timing refs now (before queryGuard.reserve()
@@ -4086,7 +4088,7 @@ export function REPL({
       helpers,
       queryGuard,
       isExternalLoading,
-      mode: inputMode,
+      mode: effectiveInputMode,
       commands,
       onInputChange: setInputValue,
       setPastedContents,
