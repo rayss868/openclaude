@@ -34,6 +34,17 @@ The installed CLI runs on Node.js `>=22.0.0`. Bun is used for source builds, scr
 - Update docs when setup, commands, provider behavior, or user-facing behavior changes.
 - For new features, larger refactors, dependencies, or runtime changes, follow the issue-first guidance in [CONTRIBUTING.md](CONTRIBUTING.md).
 
+### Waiting For Background Agents
+
+- When a sub-agent (e.g. verifier) runs in the background and there is nothing
+  productive left to do, mark the waiting point as done with `TaskComplete` —
+  do NOT end the turn with repeated "still waiting / let me check again"
+  status lines. Closing the task stops the harness from nudging the turn
+  back into a spam loop.
+- Do not read, grep, or tail a background agent's output file while it is
+  still running. Respond only when its completion notification arrives; if
+  live status is genuinely needed, use the Monitor tool for streaming lines.
+
 ## Stack And Conventions
 
 - TypeScript with strict mode and ESM imports.

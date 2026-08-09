@@ -66,7 +66,10 @@ import {
   createToolUseSummaryMessage,
   createMicrocompactBoundaryMessage,
 } from './utils/messages.js'
-import { analyzeContinuationIntent } from './utils/continuation.js'
+import {
+  analyzeContinuationIntent,
+  isWaitingForAgent,
+} from './utils/continuation.js'
 import { generateToolUseSummary } from './services/toolUseSummary/toolUseSummaryGenerator.js'
 import { prependUserContext, appendSystemContext } from './utils/api.js'
 import {
@@ -2778,6 +2781,15 @@ async function* queryLoop(
           // confirmation.
           logForDebugging(
             'Skipping TaskComplete nudge: AI ended with a question, waiting for user input',
+          )
+          return { reason: 'completed' }
+        }
+        if (isWaitingForAgent(lastTextForNudge)) {
+          // The AI is waiting for a background agent to finish (sub-agent,
+          // verifier, etc.). Nudging it to continue would restart a
+          // "still waiting / let me check again" spam loop.
+          logForDebugging(
+            'Skipping TaskComplete nudge: AI is waiting for a background agent',
           )
           return { reason: 'completed' }
         }

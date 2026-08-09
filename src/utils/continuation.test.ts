@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { analyzeContinuationIntent } from './continuation.js'
+import {
+  analyzeContinuationIntent,
+  isWaitingForAgent,
+} from './continuation.js'
 
 // Continuation-nudge heuristics for Indonesian continuation signals. Covers
 // the case where the model stops after signaling intent to continue in
@@ -84,6 +87,50 @@ describe('analyzeContinuationIntent existing behavior', () => {
     expect(
       analyzeContinuationIntent('Setup is complete. Here is the code:\n```typescript\nfunction run() {')
         .shouldNudge,
+    ).toBe(true)
+  })
+})
+
+// Waiting-for-background-agent turns must NOT be nudged: they are an
+// intentional stop, so a nudge only restarts a "still waiting" spam loop.
+describe('analyzeContinuationIntent waiting for agent', () => {
+  test('does not nudge on Indonesian waiting statements', () => {
+    expect(
+      analyzeContinuationIntent(
+        'Verifier masih bekerja (membaca diff, akan menjalankan test & type-check). Saya tunggu hasilnya.',
+      ).shouldNudge,
+    ).toBe(false)
+    expect(
+      analyzeContinuationIntent(
+        'Saya berhenti di sini dan menunggu notifikasi selesai dari verifier.',
+      ).shouldNudge,
+    ).toBe(false)
+    expect(
+      analyzeContinuationIntent('Verifier masih berjalan. Saya menunggu hasilnya sebelum melaporkan final.').shouldNudge,
+    ).toBe(false)
+  })
+
+  test('does not nudge on English waiting statements', () => {
+    expect(
+      analyzeContinuationIntent('The verifier is still running. Waiting for the result.').shouldNudge,
+    ).toBe(false)
+    expect(
+      analyzeContinuationIntent("I'm waiting for the verifier to finish before reporting.").shouldNudge,
+    ).toBe(false)
+    expect(
+      analyzeContinuationIntent('I will wait for the verifier to finish.').shouldNudge,
+    ).toBe(false)
+    expect(
+      analyzeContinuationIntent("I'll wait for the agent to finish before reporting.").shouldNudge,
+    ).toBe(false)
+  })
+
+  test('still nudges when action intent follows the waiting marker', () => {
+    expect(
+      analyzeContinuationIntent('Saya tunggu hasilnya, lalu saya cek satu file lagi.').shouldNudge,
+    ).toBe(true)
+    expect(
+      analyzeContinuationIntent('Verifier masih bekerja, lalu saya akan menjalankan test.').shouldNudge,
     ).toBe(true)
   })
 })

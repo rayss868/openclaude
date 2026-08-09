@@ -159,6 +159,47 @@ export const CONTINUATION_SIGNALS = buildContinuationSignals()
 
 export const COMPLETION_MARKERS = /\b(done|finished|completed|complete|summary|that's all|that is all|all set|hope this helps|let me know if|no issues|lgtm|selesai|lengkap|beres|tuntas)\b/i
 
+// Waiting markers: the assistant is explicitly pausing for an external agent
+// (sub-agent, verifier, MCP process, etc.) that is still running. Unlike
+// continuation signals, these indicate an intentional stop, so a nudge would
+// only restart a "still waiting / let me check again" spam loop. Only treated
+// as waiting when no strong first-person action intent follows the marker.
+export const WAITING_MARKERS: RegExp[] = [
+  // Indonesian: explicit waiting phrasings
+  /\bsaya (?:akan )?(?:menunggu|nunggu|tunggu)\b/i,
+  /\b(?:menunggu|nunggu|tunggu)\s+(?:hasil|hasilnya|notifikasi|verifik|agent|subagent|proses|verifikasi)\b/i,
+  /\b(?:agent|verifier|subagent|sub-agent|proses|verifikasi)\s+(?:masih|sedang)\s+(?:bekerja|berjalan|memproses|menganalisis)\b/i,
+  /\bberhenti di sini\b/i,
+  // English
+  /\b(?:wait|waiting|waits)\s+(?:for|on)\s+(?:the )?(?:agent|subagent|sub-agent|verifier|result|notification)\b/i,
+  /\b(?:i|we)\s+(?:will|'ll|need to)?\s*wait\s+(?:for|on)\b/i,
+  /\bstill (?:waiting|running|working|in progress)\b.*\b(?:agent|subagent|sub-agent|verifier|task)\b/i,
+]
+
+// Strong first-person action signals that override a waiting marker — if the
+// assistant plans to keep working right after saying it is waiting, we still
+// nudge it to follow through.
+const STRONG_WAIT_OVERRIDE = new RegExp(
+  `\\b(saya (akan|ingin|mau|harus|perlu|sedang|cek|periksa|lihat|baca|tanyakan|${INDONESIAN_VERB_ALT})|` +
+    `\\b(berikutnya|setelah itu|sesudah itu|lalu|dahulu|sekarang)\\s*(saya|kita)?\\s*(${INDONESIAN_VERB_ALT})|` +
+    `\\b(menyusul|lalu saya|kemudian saya|lanjut|melanjutkan)\\b|` +
+    `\\b(i\\s+(will|'ll|need to|must|should)\\s+(?:${VERB_ALT})\\b|let me\\s+(?:${VERB_ALT})\\b|moving (on to|to)\\s+(?:${VERB_ALT})|next (i|we)\\s+(?:${VERB_ALT})|then (i|we)\\s+(?:${VERB_ALT})))\\b`,
+  'i',
+)
+
+/**
+ * Returns true when the assistant text says it is intentionally pausing
+ * while an external agent (sub-agent, verifier, background task) finishes.
+ * Used to suppress continuation nudges for those turns.
+ */
+export function isWaitingForAgent(input: string): boolean {
+  const lastText = input.trim().toLowerCase()
+  if (!lastText) return false
+  if (!WAITING_MARKERS.some(re => re.test(lastText))) return false
+  // Only a waiting stop (no action intent after it) avoids the nudge.
+  return !STRONG_WAIT_OVERRIDE.test(lastText)
+}
+
 export type ContinuationResult = {
   shouldNudge: boolean
   reason?: 'possible_truncation' | 'continuation_signal'
@@ -208,6 +249,14 @@ export function analyzeContinuationIntent(
   if (hasUnclosedCodeBlock || hasUnclosedPair || hasUnfinishedSuffix) {
     // Structural cut-offs always trigger a nudge, even if "done" was said earlier.
     return { shouldNudge: true, reason: 'possible_truncation' }
+  }
+
+  // 1.5 Intentional wait for an external agent (sub-agent, verifier,
+  // background task). Unlike truncation or continuation signals, this is an
+  // intentional stop: the assistant is waiting for a running agent to finish,
+  // so nudging only restarts a "still waiting / let me check again" loop.
+  if (isWaitingForAgent(lastText)) {
+    return { shouldNudge: false }
   }
 
   // 2. Late Intent-based signals (Overriding earlier completion markers)
