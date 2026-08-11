@@ -5,7 +5,7 @@ This page documents optional PowerShell helper functions for launching OpenClaud
 These helpers are designed for the installed package workflow:
 
 ~~~powershell
-npm install -g @rayss868/openclaude
+npm install -g @rayss-dev/openclaude
 ~~~
 
 The helpers use the installed `openclaude` CLI command. They do not require a source checkout and do not call source-only `bun run scripts/*.ts` entrypoints.
@@ -15,11 +15,11 @@ The helpers use the installed `openclaude` CLI command. They do not require a so
 Run this once in PowerShell:
 
 ~~~powershell
-$packageRoot = Join-Path (npm root -g) "@rayss868/openclaude"
+$packageRoot = Join-Path (npm root -g) "@rayss-dev/openclaude"
 $aliases = Join-Path $packageRoot "scripts\windows\openclaude-aliases.ps1"
 
 if (-not (Test-Path $aliases)) {
-  throw "Alias script not found at $aliases. Update or reinstall @rayss868/openclaude."
+  throw "Alias script not found at $aliases. Update or reinstall @rayss-dev/openclaude."
 }
 
 if (-not (Test-Path $PROFILE)) {

@@ -1,4 +1,4 @@
-// Type declarations for @rayss868/openclaude SDK
+// Type declarations for @rayss-dev/openclaude SDK
 // Manually maintained — keep in sync with src/entrypoints/sdk/index.ts
 // Drift is caught by validate-externals.ts (runs in CI)
 

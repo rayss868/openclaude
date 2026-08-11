@@ -10,7 +10,7 @@ only required when building or running from source.
 ### Option A: npm
 
 ```bash
-npm install -g @rayss868/openclaude@latest
+npm install -g @rayss-dev/openclaude@latest
 ```
 
 ### Option B: From source with Bun
@@ -391,7 +391,7 @@ The **OpenClaude VS Code extension** can store the key in Secret Storage and set
 
 ## Optional provider packages
 
-To keep the default `npm i -g @rayss868/openclaude` install small and
+To keep the default `npm i -g @rayss-dev/openclaude` install small and
 warning-free, a few provider SDKs and the native image library are **not
 bundled**. They are loaded on demand, and the CLI prints an `npm install <pkg>`
 hint (add `-g` for the global CLI) if you enable a feature whose package is

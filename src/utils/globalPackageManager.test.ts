@@ -7,7 +7,7 @@ import {
 } from './globalPackageManager.js'
 
 describe('getGlobalInstallArgs', () => {
-  const spec = '@rayss868/openclaude@latest'
+  const spec = '@rayss-dev/openclaude@latest'
   const cases: Array<[GlobalPackageManager, string[]]> = [
     ['npm', ['install', '-g', spec]],
     ['pnpm', ['add', '-g', spec]],
@@ -21,10 +21,10 @@ describe('getGlobalInstallArgs', () => {
   }
 
   test('passes an explicit version spec through unchanged', () => {
-    expect(getGlobalInstallArgs('npm', '@rayss868/openclaude@1.2.3')).toEqual([
+    expect(getGlobalInstallArgs('npm', '@rayss-dev/openclaude@1.2.3')).toEqual([
       'install',
       '-g',
-      '@rayss868/openclaude@1.2.3',
+      '@rayss-dev/openclaude@1.2.3',
     ])
   })
 })
@@ -46,7 +46,7 @@ describe('selectOwningPackageManager', () => {
   test('matches the package manager whose root contains the binary', () => {
     expect(
       selectOwningPackageManager(
-        '/home/u/.local/share/pnpm/global/5/node_modules/@rayss868/openclaude/cli.js',
+        '/home/u/.local/share/pnpm/global/5/node_modules/@rayss-dev/openclaude/cli.js',
         [
           { pm: 'npm', root: '/usr/local/lib/node_modules' },
           {

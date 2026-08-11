@@ -34,7 +34,7 @@ beforeAll(async () => {
     BUILD_TIME: new Date().toISOString(),
     ISSUES_EXPLAINER:
       'report the issue at https://github.com/rayss868/openclaude/issues',
-    PACKAGE_URL: '@rayss868/openclaude',
+    PACKAGE_URL: '@rayss-dev/openclaude',
     NATIVE_PACKAGE_URL: undefined,
   }
 

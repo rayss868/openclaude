@@ -14,7 +14,7 @@ Use OpenAI-compatible APIs, Gemini, GitHub Models, Codex OAuth, Codex, Ollama, A
 
 [![PR Checks](https://github.com/rayss868/openclaude/actions/workflows/pr-checks.yml/badge.svg?branch=main)](https://github.com/rayss868/openclaude/actions/workflows/pr-checks.yml)
 [![Release](https://img.shields.io/github/v/tag/rayss868/openclaude?label=release&color=0ea5e9)](https://github.com/rayss868/openclaude/tags)
-[![npm downloads](https://img.shields.io/npm/dm/@rayss868/openclaude)](https://www.npmjs.com/package/@rayss868/openclaude)
+[![npm downloads](https://img.shields.io/npm/dm/@rayss-dev/openclaude)](https://www.npmjs.com/package/@rayss-dev/openclaude)
 [![Discussions](https://img.shields.io/badge/discussions-open-7c3aed)](https://github.com/rayss868/openclaude/discussions)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/k68zFR6AcB)
 [![X](https://img.shields.io/badge/X-@rayss868-000000?logo=x&logoColor=white)](https://x.com/gitlawb)
@@ -100,7 +100,7 @@ OpenClaude requires Node.js `>=22.0.0` for npm installs and runtime. Bun is
 only needed for source builds and local development.
 
 ```bash
-npm install -g @rayss868/openclaude@latest
+npm install -g @rayss-dev/openclaude@latest
 ```
 
 If you're on Arch Linux, you can install OpenClaude from the community-maintained [AUR package](https://aur.archlinux.org/packages/openclaude):
@@ -114,8 +114,8 @@ If the install later reports `ripgrep not found`, install ripgrep system-wide an
 
 ```bash
 openclaude --version
-npm view @rayss868/openclaude dist-tags
-npm install -g @rayss868/openclaude@latest
+npm view @rayss-dev/openclaude dist-tags
+npm install -g @rayss-dev/openclaude@latest
 ```
 
 ### Start

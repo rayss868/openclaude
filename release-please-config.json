@@ -3,7 +3,7 @@
   "packages": {
     ".": {
       "release-type": "node",
-      "package-name": "@rayss868/openclaude",
+      "package-name": "@rayss-dev/openclaude",
       "bump-minor-pre-major": true,
       "include-v-in-tag": true
     }

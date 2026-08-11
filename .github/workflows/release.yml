@@ -136,16 +136,16 @@ jobs:
           fi
 
           for attempt in $(seq 1 30); do
-            published_version="$(npm view @rayss868/openclaude version 2>/dev/null || true)"
-            latest_tag="$(npm view @rayss868/openclaude dist-tags.latest 2>/dev/null || true)"
-            latest_version="$(npm view @rayss868/openclaude@latest version 2>/dev/null || true)"
+            published_version="$(npm view @rayss-dev/openclaude version 2>/dev/null || true)"
+            latest_tag="$(npm view @rayss-dev/openclaude dist-tags.latest 2>/dev/null || true)"
+            latest_version="$(npm view @rayss-dev/openclaude@latest version 2>/dev/null || true)"
 
             echo "Attempt ${attempt}: version=${published_version:-<empty>} latest=${latest_tag:-<empty>} @latest=${latest_version:-<empty>} expected=${EXPECTED_VERSION}"
 
             if [ "$published_version" = "$EXPECTED_VERSION" ] && \
                [ "$latest_tag" = "$EXPECTED_VERSION" ] && \
                [ "$latest_version" = "$EXPECTED_VERSION" ]; then
-              echo "npm latest verified for @rayss868/openclaude@${EXPECTED_VERSION}"
+              echo "npm latest verified for @rayss-dev/openclaude@${EXPECTED_VERSION}"
               exit 0
             fi
 
@@ -163,7 +163,7 @@ jobs:
           {
             echo "## Released ${{ needs.release-please.outputs.tag_name }}"
             echo
-            echo "- npm: https://www.npmjs.com/package/@rayss868/openclaude"
+            echo "- npm: https://www.npmjs.com/package/@rayss-dev/openclaude"
             echo "- GitHub: https://github.com/rayss868/openclaude/releases/tag/${{ needs.release-please.outputs.tag_name }}"
           } >> "$GITHUB_STEP_SUMMARY"
 

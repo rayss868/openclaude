@@ -27,7 +27,7 @@ export type UpdateStrategy =
  * running on the upstream `@anthropic-ai/claude-code` package. Self-updating
  * there pulls from the first-party distribution and would silently replace the
  * build the user is running. Custom-PACKAGE_URL builds (OpenClaude's
- * `@rayss868/openclaude`) are safe to self-update.
+ * `@rayss-dev/openclaude`) are safe to self-update.
  *
  * Shared by the `openclaude update` CLI and the `/update` slash command so both
  * honour the same guard.

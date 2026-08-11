@@ -205,7 +205,7 @@ result = await Bun.build({
       JSON.stringify('report the issue at https://github.com/rayss868/openclaude/issues'),
     'MACRO.FEEDBACK_CHANNEL':
       JSON.stringify('https://github.com/rayss868/openclaude/issues'),
-    'MACRO.PACKAGE_URL': JSON.stringify('@rayss868/openclaude'),
+    'MACRO.PACKAGE_URL': JSON.stringify('@rayss-dev/openclaude'),
     'MACRO.NATIVE_PACKAGE_URL': 'undefined',
     'MACRO.VERSION_CHANGELOG': 'undefined',
   },
@@ -548,7 +548,7 @@ sdkResult = await Bun.build({
       JSON.stringify('report the issue at https://github.com/rayss868/openclaude/issues'),
     'MACRO.FEEDBACK_CHANNEL':
       JSON.stringify('https://github.com/rayss868/openclaude/issues'),
-    'MACRO.PACKAGE_URL': JSON.stringify('@rayss868/openclaude'),
+    'MACRO.PACKAGE_URL': JSON.stringify('@rayss-dev/openclaude'),
     'MACRO.NATIVE_PACKAGE_URL': 'undefined',
     'MACRO.VERSION_CHANGELOG': 'undefined',
   },

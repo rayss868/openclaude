@@ -1,5 +1,5 @@
 /**
- * End-to-end verification that `npm install -g @rayss868/openclaude` is a
+ * End-to-end verification that `npm install -g @rayss-dev/openclaude` is a
  * zero-warning experience — the runtime half of the install contract whose
  * static half lives in externalsValidation.ts (RUNTIME_DEPENDENCY_CONTRACT).
  *
@@ -8,7 +8,7 @@
  *                       the working tree with `npm pack --ignore-scripts`
  *                       (dist/ must already be built — CI builds it first).
  *   --published [spec]  Verify the real registry artifact (default
- *                       @rayss868/openclaude@latest). Used by the scheduled
+ *                       @rayss-dev/openclaude@latest). Used by the scheduled
  *                       install-hygiene workflow to catch registry drift
  *                       (e.g. a transitive dep deprecated after we shipped).
  *
@@ -44,7 +44,7 @@ import {
   validateRuntimeDependencyContract,
 } from './externalsValidation.js'
 
-const PACKAGE_NAME = '@rayss868/openclaude'
+const PACKAGE_NAME = '@rayss-dev/openclaude'
 const MAX_TARBALL_BYTES = 12_000_000 // current tarball is ~8.8MB; catch payload blowups
 const INSTALL_RETRIES = 3
 const IS_WINDOWS = process.platform === 'win32'

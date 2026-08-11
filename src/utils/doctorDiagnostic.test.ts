@@ -4,7 +4,7 @@ import { getNativeInstallUnavailableFix } from './doctorDiagnostic.js'
 
 describe('getNativeInstallUnavailableFix', () => {
   test('uses npm guidance when this build has no native distribution', () => {
-    withMockMacro({ PACKAGE_URL: '@rayss868/openclaude' }, () => {
+    withMockMacro({ PACKAGE_URL: '@rayss-dev/openclaude' }, () => {
       for (const reason of [
         'local-config',
         'local-overlap',
@@ -12,7 +12,7 @@ describe('getNativeInstallUnavailableFix', () => {
         'native-config',
       ] as const) {
         const fix = getNativeInstallUnavailableFix(reason, false)
-        expect(fix).toContain('npm install -g @rayss868/openclaude@latest')
+        expect(fix).toContain('npm install -g @rayss-dev/openclaude@latest')
         expect(fix).not.toContain('openclaude install')
         expect(fix).not.toContain('native installation')
       }
@@ -20,7 +20,7 @@ describe('getNativeInstallUnavailableFix', () => {
   })
 
   test('preserves native install guidance for native-capable builds', () => {
-    withMockMacro({ PACKAGE_URL: '@rayss868/openclaude' }, () => {
+    withMockMacro({ PACKAGE_URL: '@rayss-dev/openclaude' }, () => {
       expect(getNativeInstallUnavailableFix('local-config', true)).toContain(
         'openclaude install',
       )

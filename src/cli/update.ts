@@ -90,7 +90,7 @@ export async function update() {
   // The update mechanism downloads from the first-party distribution bucket,
   // which would silently replace the OpenClaude build with the upstream
   // Claude Code binary. However, builds with a custom PACKAGE_URL (like
-  // OpenClaude's @rayss868/openclaude) are safe to self-update.
+  // OpenClaude's @rayss-dev/openclaude) are safe to self-update.
   if (isThirdPartyBuildBlocked()) {
     writeToStdout(
       chalk.yellow(

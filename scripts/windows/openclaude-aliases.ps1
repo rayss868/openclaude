@@ -31,7 +31,7 @@ function Invoke-OpenClaude {
     [string[]]$OpenClaudeArgs
   )
 
-  Assert-OpenClaudeCommand -Name "openclaude" -InstallHint "Install with: npm install -g @rayss868/openclaude"
+  Assert-OpenClaudeCommand -Name "openclaude" -InstallHint "Install with: npm install -g @rayss-dev/openclaude"
 
   & openclaude @OpenClaudeArgs
 

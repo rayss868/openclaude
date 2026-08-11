@@ -7,9 +7,9 @@ import {
 
 describe('getGlobalUpdateFailureHint', () => {
   test('points npm-only builds at npm instead of the native installer', () => {
-    withMockMacro({ PACKAGE_URL: '@rayss868/openclaude' }, () => {
+    withMockMacro({ PACKAGE_URL: '@rayss-dev/openclaude' }, () => {
       expect(getGlobalUpdateFailureHint(false)).toContain(
-        'npm install -g @rayss868/openclaude@latest',
+        'npm install -g @rayss-dev/openclaude@latest',
       )
       expect(getGlobalUpdateFailureHint(false)).not.toContain(
         'openclaude install',
@@ -27,7 +27,7 @@ describe('getGlobalUpdateFailureHint', () => {
 describe('writePackageManagerUpdateGuidance', () => {
   test.each([
     ['@anthropic-ai/claude-code', true],
-    ['@rayss868/openclaude', false],
+    ['@rayss-dev/openclaude', false],
     ['@example/custom-cli', false],
   ] as const)(
     'uses the runtime package identity for %s',

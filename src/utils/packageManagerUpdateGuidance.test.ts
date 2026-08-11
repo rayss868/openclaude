@@ -3,7 +3,7 @@ import type { PackageManager } from './nativeInstaller/packageManagers.js'
 import { resolvePackageManagerUpdateGuidance } from './packageManagerUpdateGuidance.js'
 
 const UPSTREAM_PACKAGE_URL = '@anthropic-ai/claude-code'
-const OPENCLAUDE_PACKAGE_URL = '@rayss868/openclaude'
+const OPENCLAUDE_PACKAGE_URL = '@rayss-dev/openclaude'
 
 describe('resolvePackageManagerUpdateGuidance', () => {
   test.each([
