@@ -13,6 +13,7 @@ import {
   parseDurationString,
 } from '../../integrations/discoveryCache.js'
 import type { ModelCatalogConfig } from '../../integrations/descriptors.js'
+import { filterAvailableCatalogEntries } from '../../integrations/index.js'
 import {
   discoverModelsForRoute,
   getDiscoveryCacheKey,
@@ -462,7 +463,16 @@ async function loadDescriptorDiscoveryContext(
     routeId,
     settingsMode: getProviderProfileModelPickerMode(),
   })
-  const staticEntries = catalog.models ?? []
+  // Availability-filter the static entries (hidden / availableUntil) — this
+  // path reads the descriptor's catalog directly, so it must apply the same
+  // filter as getCatalogEntriesForRoute or an expired time-boxed entry
+  // (e.g. a closed free window) stays selectable in the picker. The RAW list
+  // is kept alongside: the static+discovery merge below dedupes by apiName
+  // with static entries winning, so the expired static entry must still be
+  // present there to block a cached discovery duplicate (which would carry
+  // no availableUntil marker and survive the post-merge filter).
+  const rawStaticEntries = catalog.models ?? []
+  const staticEntries = filterAvailableCatalogEntries(rawStaticEntries)
   const trafficRestricted = isEssentialTrafficOnly()
   const canRefresh = Boolean(
     catalog.discovery && catalog.allowManualRefresh && !trafficRestricted,
@@ -504,9 +514,13 @@ async function loadDescriptorDiscoveryContext(
     staticEntryCount: staticEntries.length,
     stale,
   }) && !trafficRestricted
-  const mergedEntries = mergeRouteCatalogEntries(
-    staticEntries,
-    cached?.models ?? [],
+  // Merge the RAW static list (see above), then filter: the expired static
+  // entry wins the apiName dedup against any cached discovery duplicate, and
+  // the post-merge filter removes it — so neither copy survives. Filtering
+  // after the merge also covers discovery entries carrying their own
+  // hidden/availableUntil markers (mapModel).
+  const mergedEntries = filterAvailableCatalogEntries(
+    mergeRouteCatalogEntries(rawStaticEntries, cached?.models ?? []),
   )
 
   let discoveryState: ModelPickerDiscoveryState | undefined
