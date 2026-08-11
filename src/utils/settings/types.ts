@@ -290,6 +290,12 @@ export const SettingsSchema = lazySchema(() =>
         .describe(
           'Command to refresh GCP authentication (e.g., gcloud auth application-default login)',
         ),
+      verificationAgent: z
+        .boolean()
+        .optional()
+        .describe(
+          'Enable the built-in verification agent that double-checks completed implementation work. Set to false to disable it. Takes effect on the next session.',
+        ),
       // Gated so the SDK generator (which runs without CLAUDE_CODE_ENABLE_XAA)
       // doesn't surface this in GlobalClaudeSettings. Read via getXaaIdpSettings().
       // .passthrough() on the outer object keeps an existing settings.json key

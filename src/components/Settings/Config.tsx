@@ -466,6 +466,21 @@ export function Config({
       });
     }
   }, {
+    id: 'verificationAgentEnabled',
+    label: 'Verification agent',
+    searchText: 'verification agent verify test double-check',
+    value: settingsData?.verificationAgent !== false,
+    type: 'boolean' as const,
+    onChange(enabled_va: boolean) {
+      updateSettingsForSource('userSettings', {
+        verificationAgent: enabled_va ? undefined : false
+      });
+      setSettingsData(prev_va => ({
+        ...prev_va,
+        verificationAgent: enabled_va
+      }));
+    }
+  }, {
     id: 'thinkingEnabled',
     label: 'Thinking mode',
     value: thinkingEnabled ?? true,

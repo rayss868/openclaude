@@ -12,6 +12,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 
 // ── Open-build feature flag overrides ───────────────────────────────────
 // Only keys that DIFFER from upstream belong here — these are runtime gates
@@ -44,6 +45,13 @@ function _getFlagValue<T>(key: string, defaultValue: T): T {
 	_loadFlags()
 	if (_flags != null && Object.hasOwn(_flags as object, key))
 		return (_flags as Record<string, unknown>)[key] as T
+	// User-facing settings override the open-build default: the /config toggle
+	// writes verificationAgent=false, and all verification gates read this flag.
+	if (
+		key === 'tengu_hive_evidence' &&
+		getInitialSettings().verificationAgent === false
+	)
+		return false as T
 	if (Object.hasOwn(_openBuildDefaults, key))
 		return _openBuildDefaults[key] as T
 	return defaultValue
