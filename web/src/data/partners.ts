@@ -28,9 +28,9 @@ export const partners: Partner[] = [
 ]
 
 export const community = [
-  { name: 'github', url: 'https://github.com/Gitlawb/openclaude', label: 'star the repo' },
+  { name: 'github', url: 'https://github.com/rayss868/openclaude', label: 'star the repo' },
   { name: 'discord', url: 'https://discord.gg/k68zFR6AcB', label: 'join the discord' },
-  { name: 'x', url: 'https://x.com/gitlawb', label: 'follow @gitlawb' },
-  { name: 'discussions', url: 'https://github.com/Gitlawb/openclaude/discussions', label: 'open a discussion' },
+  { name: 'x', url: 'https://x.com/gitlawb', label: 'follow @rayss868' },
+  { name: 'discussions', url: 'https://github.com/rayss868/openclaude/discussions', label: 'open a discussion' },
   { name: 'trendshift', url: 'https://trendshift.io/repositories/25807', label: 'featured on trendshift' },
 ]

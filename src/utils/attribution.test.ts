@@ -72,7 +72,7 @@ const originalClientType = getClientType()
 const originalMainLoopModelOverride = getMainLoopModelOverride()
 
 const defaultPrAttribution =
-  '🤖 Generated with [OpenClaude](https://github.com/Gitlawb/openclaude)'
+  '🤖 Generated with [OpenClaude](https://github.com/rayss868/openclaude)'
 
 function useSettings(settings: SettingsJson): void {
   testSettings = settings
@@ -225,10 +225,10 @@ describe('getDefaultCommitCoAuthorName', () => {
 
   it('uses the OpenClaude email for commit attribution across providers', () => {
     expect(getDefaultCommitCoAuthorEmail('openai')).toBe(
-      'openclaude@gitlawb.com',
+      'openclaude@rayss868.com',
     )
     expect(getDefaultCommitCoAuthorEmail('firstParty')).toBe(
-      'openclaude@gitlawb.com',
+      'openclaude@rayss868.com',
     )
   })
 })
@@ -277,7 +277,7 @@ describe('getAttributionTexts', () => {
 
     const attribution = getAttributionTexts()
     expect(attribution.commit).toStartWith('Co-Authored-By: ')
-    expect(attribution.commit).toEndWith(' <openclaude@gitlawb.com>')
+    expect(attribution.commit).toEndWith(' <openclaude@rayss868.com>')
     expect(attribution.pr).toBe(defaultPrAttribution)
   })
 

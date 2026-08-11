@@ -12,12 +12,12 @@ OpenClaude is an open-source coding-agent CLI for cloud and local model provider
 
 Use OpenAI-compatible APIs, Gemini, GitHub Models, Codex OAuth, Codex, Ollama, Atomic Chat, and other supported backends while keeping one terminal-first workflow: prompts, tools, agents, MCP, slash commands, and streaming output.
 
-[![PR Checks](https://github.com/Gitlawb/openclaude/actions/workflows/pr-checks.yml/badge.svg?branch=main)](https://github.com/Gitlawb/openclaude/actions/workflows/pr-checks.yml)
-[![Release](https://img.shields.io/github/v/tag/Gitlawb/openclaude?label=release&color=0ea5e9)](https://github.com/Gitlawb/openclaude/tags)
-[![npm downloads](https://img.shields.io/npm/dm/@gitlawb/openclaude)](https://www.npmjs.com/package/@gitlawb/openclaude)
-[![Discussions](https://img.shields.io/badge/discussions-open-7c3aed)](https://github.com/Gitlawb/openclaude/discussions)
+[![PR Checks](https://github.com/rayss868/openclaude/actions/workflows/pr-checks.yml/badge.svg?branch=main)](https://github.com/rayss868/openclaude/actions/workflows/pr-checks.yml)
+[![Release](https://img.shields.io/github/v/tag/rayss868/openclaude?label=release&color=0ea5e9)](https://github.com/rayss868/openclaude/tags)
+[![npm downloads](https://img.shields.io/npm/dm/@rayss868/openclaude)](https://www.npmjs.com/package/@rayss868/openclaude)
+[![Discussions](https://img.shields.io/badge/discussions-open-7c3aed)](https://github.com/rayss868/openclaude/discussions)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/k68zFR6AcB)
-[![X](https://img.shields.io/badge/X-@gitlawb-000000?logo=x&logoColor=white)](https://x.com/gitlawb)
+[![X](https://img.shields.io/badge/X-@rayss868-000000?logo=x&logoColor=white)](https://x.com/gitlawb)
 [![Security Policy](https://img.shields.io/badge/security-policy-0f766e)](SECURITY.md)
 [![License](https://img.shields.io/badge/license-MIT-2563eb)](LICENSE)
 
@@ -100,7 +100,7 @@ OpenClaude requires Node.js `>=22.0.0` for npm installs and runtime. Bun is
 only needed for source builds and local development.
 
 ```bash
-npm install -g @gitlawb/openclaude@latest
+npm install -g @rayss868/openclaude@latest
 ```
 
 If you're on Arch Linux, you can install OpenClaude from the community-maintained [AUR package](https://aur.archlinux.org/packages/openclaude):
@@ -114,8 +114,8 @@ If the install later reports `ripgrep not found`, install ripgrep system-wide an
 
 ```bash
 openclaude --version
-npm view @gitlawb/openclaude dist-tags
-npm install -g @gitlawb/openclaude@latest
+npm view @rayss868/openclaude dist-tags
+npm install -g @rayss868/openclaude@latest
 ```
 
 ### Start
@@ -298,6 +298,44 @@ Advanced and source-build guides:
 - **Codebase intelligence (repo map)**: Structural map of the repository ranked by PageRank importance, auto-injected into context when the `REPO_MAP` flag is enabled or the `REPO_MAP` environment variable is set. Inspect with `/repomap` (2048-token default). See [docs/repo-map.md](docs/repo-map.md) for details.
 - **A companion with signature moves**: A truecolor pixel-art hero who lives beside your prompt and reacts when you work. See below.
 
+## Custom Enhancements (by-rayss builds)
+
+This fork adds reliability, UX, and agent-loop improvements on top of upstream OpenClaude.
+
+### Anti-stall continuation loop
+- Auto-continues when a model returns an empty response after tool use
+- Nudges the AI to continue tool work when it stops without calling `TaskComplete`
+- Honors `TaskComplete` at loop end (not call site); no nudge while it waits on a background agent
+- Multi-lingual continuation signals, including Indonesian
+- `TaskComplete` requires a final summary; exempt from identical-input blocking
+- No continuation nudge when the AI ends with a question
+
+### Timeout and watchdog fixes
+- Removed the default hard query timeout — queries run until completion
+- Bash timeout raised from 2 minutes to 30 minutes, then unlimited (`Infinity`) so long-running commands are never terminated
+- Watchdog deadlines use `performance.now()` so NTP/clock jumps cannot kill queries
+
+### Model picker and discovery
+- Inline search/filter in `/model` plus a "Press / to search" hint
+- Enables model discovery for remote custom OpenAI-compatible endpoints
+- Model discovery loads in the background when opening `/model`
+- `maxContextWindow` works as a hard cap; custom-route (`routeId === 'custom'`) fallback restored
+
+### API resilience
+- Retries transport failures, truncated streams, and connections terminated by server or proxy
+- Discovery cache replaces stale partitions instead of piling them up
+
+### Loop and agent behavior
+- `verificationAgent` toggle in `/config`
+- Natural-language cadence routing with AI conversion
+- AI instructed to use `AskUserQuestion` for questions and `run_in_background` for long-running commands
+- Images saved to temp files instead of embedding base64 in context
+- Default 50-turn REPL limit removed
+
+### MCP and config fixes
+- Global `disabledMcpServers` fallback when projects have none configured
+- MCP validation errors include the tool schema for faster AI learning
+
 ## Meet Your Buddy
 
 Run `/buddy` to hatch a companion — a truecolor pixel-art hero who stands
@@ -451,10 +489,10 @@ If you believe you found a security issue, see [SECURITY.md](SECURITY.md).
 
 ## Community
 
-- Use [GitHub Discussions](https://github.com/Gitlawb/openclaude/discussions) for Q&A, ideas, and community conversation
-- Use [GitHub Issues](https://github.com/Gitlawb/openclaude/issues) for confirmed bugs and actionable feature work
+- Use [GitHub Discussions](https://github.com/rayss868/openclaude/discussions) for Q&A, ideas, and community conversation
+- Use [GitHub Issues](https://github.com/rayss868/openclaude/issues) for confirmed bugs and actionable feature work
 - Join the [Discord](https://discord.gg/k68zFR6AcB) to chat with the community in real time
-- Follow [@gitlawb on X](https://x.com/gitlawb) for updates and announcements
+- Follow [@rayss868 on X](https://x.com/gitlawb) for updates and announcements
 
 ## Contributing
 

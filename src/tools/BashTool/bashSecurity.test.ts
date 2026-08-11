@@ -126,7 +126,7 @@ describe('git commit governance policy (#1326)', () => {
       { git: { forbiddenCommitMessagePatterns: ['Co-Authored-By:'] } },
       () => {
         const result = bashCommandIsSafe_DEPRECATED(
-          'git commit -m "fix: policy\n\nCo-Authored-By: OpenClaude <openclaude@gitlawb.com>"',
+          'git commit -m "fix: policy\n\nCo-Authored-By: OpenClaude <openclaude@rayss868.com>"',
         )
 
         expectAskMessage(result, 'Co-Authored-By:')
@@ -351,7 +351,7 @@ describe('git commit governance policy (#1326)', () => {
       { git: { addGeneratedWithFooter: false } },
       () => {
         const result = bashCommandIsSafe_DEPRECATED(
-          'git commit -m "fix: policy\n\nCo-Authored-By: OpenClaude <openclaude@gitlawb.com>"',
+          'git commit -m "fix: policy\n\nCo-Authored-By: OpenClaude <openclaude@rayss868.com>"',
         )
 
         expect(result.behavior).toBe('passthrough')

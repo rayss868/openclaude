@@ -1,5 +1,12 @@
 {
+  "$schema": "https://raw.githubusercontent.com/rayss868/openclaude/main/config/settings-schema.json",
   "autoCompactEnabled": true,
   "providerProfileModelPickerMode": "auto",
+  "verificationAgent": true,
+  "smartRouting": {
+    "enabled": false
+  },
+  "fastMode": false,
+  "fastModePerSessionOptIn": false,
   "modelLimits": {}
 }

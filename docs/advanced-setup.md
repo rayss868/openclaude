@@ -10,7 +10,7 @@ only required when building or running from source.
 ### Option A: npm
 
 ```bash
-npm install -g @gitlawb/openclaude@latest
+npm install -g @rayss868/openclaude@latest
 ```
 
 ### Option B: From source with Bun
@@ -18,7 +18,7 @@ npm install -g @gitlawb/openclaude@latest
 Use Bun `1.3.13` or newer for source builds. Older Bun versions can fail during `bun run build`.
 
 ```bash
-git clone https://github.com/Gitlawb/openclaude.git
+git clone https://github.com/rayss868/openclaude.git
 cd openclaude
 
 bun install
@@ -29,7 +29,7 @@ npm link
 ### Option C: Run directly with Bun
 
 ```bash
-git clone https://github.com/Gitlawb/openclaude.git
+git clone https://github.com/rayss868/openclaude.git
 cd openclaude
 
 bun install
@@ -391,7 +391,7 @@ The **OpenClaude VS Code extension** can store the key in Secret Storage and set
 
 ## Optional provider packages
 
-To keep the default `npm i -g @gitlawb/openclaude` install small and
+To keep the default `npm i -g @rayss868/openclaude` install small and
 warning-free, a few provider SDKs and the native image library are **not
 bundled**. They are loaded on demand, and the CLI prints an `npm install <pkg>`
 hint (add `-g` for the global CLI) if you enable a feature whose package is
@@ -533,7 +533,7 @@ command-injection validation, and sensitive-file / auto-edit guards. These are
 conservative by design, but a few of them can surface as refusals or approval
 prompts for entirely benign, routine coding tasks (e.g. editing `.gitmodules`,
 running a build script that contains `$(date)`, or writing a CTF port scanner).
-See [issue #1616](https://github.com/Gitlawb/openclaude/issues/1616).
+See [issue #1616](https://github.com/rayss868/openclaude/issues/1616).
 
 Set `OPENCLAUDE_SAFETY_LEVEL` to dial strictness without changing behavior for
 everyone:

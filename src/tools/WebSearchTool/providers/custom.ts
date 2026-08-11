@@ -357,7 +357,7 @@ function auditLogCustomSearch(url: string): void {
     `[web-search] ⚠️  Custom search provider is active. ` +
     `Outbound requests go to: ${safeHostname(url) ?? url}. ` +
     `Ensure this endpoint is trusted. ` +
-    `See: https://github.com/Gitlawb/openclaude/pull/512#security`,
+    `See: https://github.com/rayss868/openclaude/pull/512#security`,
   )
 }
 

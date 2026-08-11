@@ -263,9 +263,12 @@ export const SettingsSchema = lazySchema(() =>
   z
     .object({
       $schema: z
-        .literal(CLAUDE_CODE_SETTINGS_SCHEMA_URL)
+        .union([
+          z.literal(CLAUDE_CODE_SETTINGS_SCHEMA_URL),
+          z.literal('https://json.schemastore.org/claude-code-settings.json'),
+        ])
         .optional()
-        .describe('JSON Schema reference for Claude Code settings'),
+        .describe('JSON Schema reference for OpenClaude settings'),
       subscriptionType: z
         .enum(['free', 'pro', 'max', 'team', 'enterprise'])
         .optional()

@@ -1,5 +1,5 @@
 {
-  "name": "@gitlawb/openclaude",
+  "name": "@rayss868/openclaude",
   "version": "0.28.0-by-rayss",
   "description": "OpenClaude opens coding-agent workflows to any LLM — OpenAI, Gemini, DeepSeek, Ollama, and 200+ models",
   "type": "module",
@@ -23,7 +23,9 @@
     "scripts/windows/openclaude-aliases.ps1",
     "vendor/node-domexception-shim/",
     "docs/windows-aliases-and-launchers.md",
+    "docs/settings-reference.md",
     "config/defaults/",
+    "config/settings-schema.json",
     "README.md"
   ],
   "scripts": {
@@ -31,6 +33,8 @@
     "benchmark:startup": "node scripts/benchmark-openclaude-startup.mjs",
     "integrations:generate": "bun run scripts/generate-integrations-artifacts.ts",
     "integrations:check": "bun run scripts/generate-integrations-artifacts.ts --check",
+    "settings-schema:generate": "bun run scripts/generate-settings-schema.ts",
+    "settings-schema:check": "bun run scripts/generate-settings-schema.ts --check",
     "dev": "bun run build && node bin/openclaude",
     "dev:profile": "bun run scripts/provider-launch.ts",
     "dev:profile:fast": "bun run scripts/provider-launch.ts auto --fast --bare",
@@ -185,7 +189,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Gitlawb/openclaude.git"
+    "url": "https://github.com/rayss868/openclaude.git"
   },
   "keywords": [
     "claude-code",

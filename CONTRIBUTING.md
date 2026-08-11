@@ -25,8 +25,8 @@ OpenClaude is a rapidly evolving open-source coding-agent CLI with support for m
 
 ## Before You Start
 
-- Search existing [issues](https://github.com/Gitlawb/openclaude/issues) and [discussions](https://github.com/Gitlawb/openclaude/discussions) before opening a new thread.
-- Check [open pull requests](https://github.com/Gitlawb/openclaude/pulls) for work that overlaps with your contribution. If a PR already exists that addresses the same change, open an issue or discussion first to align on direction — duplicate PRs may be closed without review.
+- Search existing [issues](https://github.com/rayss868/openclaude/issues) and [discussions](https://github.com/rayss868/openclaude/discussions) before opening a new thread.
+- Check [open pull requests](https://github.com/rayss868/openclaude/pulls) for work that overlaps with your contribution. If a PR already exists that addresses the same change, open an issue or discussion first to align on direction — duplicate PRs may be closed without review.
 - Use issues for confirmed bugs and actionable feature work.
 - Use discussions for setup help, ideas, and general community conversation.
 - For larger changes, open an issue first so the scope is clear before implementation.
@@ -88,8 +88,8 @@ This policy ensures the project stays maintainable and that contributor queue do
 
 We are proactive about closing duplicate PRs. Before submitting, **it is your responsibility to check** whether a similar PR already exists:
 
-- Search [open pull requests](https://github.com/Gitlawb/openclaude/pulls) for related work
-- Check [closed pull requests](https://github.com/Gitlawb/openclaude/pulls?q=is%3Apr+is%3Aclosed) to see if similar work was previously addressed or declined
+- Search [open pull requests](https://github.com/rayss868/openclaude/pulls) for related work
+- Check [closed pull requests](https://github.com/rayss868/openclaude/pulls?q=is%3Apr+is%3Aclosed) to see if similar work was previously addressed or declined
 - If you find an existing PR, engage in that thread rather than opening a new one
 
 Duplicate PRs will likely be closed without review or follow-up. This isn't personal — it's about keeping the review queue focused and efficient.

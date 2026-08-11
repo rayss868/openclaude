@@ -58,7 +58,7 @@ export function getWebFetchUserAgent(): string {
   const supportUrl =
     isFirstPartyAnthropicProvider()
       ? 'https://support.anthropic.com/'
-      : 'https://github.com/Gitlawb/openclaude'
+      : 'https://github.com/rayss868/openclaude'
   return `Claude-User (${getClaudeCodeUserAgent()}; +${supportUrl})`
 }
 

@@ -320,7 +320,7 @@ describe('PowerShell git commit governance policy', () => {
       { git: { addGeneratedWithFooter: false } },
       checkPowerShellCommitMessagePolicy => {
         const result = checkPowerShellCommitMessagePolicy(
-          'git commit -m "fix: policy\n\nCo-Authored-By: OpenClaude <openclaude@gitlawb.com>"',
+          'git commit -m "fix: policy\n\nCo-Authored-By: OpenClaude <openclaude@rayss868.com>"',
         )
 
         expect(result).toBeNull()

@@ -103,7 +103,7 @@ function newerThan(a: string, b: string): boolean {
 export async function npmFreshnessFailure(fetchImpl: typeof fetch = fetch): Promise<string | null> {
   let published: string
   try {
-    const res = await fetchImpl('https://registry.npmjs.org/@gitlawb/openclaude/latest', {
+    const res = await fetchImpl('https://registry.npmjs.org/@rayss868/openclaude/latest', {
       signal: AbortSignal.timeout(5000),
     })
     if (!res.ok) return null

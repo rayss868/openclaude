@@ -18,7 +18,7 @@ npm --version
 ## 2. Install OpenClaude
 
 ```bash
-npm install -g @gitlawb/openclaude@latest
+npm install -g @rayss868/openclaude@latest
 ```
 On Arch Linux, you can alternatively install OpenClaude via the community-maintained [AUR package](https://aur.archlinux.org/packages/openclaude):
 
@@ -160,7 +160,7 @@ Check the basics:
 
 **Via npm:**
 ```bash
-npm install -g @gitlawb/openclaude@latest
+npm install -g @rayss868/openclaude@latest
 ```
 
 **Via AUR:**
@@ -173,7 +173,7 @@ paru
 
 **Via npm:**
 ```bash
-npm uninstall -g @gitlawb/openclaude
+npm uninstall -g @rayss868/openclaude
 ```
 
 **Via AUR (Arch Linux):**

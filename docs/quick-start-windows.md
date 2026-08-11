@@ -18,7 +18,7 @@ npm --version
 ## 2. Install OpenClaude
 
 ```powershell
-npm install -g @gitlawb/openclaude@latest
+npm install -g @rayss868/openclaude@latest
 ```
 
 ## 3. Pick One Provider
@@ -173,13 +173,13 @@ Check the basics:
 ## 6. Updating OpenClaude
 
 ```powershell
-npm install -g @gitlawb/openclaude@latest
+npm install -g @rayss868/openclaude@latest
 ```
 
 ## 7. Uninstalling OpenClaude
 
 ```powershell
-npm uninstall -g @gitlawb/openclaude
+npm uninstall -g @rayss868/openclaude
 ```
 
 

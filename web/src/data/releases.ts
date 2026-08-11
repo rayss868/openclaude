@@ -14,7 +14,7 @@ export interface Release {
   highlights: string[]
 }
 
-export const RELEASES_URL = 'https://github.com/Gitlawb/openclaude/releases'
+export const RELEASES_URL = 'https://github.com/rayss868/openclaude/releases'
 
 export function releaseUrl(version: string): string {
   return `${RELEASES_URL}/tag/v${version}`
