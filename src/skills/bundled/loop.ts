@@ -11,6 +11,7 @@ type LoopMode =
   | 'dynamic-maintenance'
   | 'fixed-prompt'
   | 'fixed-maintenance'
+  | 'conversational'
 
 type ParsedLoopArgs = {
   mode: LoopMode
@@ -66,6 +67,19 @@ function parseTrailingEveryClause(input: string): {
   }
 }
 
+// Time-unit words across common languages. The strict parser only accepts
+// English suffixes, so anything else is a candidate for the AI converter.
+// This pattern only decides routing; the model does the actual interpretation.
+const TIME_UNIT_PATTERN =
+  /(seconds?|minutes?|hours?|days?|detik|menit|jam|hari|segundos?|minutos?|horas?|d[ií]as?|sekunden?|minuten?|stunden?|tage|secondes?|heures?|jours?|秒|分钟|小时|天)/i
+
+// A digit near a known time-unit word suggests the user is describing an
+// interval, even when the phrasing doesn't match the strict "[interval] [prompt]"
+// or "prompt every [interval]" syntax.
+function looksLikeCadenceIntent(args: string): boolean {
+  return /\d/.test(args) && TIME_UNIT_PATTERN.test(args)
+}
+
 function parseLoopArgs(args: string): ParsedLoopArgs {
   const trimmed = args.trim()
   if (!trimmed) return { mode: 'dynamic-maintenance' }
@@ -99,6 +113,13 @@ function parseLoopArgs(args: string): ParsedLoopArgs {
       mode: 'fixed-prompt',
       interval: trailingEvery.interval,
       prompt: trailingEvery.prompt,
+    }
+  }
+
+  if (looksLikeCadenceIntent(trimmed)) {
+    return {
+      mode: 'conversational',
+      prompt: trimmed,
     }
   }
 
@@ -182,11 +203,14 @@ ${effectivePromptInstructions}
 1. Execute the effective prompt now.
    - If it starts with a slash command, invoke it via the Skill tool.
    - Otherwise, act on it directly.
-2. After the work finishes, choose the next delay dynamically between ${DYNAMIC_MIN_DELAY} and ${DYNAMIC_MAX_DELAY}.
+2. If the user's request is ambiguous (e.g. the task is unclear or the timing
+   is not obvious), ask a clarifying question with the AskUserQuestion tool
+   before proceeding. Do not guess when the user's intent is uncertain.
+3. After the work finishes, choose the next delay dynamically between ${DYNAMIC_MIN_DELAY} and ${DYNAMIC_MAX_DELAY}.
    - Use shorter delays while active work is progressing or likely to change soon.
    - Use longer delays when the situation is quiet or stable.
-3. Briefly tell the user the chosen delay and the reason.
-4. Schedule exactly one session-only follow-up run with ${CRON_CREATE_TOOL_NAME}.
+4. Briefly tell the user the chosen delay and the reason.
+5. Schedule exactly one session-only follow-up run with ${CRON_CREATE_TOOL_NAME}.
    - Use recurring: false.
    - Use durable: false.
    - Pin the cron expression to a specific future local-time minute that matches the chosen delay.
@@ -196,8 +220,51 @@ ${effectivePromptInstructions}
 ${reschedulePrompt}
 --- END SCHEDULED PROMPT ---
 
-5. Confirm the next run time and the returned job ID.
-6. Do not create a recurring cron for this mode.
+6. Confirm the next run time and the returned job ID.
+7. Do not create a recurring cron for this mode.
+`
+}
+
+function buildConversationalPrompt(parsed: ParsedLoopArgs): string {
+  return `# /loop — natural-language schedule conversion
+
+The user described a recurring task in natural language instead of the strict
+\`[interval] [prompt]\` or \`prompt every [interval]\` syntax. Interpret their
+intent and convert it into a fixed recurring loop.
+
+Raw user request:
+--- BEGIN USER REQUEST ---
+${parsed.prompt}
+--- END USER REQUEST ---
+
+## Instructions
+
+1. Interpret the user's words in whatever language they used — including
+   Indonesian (e.g. "setiap 2 menit" = every 2 minutes). Translate the cadence
+   and the task into a clean recurring interval.
+   - Supported units: s, m, h, d (and their natural-language equivalents).
+   - Seconds must be rounded up to the nearest minute because cron has minute
+     granularity.
+   - If the interval does not map cleanly to cron cadence, choose the nearest
+     clean recurring interval and tell the user what you picked.
+2. If the request is ambiguous or critical details are missing (interval,
+   task, or target), ask the user a clarifying question with the
+   AskUserQuestion tool before scheduling. Do not guess a schedule when the
+   user's intent is unclear.
+3. Once the intent is clear, call ${CRON_CREATE_TOOL_NAME} with:
+   - the recurring cron expression
+   - the effective prompt (the task, restated precisely)
+   - recurring: true
+   - durable: false
+4. Confirm in the user's language: the schedule, the cron expression, the
+   human cadence, that recurring tasks auto-expire after ${DEFAULT_MAX_AGE_DAYS}
+   days, and that they can cancel sooner with ${CRON_DELETE_TOOL_NAME} using the
+   returned job ID.
+5. Immediately execute the effective prompt now — do not wait for the first
+   cron fire.
+   - If the effective prompt starts with a slash command, invoke it via the
+     Skill tool.
+   - Otherwise, act on it directly.
 `
 }
 
@@ -216,9 +283,11 @@ export function registerLoopSkill(): void {
     async getPromptForCommand(args) {
       const parsed = parseLoopArgs(args)
       const text =
-        parsed.mode === 'fixed-prompt' || parsed.mode === 'fixed-maintenance'
-          ? buildFixedPrompt(parsed)
-          : buildDynamicPrompt(parsed)
+        parsed.mode === 'conversational'
+          ? buildConversationalPrompt(parsed)
+          : parsed.mode === 'fixed-prompt' || parsed.mode === 'fixed-maintenance'
+            ? buildFixedPrompt(parsed)
+            : buildDynamicPrompt(parsed)
       return [{ type: 'text', text }]
     },
   })

@@ -134,3 +134,50 @@ test('prompt delimiters are present and unambiguous', async () => {
   expect(text).toContain('say hi')
   expect(text).toContain('--- END PROMPT ---')
 })
+
+test('Indonesian cadence phrase routes to AI conversion', async () => {
+  registerLoopSkill()
+
+  const skill = findLoopSkill()
+  const blocks = await skill.getPromptForCommand('lakukan ini setiap 2 menit', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  expect(text).toContain('# /loop — natural-language schedule conversion')
+  expect(text).toContain('lakukan ini setiap 2 menit')
+  expect(text).toContain('Indonesian')
+  expect(text).toContain('AskUserQuestion')
+  expect(text).toContain('CronCreate')
+})
+
+test('unknown-language digit+unit phrase routes to AI conversion', async () => {
+  registerLoopSkill()
+
+  const skill = findLoopSkill()
+  const blocks = await skill.getPromptForCommand('comprueba el servidor cada 5 minutos', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  expect(text).toContain('# /loop — natural-language schedule conversion')
+  expect(text).toContain('comprueba el servidor cada 5 minutos')
+})
+
+test('plain prompt with no time words stays dynamic', async () => {
+  registerLoopSkill()
+
+  const skill = findLoopSkill()
+  const blocks = await skill.getPromptForCommand('check the deploy', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  expect(text).toContain('# /loop — dynamic rescheduling')
+  expect(text).toContain('check the deploy')
+  expect(text).not.toContain('natural-language schedule conversion')
+})
+
+test('dynamic prompt instructs asking when unclear', async () => {
+  registerLoopSkill()
+
+  const skill = findLoopSkill()
+  const blocks = await skill.getPromptForCommand('check the deploy', {} as never)
+  const text = (blocks[0] as { text: string }).text
+
+  expect(text).toContain('ask a clarifying question with the AskUserQuestion tool')
+})
