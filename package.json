@@ -9,6 +9,7 @@
   "exports": {
     "./package.json": "./package.json",
     "./dist/cli.mjs": "./dist/cli.mjs",
+    "./acp": "./dist/acp.mjs",
     "./sdk": {
       "types": "./src/entrypoints/sdk.d.ts",
       "import": "./dist/sdk.mjs"
@@ -18,6 +19,7 @@
     "bin/",
     "dist/cli.mjs",
     "dist/sdk.mjs",
+    "dist/acp.mjs",
     "src/entrypoints/sdk.d.ts",
     "src/entrypoints/sdk/coreTypes.generated.ts",
     "scripts/windows/openclaude-aliases.ps1",
@@ -54,6 +56,7 @@
     "dev:code": "bun run profile:code && bun run dev:profile",
     "dev:grpc": "bun run scripts/start-grpc.ts",
     "dev:grpc:cli": "bun run scripts/grpc-cli.ts",
+    "dev:acp": "bun run build && node dist/acp.mjs",
     "start": "node bin/openclaude",
     "web:dev": "bun run --cwd web dev",
     "web:build": "bun run --cwd web build",

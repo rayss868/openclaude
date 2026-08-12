@@ -177,6 +177,7 @@ const featureFlagPreprocessPlugin = {
 
 let result: Awaited<ReturnType<typeof Bun.build>> | undefined
 let sdkResult: Awaited<ReturnType<typeof Bun.build>> | undefined
+let acpResult: Awaited<ReturnType<typeof Bun.build>> | undefined
 
 try {
 
@@ -960,6 +961,105 @@ if (!sdkResult.success) {
   console.log(`✓ Built SDK bundle → dist/sdk.mjs`)
 }
 
+// ── ACP Bundle Build ───────────────────────────────────────────────────────
+// ACP is a standalone stdio adapter over the headless SDK session API.
+console.log('Building ACP bundle...')
+
+acpResult = await Bun.build({
+  entrypoints: ['./src/entrypoints/acp.ts'],
+  outdir: './dist',
+  target: 'node',
+  format: 'esm',
+  splitting: false,
+  sourcemap: 'external',
+  minify: false,
+  naming: 'acp.mjs',
+  define: {
+    'MACRO.VERSION': JSON.stringify(version),
+    'MACRO.DISPLAY_VERSION': JSON.stringify(version),
+    'MACRO.BUILD_TIME': JSON.stringify(new Date().toISOString()),
+    'MACRO.ISSUES_EXPLAINER':
+      JSON.stringify('report the issue at https://github.com/rayss868/openclaude/issues'),
+    'MACRO.FEEDBACK_CHANNEL':
+      JSON.stringify('https://github.com/rayss868/openclaude/issues'),
+    'MACRO.PACKAGE_URL': JSON.stringify('@rayss-dev/openclaude'),
+    'MACRO.NATIVE_PACKAGE_URL': 'undefined',
+    'MACRO.VERSION_CHANGELOG': 'undefined',
+  },
+  external: SDK_EXTERNALS,
+  plugins: [
+    noTelemetryPlugin,
+    featureFlagPreprocessPlugin,
+    {
+      name: 'acp-missing-stub',
+      setup(build) {
+        const missingModules = [
+          '@anthropic-ai/mcpb',
+          '@ant/claude-for-chrome-mcp',
+          '@ant/computer-use-mcp',
+          '@ant/computer-use-swift',
+          '@ant/computer-use-input',
+          '@anthropic-ai/sandbox-runtime',
+          'audio-capture-napi', 'audio-capture.node',
+          'image-processor-napi', 'modifiers-napi', 'url-handler-napi', 'color-diff-napi',
+          'asciichart', 'plist', 'cacache', 'fuse',
+        ]
+        for (const mod of missingModules) {
+          const escaped = mod.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')
+          build.onResolve({ filter: new RegExp(`^${escaped}$`) }, () => ({
+            path: mod,
+            namespace: 'acp-missing-stub',
+          }))
+        }
+        build.onResolve({ filter: /\.(md|txt)$/, namespace: 'file' }, args => ({
+          path: args.path,
+          namespace: 'acp-text-stub',
+        }))
+        build.onLoad({ filter: /.*/, namespace: 'acp-text-stub' }, () => ({
+          contents: 'export default \'\';',
+          loader: 'js',
+        }))
+        build.onLoad({ filter: /.*/, namespace: 'acp-missing-stub' }, () => ({
+          contents: `
+const noop = () => null;
+const noopClass = class {};
+const handler = {
+  get(_, prop) {
+    if (prop === '__esModule') return true;
+    if (prop === 'default') return new Proxy({}, handler);
+    if (prop === 'SandboxRuntimeConfigSchema') return { parse: () => ({}) };
+    return noop;
+  }
+};
+const stub = new Proxy(noop, handler);
+export default stub;
+export const __stub = true;
+export const SandboxViolationStore = null;
+export const SandboxManager = new Proxy({}, { get: () => noop });
+export const SandboxRuntimeConfigSchema = { parse: () => ({}) };
+export const BROWSER_TOOLS = [];
+export const getMcpConfigForManifest = noop;
+export const ColorDiff = null;
+export const ColorFile = null;
+export const getSyntaxTheme = noop;
+export const plot = noop;
+export const createClaudeForChromeMcpServer = noop;
+`,
+          loader: 'js',
+        }))
+      },
+    },
+  ],
+})
+
+if (!acpResult.success) {
+  console.error('ACP build failed:')
+  for (const log of acpResult.logs) console.error(log)
+  process.exitCode = 1
+} else {
+  console.log(`✓ Built ACP bundle → dist/acp.mjs`)
+}
+
 } finally {
   console.log(`  🔄 feature-flags: transformed ${featureFlagTransformedFiles.size} files during bundling`)
 }
@@ -990,7 +1090,7 @@ if (sdkResult?.success) {
 // ── Validate external lists ──────────────────────────────────────────────
 if (result?.success && sdkResult?.success) {
   console.log('\nValidating external lists...')
-  const validation = Bun.spawnSync(['bun', 'run', 'scripts/validate-externals.ts'], {
+  const validation = Bun.spawnSync([process.execPath, 'run', 'scripts/validate-externals.ts'], {
     stdout: 'inherit',
     stderr: 'inherit',
   })
