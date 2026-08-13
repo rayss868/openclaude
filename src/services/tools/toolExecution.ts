@@ -761,30 +761,81 @@ export function normalizeToolInputForValidation(
     return input
   }
 
+  return normalizeAskUserQuestionInput(input)
+}
+
+/**
+ * Some models (notably OpenAI-compatible ones like hy3) emit the
+ * AskUserQuestion payload in a shape that does not match the zod schema:
+ *  - a single question flattened into the top level ({ question, header, options })
+ *  - `questions` as a single flat object instead of an array
+ *  - `options` as an array of plain strings instead of { label, description }
+ * Rewrite any of these into the schema-expected `{ questions: [{ question,
+ * header, options: [{ label, description }], multiSelect }] }` so validation
+ * passes instead of failing with "Invalid tool parameters".
+ */
+function normalizeAskUserQuestionInput(input: Record<string, unknown>): unknown {
+  const isOptionLike = (value: unknown): boolean =>
+    typeof value === 'string' || (isRecord(value) && typeof value.label === 'string')
+
+  const normalizeOptions = (options: unknown): unknown[] | null => {
+    if (!Array.isArray(options) || options.length === 0) return null
+    if (!options.every(isOptionLike)) return null
+    return options.map(option => {
+      if (typeof option === 'string') {
+        return { label: option, description: option }
+      }
+      const record = option as Record<string, unknown>
+      const label = record.label as string
+      const description =
+        typeof record.description === 'string' ? record.description : label
+      return {
+        ...record,
+        label,
+        description,
+        ...(typeof record.preview === 'string' ? { preview: record.preview } : {}),
+      }
+    })
+  }
+
+  const buildQuestion = (raw: Record<string, unknown>): Record<string, unknown> | null => {
+    if (typeof raw.question !== 'string' || typeof raw.header !== 'string') {
+      return null
+    }
+    const options = normalizeOptions(raw.options)
+    if (!options) return null
+    return {
+      question: raw.question,
+      header: raw.header,
+      options,
+      ...(typeof raw.multiSelect === 'boolean' ? { multiSelect: raw.multiSelect } : {}),
+    }
+  }
+
+  // Case A: schema-correct — questions is already an array.
   if (Array.isArray(input.questions)) {
     return input
   }
 
-  const { question, header, options, multiSelect, ...rest } = input
-  if (
-    typeof question !== 'string' ||
-    typeof header !== 'string' ||
-    !Array.isArray(options)
-  ) {
-    return input
+  // Case B: a single flattened question at the top level.
+  if (buildQuestion(input)) {
+    const { question: _q, header: _h, options: _o, multiSelect: _m, ...rest } = input
+    const question = buildQuestion(input)!
+    return {
+      ...rest,
+      questions: [question],
+    }
   }
 
-  return {
-    ...rest,
-    questions: [
-      {
-        question,
-        header,
-        options,
-        ...(typeof multiSelect === 'boolean' ? { multiSelect } : {}),
-      },
-    ],
+  // Case C: questions is a single flat object instead of an array.
+  if (isRecord(input.questions) && buildQuestion(input.questions)) {
+    return {
+      ...input,
+      questions: [buildQuestion(input.questions)!],
+    }
   }
+
+  return input
 }
 
 export async function checkPermissionsAndCallTool(

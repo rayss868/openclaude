@@ -785,6 +785,61 @@ describe('normalizeToolInputForValidation', () => {
     expect(normalizeToolInputForValidation(AskUserQuestionTool, input)).toBe(input)
   })
 
+  test('normalizes hy3-style string-only options on a flattened question', () => {
+    const normalized = normalizeToolInputForValidation(AskUserQuestionTool, {
+      header: 'Lanjut',
+      question: 'Publish ke npm terblokir. Mau lanjut gimana?',
+      options: [
+        'Saya login npm dulu',
+        'Commit dulu aja',
+        'Saya urus sendiri',
+      ],
+      multiSelect: false,
+    })
+
+    expect(AskUserQuestionTool.inputSchema.safeParse(normalized).success).toBe(true)
+    expect(normalized).toEqual({
+      questions: [
+        {
+          header: 'Lanjut',
+          question: 'Publish ke npm terblokir. Mau lanjut gimana?',
+          options: [
+            { label: 'Saya login npm dulu', description: 'Saya login npm dulu' },
+            { label: 'Commit dulu aja', description: 'Commit dulu aja' },
+            { label: 'Saya urus sendiri', description: 'Saya urus sendiri' },
+          ],
+          multiSelect: false,
+        },
+      ],
+    })
+  })
+
+  test('normalizes hy3-style questions as a single flat object (not an array)', () => {
+    const normalized = normalizeToolInputForValidation(AskUserQuestionTool, {
+      questions: {
+        header: 'OTP 2FA',
+        question: 'Berikan kode OTP?',
+        options: ['Lanjutkan publish', 'Batalkan publish'],
+        multiSelect: false,
+      },
+    })
+
+    expect(AskUserQuestionTool.inputSchema.safeParse(normalized).success).toBe(true)
+    expect(normalized).toEqual({
+      questions: [
+        {
+          header: 'OTP 2FA',
+          question: 'Berikan kode OTP?',
+          options: [
+            { label: 'Lanjutkan publish', description: 'Lanjutkan publish' },
+            { label: 'Batalkan publish', description: 'Batalkan publish' },
+          ],
+          multiSelect: false,
+        },
+      ],
+    })
+  })
+
   test('does not normalize unrelated tool inputs', () => {
     const input = {
       header: 'Location',
