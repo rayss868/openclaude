@@ -329,6 +329,31 @@ export async function main(
     return;
   }
 
+  // Fast-path for `openclaude --web`: launch the browser chat client (ACP
+  // stdio bridge) without any provider/credential setup. Extra args are
+  // forwarded to the web server, e.g. `openclaude --web --port 5178`.
+  if (args[0] === '--web') {
+    const { spawn } = await import('node:child_process')
+    const { fileURLToPath } = await import('node:url')
+    const { dirname, join } = await import('node:path')
+    const { existsSync } = await import('node:fs')
+    const here = dirname(fileURLToPath(import.meta.url))
+    const script =
+      [join(here, 'acp-web.mjs'), join(here, '..', '..', 'scripts', 'acp-web-server.mjs')]
+        .find(existsSync)
+    if (!script) {
+      // biome-ignore lint/suspicious/noConsole:: intentional error output
+      console.error('Web client not found. Run `bun run build` first, or use `bun run dev:acp:web`.')
+      process.exit(1)
+    }
+    const child = spawn(process.execPath, [script, ...args.slice(1)], { stdio: 'inherit' })
+    child.on('exit', (code, signal) => {
+      if (signal) process.kill(process.pid, signal)
+      else process.exit(code ?? 0)
+    })
+    return
+  }
+
   // Fast-path for `openclaude ps|logs|attach|kill`.
   // Session management is entirely local, so it should not require config,
   // profile, credential, provider-validation, or startup-screen work.

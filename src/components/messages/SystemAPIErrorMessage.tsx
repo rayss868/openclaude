@@ -21,6 +21,7 @@ type Props = {
 
 export function SystemAPIErrorMessage({ message, verbose }: Props) {
   const { retryAttempt, error, retryInMs, maxRetries } = message
+  const maxRetriesLabel = maxRetries === Infinity ? '∞' : String(maxRetries)
   const compact = retryAttempt < FULL_ERROR_ATTEMPT_THRESHOLD
   const [countdownMs, setCountdownMs] = useState(0)
   const done = countdownMs >= retryInMs
@@ -35,7 +36,7 @@ export function SystemAPIErrorMessage({ message, verbose }: Props) {
       <MessageResponse>
         <Text dimColor>
           {briefAPIErrorReason(error)} — retrying in {retryInSecondsLive}s
-          {'…'} (attempt {retryAttempt}/{maxRetries})
+          {'…'} (attempt {retryAttempt}/{maxRetriesLabel})
         </Text>
       </MessageResponse>
     )
@@ -55,7 +56,7 @@ export function SystemAPIErrorMessage({ message, verbose }: Props) {
         <Text dimColor>
           Retrying in {retryInSecondsLive}{' '}
           {retryInSecondsLive === 1 ? 'second' : 'seconds'}
-          {'…'} (attempt {retryAttempt}/{maxRetries})
+          {'…'} (attempt {retryAttempt}/{maxRetriesLabel})
           {process.env.API_TIMEOUT_MS
             ? ` · API_TIMEOUT_MS=${process.env.API_TIMEOUT_MS}ms, try increasing it`
             : ''}

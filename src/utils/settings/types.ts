@@ -885,6 +885,36 @@ export const SettingsSchema = lazySchema(() =>
             'CLAUDE_CODE_OPENAI_CONTEXT_WINDOWS / CLAUDE_CODE_OPENAI_MAX_OUTPUT_TOKENS env vars take precedence. ' +
             'Example: { "qwen3.6-plus": { "contextWindow": 1048576, "maxOutputTokens": 32768 } }',
         ),
+      apiRetry: z
+        .object({
+          maxRetries: z
+            .union([z.number().int().nonnegative(), z.literal('unlimited')])
+            .optional()
+            .describe(
+              'How many times a retryable request is retried (rate limits like 429, ' +
+                'capacity 529, 5xx, transient network errors). Set 0 to never retry, ' +
+                'any positive integer, or "unlimited" to keep retrying (with the fixed ' +
+                'delayMs below) until the request succeeds or you cancel. ' +
+                'When unset, the OPENCLAUDE_MAX_RETRIES env var is used (default 10).',
+            ),
+          delayMs: z
+            .number()
+            .int()
+            .nonnegative()
+            .optional()
+            .describe(
+              'Fixed delay in milliseconds between retry attempts when this is set. ' +
+                'Set 5000 for 5 seconds, or 0 to retry immediately. A server-provided ' +
+                'Retry-After that is even longer is still honored. When unset, the ' +
+                'default exponential backoff (and OPENCLAUDE_RETRY_DELAY_MS env var) apply.',
+            ),
+        })
+        .optional()
+        .describe(
+          'Network retry policy. Use this to tune how OpenClaude handles rate limits ' +
+            '(429), capacity issues (529) and transient errors — including unlimited ' +
+            'retrying with a fixed delay to ride out a persistent rate limit.',
+        ),
       fastMode: z
         .boolean()
         .optional()

@@ -3,6 +3,7 @@ import type Anthropic from '@anthropic-ai/sdk'
 import { APIError, APIUserAbortError } from '@anthropic-ai/sdk'
 import { acquireSharedMutationLock, releaseSharedMutationLock } from '../../test/sharedMutationLock.js'
 import * as debugNs from '../../utils/debug.js'
+import * as realSettingsModule from '../../utils/settings/settings.js'
 import { markOpenAIRequestNonReplayable } from './openaiErrorClassification.js'
 type ProvidersModule = typeof import('../../utils/model/providers.js')
 
@@ -21,6 +22,7 @@ function makeError(headers: Record<string, string>): APIError {
 const originalEnv = { ...process.env }
 const originalDebugModule = { ...debugNs }
 let originalProvidersModule: ProvidersModule | undefined
+let originalProxyModule: typeof import('../../utils/proxy.js') | undefined
 
 const envKeys = [
   'CLAUDE_CODE_USE_OPENAI',
@@ -54,6 +56,9 @@ afterEach(() => {
     mock.restore()
     if (originalProvidersModule) {
       mock.module('src/utils/model/providers.js', () => originalProvidersModule!)
+    }
+    if (originalProxyModule) {
+      mock.module('src/utils/proxy.js', () => originalProxyModule!)
     }
     mock.module('src/utils/debug.js', () => originalDebugModule)
   } finally {
@@ -100,6 +105,12 @@ async function importFreshWithRetryModule(
     isFirstPartyAnthropicBaseUrl: () => provider === 'firstParty',
     isGithubNativeAnthropicMode: () => false,
     usesAnthropicAccountFlow: () => false,
+  }))
+  // Isolate from the real user settings.json (e.g. `apiRetry.maxRetries:
+  // "unlimited"`) so the retry-configuration tests see a clean environment.
+  mock.module('src/utils/settings/settings.js', () => ({
+    ...realSettingsModule,
+    getInitialSettings: () => ({}),
   }))
   if (options.forceFastMode) {
     const realFastMode = await import('../../utils/fastMode.js')
@@ -159,6 +170,36 @@ describe('retry configuration', () => {
     process.env.OPENCLAUDE_MAX_RETRIES = '1000'
     const { getDefaultMaxRetries } = await importFreshWithRetryModule()
     expect(getDefaultMaxRetries()).toBe(100)
+  })
+
+  test('apiRetryMaxRetriesToNumber maps a numeric maxRetries', async () => {
+    const { apiRetryMaxRetriesToNumber } = await importFreshWithRetryModule()
+    expect(apiRetryMaxRetriesToNumber(7)).toBe(7)
+    expect(apiRetryMaxRetriesToNumber(0)).toBe(0)
+  })
+
+  test('apiRetryMaxRetriesToNumber maps "unlimited" to Infinity', async () => {
+    const { apiRetryMaxRetriesToNumber } = await importFreshWithRetryModule()
+    expect(apiRetryMaxRetriesToNumber('unlimited')).toBe(
+      Number.POSITIVE_INFINITY,
+    )
+  })
+
+  test('apiRetryMaxRetriesToNumber returns undefined when unset', async () => {
+    const { apiRetryMaxRetriesToNumber } = await importFreshWithRetryModule()
+    expect(apiRetryMaxRetriesToNumber(undefined)).toBeUndefined()
+  })
+
+  test('resolveRetryDelayMs uses the fixed delay and honors a longer Retry-After', async () => {
+    const { resolveRetryDelayMs } = await importFreshWithRetryModule()
+    // No fixed delay configured -> fall back to backoff (null).
+    expect(resolveRetryDelayMs(null, 3000)).toBeNull()
+    // Fixed delay wins when it exceeds a smaller Retry-After.
+    expect(resolveRetryDelayMs(5000, 2000)).toBe(5000)
+    // A larger Retry-After is respected over the fixed delay.
+    expect(resolveRetryDelayMs(5000, 8000)).toBe(8000)
+    // delayMs 0 retries immediately unless Retry-After is longer.
+    expect(resolveRetryDelayMs(0, null)).toBe(0)
   })
 
   test('uses default retry delay when env var is absent', async () => {
@@ -296,6 +337,55 @@ describe('abort retry classification', () => {
         )
       }),
     ).toBe(true)
+  })
+
+  test('retries drop the pooled connection and use a fresh client', async () => {
+    process.env.OPENCLAUDE_RETRY_DELAY_MS = '1'
+    originalProxyModule ??= await import('../../utils/proxy.js')
+    const disableKeepAliveMock = mock(() => {})
+    mock.module('src/utils/proxy.js', () => ({
+      ...originalProxyModule!,
+      disableKeepAlive: disableKeepAliveMock,
+    }))
+    const { withRetry } = await importFreshWithRetryModule('firstParty')
+    const retryableError = APIError.generate(
+      500,
+      undefined,
+      'internal server error',
+      new Headers(),
+    )
+    const clientA = { tag: 'a' } as unknown as Anthropic
+    const clientB = { tag: 'b' } as unknown as Anthropic
+    const clients = [clientA, clientB]
+    const seenClients: unknown[] = []
+    let attempts = 0
+
+    const result = await drainAsyncGenerator(
+      withRetry(
+        async () => clients[Math.min(attempts, clients.length - 1)]!,
+        async client => {
+          attempts++
+          seenClients.push(client)
+          if (attempts === 1) {
+            throw retryableError
+          }
+          return { ok: true }
+        },
+        {
+          maxRetries: 2,
+          model: 'test-model',
+          thinkingConfig: { type: 'disabled' },
+          querySource: 'repl_main_thread',
+        },
+      ),
+    )
+
+    expect(result).toEqual({ ok: true })
+    // The retry must not reuse the failed attempt's client instance.
+    expect(seenClients).toEqual([clientA, clientB])
+    // Keep-alive pooling is disabled before the retry so the new client
+    // opens a fresh socket instead of reusing the pooled connection.
+    expect(disableKeepAliveMock).toHaveBeenCalledTimes(1)
   })
 })
 

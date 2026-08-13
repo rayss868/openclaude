@@ -644,6 +644,64 @@ export function Config({
       });
     }
   }, {
+    // How many times to retry transient API errors (429/529/5xx) before
+    // giving up. 'unlimited' keeps retrying until success. 'default' = unset.
+    id: 'apiRetryMaxRetries',
+    label: 'API retry attempts',
+    searchText: 'api retry retries unlimited 429 request',
+    value: apiRetryMaxRetriesDisplay(settingsData?.apiRetry?.maxRetries),
+    // Include the current value so a hand-set value (e.g. 7) round-trips.
+    options: [...new Set(['default', '3', '5', '10', 'unlimited', apiRetryMaxRetriesDisplay(settingsData?.apiRetry?.maxRetries)])],
+    type: 'enum' as const,
+    onChange(selected: string) {
+      const maxRetries = selected === 'default' ? undefined : selected === 'unlimited' ? 'unlimited' : Number(selected);
+      updateSettingsForSource('userSettings', {
+        apiRetry: {
+          ...settingsData?.apiRetry,
+          maxRetries
+        }
+      });
+      setSettingsData(prev => ({
+        ...prev,
+        apiRetry: {
+          ...prev?.apiRetry,
+          maxRetries
+        }
+      }));
+      logEvent('tengu_api_retry_max_retries_changed', {
+        value: maxRetries as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
+      });
+    }
+  }, {
+    // Fixed delay (ms) between retries when apiRetry.delayMs is configured.
+    // '0' = retry immediately. 'default' = unset (revert to backoff).
+    id: 'apiRetryDelayMs',
+    label: 'API retry delay',
+    searchText: 'api retry delay ms wait between retries',
+    value: apiRetryDelayMsDisplay(settingsData?.apiRetry?.delayMs, settingsData?.apiRetry),
+    options: apiRetryDelayOptions(settingsData?.apiRetry?.delayMs),
+    type: 'enum' as const,
+    onChange(selected: string) {
+      // option values are 'default' | 'immediate' | '<N>ms'
+      const delayMs = selected === 'default' ? undefined : selected === 'immediate' ? 0 : Number(selected.replace(/ms$/, ''));
+      updateSettingsForSource('userSettings', {
+        apiRetry: {
+          ...settingsData?.apiRetry,
+          delayMs
+        }
+      });
+      setSettingsData(prev => ({
+        ...prev,
+        apiRetry: {
+          ...prev?.apiRetry,
+          delayMs
+        }
+      }));
+      logEvent('tengu_api_retry_delay_changed', {
+        value: delayMs as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
+      });
+    }
+  }, {
     id: 'defaultPermissionMode',
     label: 'Default permission mode',
     value: settingsData?.permissions?.defaultMode || 'default',
@@ -1416,6 +1474,13 @@ export function Config({
       permissions: iu?.permissions === undefined ? undefined : {
         ...iu.permissions,
         defaultMode: iu.permissions.defaultMode
+      },
+      // apiRetry: both sub-fields are edited via /config; restore the full
+      // merged snapshot so editing one never leaves the other half-reverted.
+      apiRetry: iu?.apiRetry === undefined ? undefined : {
+        ...iu.apiRetry,
+        maxRetries: iu.apiRetry.maxRetries,
+        delayMs: iu.apiRetry.delayMs
       }
     });
     // AppState: batch-restore all possibly-touched fields.
@@ -1983,6 +2048,24 @@ function teammateModelDisplayString(value: string | null | undefined): string {
 function compactModelDisplayString(value: string | undefined): string {
   if (value === undefined) return 'Default (main model)';
   return modelDisplayString(value);
+}
+// apiRetry /config helpers — single source of truth for how the editable
+// maxRetries and delayMs values render and which options they expose.
+function apiRetryMaxRetriesDisplay(value: number | 'unlimited' | undefined): string {
+  if (value === undefined) return 'default';
+  return value === 'unlimited' ? 'unlimited' : String(value);
+}
+function apiRetryDelayMsDisplay(value: number | undefined, current: { delayMs?: number } | undefined): string {
+  // - undefined → 'default'; - 0 → 'immediate' (valid configured value)
+  if (value === undefined && current?.delayMs === undefined) return 'default';
+  const ms = value === undefined ? 0 : value;
+  return ms === 0 ? 'immediate' : `${ms}ms`;
+}
+function apiRetryDelayOptions(value: number | undefined): string[] {
+  const opts = ['default', 'immediate', '1000ms', '5000ms', '10000ms'];
+  const current = apiRetryDelayMsDisplay(value, { delayMs: value });
+  if (current !== 'default' && !opts.includes(current)) opts.push(current);
+  return opts;
 }
 const THEME_LABELS: Record<string, string> = {
   auto: 'Auto (match terminal)',

@@ -1060,6 +1060,31 @@ if (!acpResult.success) {
   console.log(`✓ Built ACP bundle → dist/acp.mjs`)
 }
 
+// ── ACP Web Client Bundle ──────────────────────────────────────────────────
+// The `openclaude --web` fast-path launches this from dist/, so the published
+// package ships the browser client without needing scripts/ at runtime.
+console.log('Building ACP web client bundle...')
+
+const acpWebResult = await Bun.build({
+  entrypoints: ['./scripts/acp-web-server.mjs'],
+  outdir: './dist',
+  target: 'node',
+  format: 'esm',
+  splitting: false,
+  sourcemap: 'external',
+  minify: false,
+  naming: 'acp-web.mjs',
+  external: SDK_EXTERNALS,
+})
+
+if (!acpWebResult.success) {
+  console.error('ACP web client build failed:')
+  for (const log of acpWebResult.logs) console.error(log)
+  process.exitCode = 1
+} else {
+  console.log(`✓ Built ACP web client → dist/acp-web.mjs`)
+}
+
 } finally {
   console.log(`  🔄 feature-flags: transformed ${featureFlagTransformedFiles.size} files during bundling`)
 }

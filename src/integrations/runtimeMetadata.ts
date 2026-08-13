@@ -511,28 +511,28 @@ export function resolveModelRuntimeLimits(options: {
     runtimeEnv,
   )
 
-  // Precedence: exact env override wins; then a global `maxContextWindow`
-  // setting acts as a *cap* over the resolved value; then the built-in
-  // catalog / discovery-cache value; then a broad env *prefix* override;
-  // then the settings.json `modelLimits` override; then the descriptor
-  // default. The key fix for the env/settings drift is keeping `settings`
-  // strictly below `prefix` so a broad env-prefix override is never silently
-  // overtaken by a settings entry — matching the scalar getOpenAIContextWindow,
-  // where env (exact or prefix) beats settings.
+  // Precedence: a global `maxContextWindow` setting is an explicit override
+  // and wins over everything (env vars, catalog, descriptors) so users can
+  // both cap and raise the effective context window for any model. Otherwise:
+  // exact env override wins; then the built-in catalog / discovery-cache
+  // value; then a broad env *prefix* override; then the settings.json
+  // `modelLimits` override; then the descriptor default. The key fix for the
+  // env/settings drift is keeping `settings` strictly below `prefix` so a
+  // broad env-prefix override is never silently overtaken by a settings entry
+  // — matching the scalar getOpenAIContextWindow, where env (exact or prefix)
+  // beats settings.
   const settings = getInitialSettings()
   const resolvedWindow =
-    externalContextWindow.exact ??
-    catalogEntry?.contextWindow ??
-    cachedCatalogEntry?.contextWindow ??
-    externalContextWindow.prefix ??
-    externalContextWindow.settings ??
-    modelDescriptor?.contextWindow
-  const contextWindow =
-    settings.maxContextWindow !== undefined && resolvedWindow !== undefined
-      ? Math.min(settings.maxContextWindow, resolvedWindow)
-      : settings.maxContextWindow ?? resolvedWindow
+    settings.maxContextWindow !== undefined
+      ? settings.maxContextWindow
+      : (externalContextWindow.exact ??
+          catalogEntry?.contextWindow ??
+          cachedCatalogEntry?.contextWindow ??
+          externalContextWindow.prefix ??
+          externalContextWindow.settings ??
+          modelDescriptor?.contextWindow)
   return {
-    contextWindow,
+    contextWindow: resolvedWindow,
     maxOutputTokens:
       externalMaxOutputTokens.exact ??
       catalogEntry?.maxOutputTokens ??

@@ -60,7 +60,7 @@ Optional tuning fields: `simpleMaxChars`, `simpleMaxWords`.
 
 ### `maxContextWindow` (number)
 
-Global override for the max context window in tokens, applied to all models. This takes the highest precedence — above per-model `modelLimits`, environment variables, and catalog limits.
+Global override for the max context window in tokens, applied to all models. This is an explicit override: it wins over env vars, the catalog/discovery cache, and descriptor defaults, and can raise or lower the effective limit. If unset, the normal resolution chain applies.
 
 ```json
 {
@@ -79,6 +79,26 @@ Per-model overrides for `contextWindow` and `maxOutputTokens`. Used for OpenAI-c
   }
 }
 ```
+
+### `apiRetry` (object)
+
+Network retry policy for transient errors (rate limits `429`, capacity `529`, `5xx`, and brief network failure). Use it to control both how many times a `429` is retried and how long to wait between attempts. Both sub-fields can also be edited interactively from `/config`.
+
+- `maxRetries`: number of retry attempts, `0` to never retry, or `"unlimited"` to keep retrying until the request succeeds (or you cancel). Default is `10` when unset.
+- `delayMs`: fixed milliseconds to wait between retries, e.g. `5000` for 5 seconds, or `0` to retry immediately. When set, it replaces the default exponential backoff. A server-provided `Retry-After` longer than this is still honored.
+
+```json
+{
+  "apiRetry": {
+    "maxRetries": "unlimited",
+    "delayMs": 5000
+  }
+}
+```
+
+The `OPENCLAUDE_MAX_RETRIES` / `OPENCLAUDE_RETRY_DELAY_MS` env vars are used only when the corresponding config field is unset.
+
+Every retry drops the pooled connection and reconnects fresh — keep-alive is disabled and a new client is created, so a retry never reuses the connection that just failed.
 
 ### `fastMode` (boolean)
 

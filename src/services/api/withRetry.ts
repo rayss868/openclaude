@@ -16,6 +16,7 @@ import { logForDebugging } from 'src/utils/debug.js'
 import { logError } from 'src/utils/log.js'
 import { createSystemAPIErrorMessage } from 'src/utils/messages.js'
 import { getAPIProvider, getAPIProviderForStatsig } from 'src/utils/model/providers.js'
+import { getInitialSettings } from 'src/utils/settings/settings.js'
 import {
   clearApiKeyHelperCache,
   clearAwsCredentialsCache,
@@ -50,7 +51,6 @@ import {
   isMockRateLimitError,
 } from '../rateLimitMocking.js'
 import { REPEATED_529_ERROR_MESSAGE, isOpenCodeGoQuotaError } from './errors.js'
-import { extractConnectionErrorDetails } from './errorUtils.js'
 import {
   extractOpenAICategoryMarker,
   isOpenAIRequestNonReplayable,
@@ -152,14 +152,6 @@ function isTransientCapacityError(error: unknown): boolean {
   )
 }
 
-function isStaleConnectionError(error: unknown): boolean {
-  if (!(error instanceof APIConnectionError)) {
-    return false
-  }
-  const details = extractConnectionErrorDetails(error)
-  return details?.code === 'ECONNRESET' || details?.code === 'EPIPE'
-}
-
 export interface RetryContext {
   maxTokensOverride?: number
   model: string
@@ -253,34 +245,27 @@ export async function* withRetry<T>(
         }
       }
 
-      // Get a fresh client instance on first attempt or after authentication errors
-      // - 401 for first-party API authentication failures
-      // - 403 "OAuth token has been revoked" (another process refreshed the token)
-      // - Bedrock-specific auth errors (403 or CredentialsProviderError)
-      // - Vertex-specific auth errors (credential refresh failures, 401)
-      // - ECONNRESET/EPIPE: stale keep-alive socket; disable pooling and reconnect
-      const isStaleConnection = isStaleConnectionError(lastError)
-      if (
-        isStaleConnection &&
-        getFeatureValue_CACHED_MAY_BE_STALE(
-          'tengu_disable_keepalive_on_econnreset',
-          false,
-        )
-      ) {
+      // Every retry uses a fresh connection: kill the pooled keep-alive socket
+      // and get a brand-new client so the retry never reuses the old one. The
+      // previous behavior kept the same client (and its frozen fetchOptions)
+      // across retries, so a retry after a rate limit or server error would
+      // reuse the exact connection that just failed.
+      if (lastError != null) {
         logForDebugging(
-          'Stale connection (ECONNRESET/EPIPE) — disabling keep-alive for retry',
+          `Dropping pooled connection for retry ${attempt} — using a fresh client/socket`,
         )
         disableKeepAlive()
       }
 
-      if (
-        client === null ||
-        (lastError instanceof APIError && lastError.status === 401) ||
-        isOAuthTokenRevokedError(lastError) ||
-        isBedrockAuthError(lastError) ||
-        isVertexAuthError(lastError) ||
-        isStaleConnection
-      ) {
+      // Get a fresh client on the first attempt and on every retry: any
+      // failed attempt (rate limit, server error, auth error, stale socket)
+      // must never reuse the client/connection that just failed.
+      // - 401 for first-party API authentication failures triggers a token refresh
+      // - 403 "OAuth token has been revoked" (another process refreshed the token)
+      // - Bedrock-specific auth errors (403 or CredentialsProviderError)
+      // - Vertex-specific auth errors (credential refresh failures, 401)
+      // - ECONNRESET/EPIPE: stale keep-alive socket; pooling already disabled above
+      if (client === null || lastError != null) {
         // On 401 "token expired" or 403 "token revoked", force a token refresh
         if (
           (lastError instanceof APIError && lastError.status === 401) ||
@@ -581,7 +566,19 @@ export async function* withRetry<T>(
           PERSISTENT_RESET_CAP_MS,
         )
       } else {
-        delayMs = getRetryDelay(attempt, retryAfter)
+        // When a fixed delay is configured (apiRetry.delayMs), use it verbatim
+        // for every attempt instead of the default exponential backoff. A
+        // server-provided Retry-After that is even longer still wins so we
+        // don't hammer a provider that asked us to wait.
+        const fixedDelayMs = getConfiguredRetryDelayMs()
+        if (fixedDelayMs !== null) {
+          // Parse Retry-After (integer seconds) the same way getRetryDelay does.
+          const seconds = retryAfter ? parseInt(retryAfter, 10) : NaN
+          const retryAfterMs = isNaN(seconds) ? null : seconds * 1000
+          delayMs = resolveRetryDelayMs(fixedDelayMs, retryAfterMs)!
+        } else {
+          delayMs = getRetryDelay(attempt, retryAfter)
+        }
       }
 
       // In persistent mode the for-loop `attempt` is clamped at maxRetries+1;
@@ -981,7 +978,41 @@ function shouldRetry(error: APIError, persistentRetryEnabled: boolean): boolean 
   return false
 }
 
+/**
+ * Maps a configured `apiRetry.maxRetries` value ('unlimited' | integer) to a
+ * number. Returns undefined when the config is unset so callers fall back to
+ * the env-var / default chain. Pure and unit-testable.
+ */
+export function apiRetryMaxRetriesToNumber(
+  configured: number | 'unlimited' | undefined,
+): number | undefined {
+  if (configured === undefined) return undefined
+  return configured === 'unlimited' ? Number.POSITIVE_INFINITY : configured
+}
+
+/**
+ * Chooses the retry delay when a fixed `apiRetry.delayMs` is configured. A
+ * larger server-provided Retry-After still wins. Returns null when no fixed
+ * delay is configured (callers fall back to the default backoff). Pure.
+ */
+export function resolveRetryDelayMs(
+  fixedDelayMs: number | null,
+  retryAfterMs: number | null,
+): number | null {
+  if (fixedDelayMs === null) return null
+  return retryAfterMs !== null && retryAfterMs > fixedDelayMs
+    ? retryAfterMs
+    : fixedDelayMs
+}
+
 export function getDefaultMaxRetries(): number {
+  // The `apiRetry.maxRetries` setting (settings.json) is the primary control.
+  // Env vars remain as an escape hatch when the config is not set.
+  const configuredMax = apiRetryMaxRetriesToNumber(
+    getApiRetrySettings()?.maxRetries,
+  )
+  if (configuredMax !== undefined) return configuredMax
+
   const openClaudeMaxRetries = process.env.OPENCLAUDE_MAX_RETRIES
   if (openClaudeMaxRetries) {
     return validateRetryAttemptsEnvVar(
@@ -1002,6 +1033,24 @@ export function getDefaultMaxRetries(): number {
   }
 
   return DEFAULT_MAX_RETRIES
+}
+
+/** The configured apiRetry policy from settings.json, or undefined if unset. */
+function getApiRetrySettings():
+  | { maxRetries?: number | 'unlimited'; delayMs?: number }
+  | undefined {
+  return getInitialSettings().apiRetry
+}
+
+/**
+ * Fixed retry delay (ms) from the `apiRetry.delayMs` setting, or null when the
+ * user did not configure one (callers fall back to the default backoff).
+ */
+function getConfiguredRetryDelayMs(): number | null {
+  const delayMs = getApiRetrySettings()?.delayMs
+  return typeof delayMs === 'number' && Number.isFinite(delayMs) && delayMs >= 0
+    ? delayMs
+    : null
 }
 
 export function getDefaultRetryDelayMs(): number {

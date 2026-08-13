@@ -319,10 +319,12 @@ This fork adds reliability, UX, and agent-loop improvements on top of upstream O
 - Inline search/filter in `/model` plus a "Press / to search" hint
 - Enables model discovery for remote custom OpenAI-compatible endpoints
 - Model discovery loads in the background when opening `/model`
-- `maxContextWindow` works as a hard cap; custom-route (`routeId === 'custom'`) fallback restored
+- `maxContextWindow` is a true override — it wins over env vars, the catalog/discovery cache, and descriptor limits for every model (can raise as well as cap); custom-route (`routeId === 'custom'`) fallback restored
 
 ### API resilience
 - Retries transport failures, truncated streams, and connections terminated by server or proxy
+- Every retry drops the pooled connection and reconnects fresh — keep-alive is disabled and a new client is created so a retry never reuses the connection that just failed
+- `apiRetry` retry count and fixed delay editable from `/config` (attempts: 3/5/10/unlimited; delay: immediate/1s/5s/10s)
 - Discovery cache replaces stale partitions instead of piling them up
 
 ### Loop and agent behavior

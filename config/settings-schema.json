@@ -2357,6 +2357,33 @@
         "additionalProperties": false
       }
     },
+    "apiRetry": {
+      "description": "Network retry policy. Use this to tune how OpenClaude handles rate limits (429), capacity issues (529) and transient errors — including unlimited retrying with a fixed delay to ride out a persistent rate limit.",
+      "type": "object",
+      "properties": {
+        "maxRetries": {
+          "description": "How many times a retryable request is retried (rate limits like 429, capacity 529, 5xx, transient network errors). Set 0 to never retry, any positive integer, or \"unlimited\" to keep retrying (with the fixed delayMs below) until the request succeeds or you cancel. When unset, the OPENCLAUDE_MAX_RETRIES env var is used (default 10).",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "string",
+              "const": "unlimited"
+            }
+          ]
+        },
+        "delayMs": {
+          "description": "Fixed delay in milliseconds between retry attempts when this is set. Set 5000 for 5 seconds, or 0 to retry immediately. A server-provided Retry-After that is even longer is still honored. When unset, the default exponential backoff (and OPENCLAUDE_RETRY_DELAY_MS env var) apply.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "additionalProperties": false
+    },
     "fastMode": {
       "description": "When true, fast mode is enabled. When absent or false, fast mode is off.",
       "type": "boolean"
