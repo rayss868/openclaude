@@ -1989,7 +1989,7 @@ export function Config({
                                 {THEME_LABELS[setting_2.value.toString()] ?? setting_2.value.toString()}
                               </Text> : setting_2.id === 'notifChannel' ? <Text color={isSelected ? 'suggestion' : undefined}>
                                 <NotifChannelLabel value={setting_2.value.toString()} />
-                              </Text> : setting_2.id === 'defaultPermissionMode' ? <Text color={setting_2.value === 'fullAccess' ? getModeColor('fullAccess') : isSelected ? 'suggestion' : undefined}>
+                              </Text> : setting_2.id === 'defaultPermissionMode' ? <Text color={setting_2.value === 'fullAccess' || setting_2.value === 'bypassPermissions' ? getModeColor(setting_2.value as PermissionMode) : isSelected ? 'suggestion' : undefined}>
                                 {permissionModeTitle(setting_2.value as PermissionMode)}
                               </Text> : setting_2.id === 'autoUpdatesChannel' && autoUpdaterDisabledReason ? <Box flexDirection="column">
                                 <Text color={isSelected ? 'suggestion' : undefined}>

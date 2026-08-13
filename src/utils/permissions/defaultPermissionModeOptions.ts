@@ -7,9 +7,9 @@ import {
 } from './PermissionMode.js'
 
 /**
- * Default-mode settings intentionally exclude the dangerous always-on modes.
- * Those remain available via explicit session/CLI flows, but not as a normal
- * persisted picker choice.
+ * Default-mode settings offer every addressable permission mode. The runtime
+ * still enforces org policy and `disableBypassPermissionsMode` when a
+ * dangerous mode (`bypassPermissions` / `fullAccess`) actually applies.
  */
 export function getDefaultPermissionModeOptions(
   showAutoInDefaultModePicker: boolean,
@@ -18,7 +18,7 @@ export function getDefaultPermissionModeOptions(
   const allModes: readonly PermissionMode[] = feature('TRANSCRIPT_CLASSIFIER')
     ? PERMISSION_MODES
     : EXTERNAL_PERMISSION_MODES
-  const excluded: PermissionMode[] = ['bypassPermissions', 'fullAccess']
+  const excluded: PermissionMode[] = []
 
   if (feature('TRANSCRIPT_CLASSIFIER') && !showAutoInDefaultModePicker) {
     excluded.push('auto')
@@ -31,3 +31,4 @@ export function getDefaultPermissionModeOptions(
     ),
   ]
 }
+

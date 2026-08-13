@@ -141,6 +141,7 @@ These behave as in stock configuration but are worth knowing about:
 
 - `model` — the model to use, per provider profile.
 - `permissions` — `allow` / `deny` / `ask` rules, `defaultMode`, `additionalDirectories`.
+  - `defaultMode` can be `default`, `plan`, `acceptEdits`, `dontAsk`, `bypassPermissions`, or `fullAccess`. Both `Bypass Permissions` and `Full Access` are selectable directly in the `/config` permission picker. Runtime still enforces org policy and `disableBypassPermissionsMode`.
 - `hooks` — lifecycle hooks (PreToolUse, PostToolUse, Stop, etc.); see `docs/hooks.md`.
 - `env` — environment variables to set for your session.
 - `includeCoAuthoredBy` / `git.addAICoAuthor` / `git.addGeneratedWithFooter` — legacy and current git attribution opt-ins. Attribution for this fork uses `openclaude@rayss868.com`.

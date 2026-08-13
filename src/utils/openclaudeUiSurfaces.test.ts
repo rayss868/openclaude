@@ -209,10 +209,10 @@ describe('OpenClaude validation tips', () => {
 })
 
 describe('OpenClaude permission mode surfaces', () => {
-  test('default permission mode picker excludes dangerous persisted modes', () => {
+  test('default permission mode picker shows all addressable modes', () => {
     const options = getDefaultPermissionModeOptions(true)
 
-    expect(options).not.toContain('bypassPermissions')
-    expect(options).not.toContain('fullAccess')
+    expect(options).toContain('bypassPermissions')
+    expect(options).toContain('fullAccess')
   })
 })
