@@ -12,6 +12,7 @@ import { getDefaultAppState } from '../../state/AppStateStore.js'
 import { createToolFixture } from '../../test/toolFixtures.js'
 import { SkillTool } from '../../tools/SkillTool/SkillTool.js'
 import { AskUserQuestionTool } from '../../tools/AskUserQuestionTool/AskUserQuestionTool.js'
+import { TaskCompleteTool } from '../../tools/TaskCompleteTool/TaskCompleteTool.js'
 import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
 import { FILE_EDIT_TOOL_NAME } from '../../tools/FileEditTool/constants.js'
 import { FILE_WRITE_TOOL_NAME } from '../../tools/FileWriteTool/constants.js'
@@ -838,6 +839,37 @@ describe('normalizeToolInputForValidation', () => {
         },
       ],
     })
+  })
+
+  test('parses hy3-style questions provided as a JSON string into an array', () => {
+    const normalized = normalizeToolInputForValidation(AskUserQuestionTool, {
+      questions: JSON.stringify([
+        {
+          header: 'Bahasa',
+          question: 'Bahasa pemrograman apa yang dipakai untuk CLI project ini?',
+          options: [
+            { label: 'Python', description: 'Gunakan Python' },
+            { label: 'TypeScript', description: 'Gunakan TypeScript' },
+            { label: 'Go', description: 'Gunakan Go' },
+          ],
+          multiSelect: false,
+        },
+      ]),
+    })
+
+    expect(AskUserQuestionTool.inputSchema.safeParse(normalized).success).toBe(true)
+    expect(Array.isArray((normalized as { questions: unknown }).questions)).toBe(true)
+    expect((normalized as { questions: unknown[] }).questions).toHaveLength(1)
+  })
+
+  test('drops extra keys from hy3-style TaskComplete payloads (strict empty schema)', () => {
+    const normalized = normalizeToolInputForValidation(TaskCompleteTool, {
+      done: true,
+      taskId: 'task-123',
+      summary: 'finished',
+    })
+    expect(normalized).toEqual({})
+    expect(TaskCompleteTool.inputSchema.safeParse(normalized).success).toBe(true)
   })
 
   test('does not normalize unrelated tool inputs', () => {

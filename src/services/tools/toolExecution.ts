@@ -757,6 +757,15 @@ export function normalizeToolInputForValidation(
     return input
   }
 
+  if (tool.name === TASK_COMPLETE_TOOL_NAME) {
+    // TaskComplete's schema is `strictObject({})` (a completion signal with no
+    // payload). Some OpenAI-compatible models (e.g. hy3) attach extra keys
+    // (`done`, `taskId`, `summary`, …), which a strict schema rejects with
+    // `InputValidationError`. The signal has no meaningful input, so we drop
+    // any supplied fields rather than failing validation.
+    return {}
+  }
+
   if (tool.name !== ASK_USER_QUESTION_TOOL_NAME) {
     return input
   }
@@ -767,6 +776,7 @@ export function normalizeToolInputForValidation(
 /**
  * Some models (notably OpenAI-compatible ones like hy3) emit the
  * AskUserQuestion payload in a shape that does not match the zod schema:
+ *  - `questions` serialized as a JSON string instead of an array
  *  - a single question flattened into the top level ({ question, header, options })
  *  - `questions` as a single flat object instead of an array
  *  - `options` as an array of plain strings instead of { label, description }
@@ -809,6 +819,20 @@ function normalizeAskUserQuestionInput(input: Record<string, unknown>): unknown 
       header: raw.header,
       options,
       ...(typeof raw.multiSelect === 'boolean' ? { multiSelect: raw.multiSelect } : {}),
+    }
+  }
+
+  // Case A0: `questions` arrived as a JSON string (some OpenAI-compatible
+  // providers serialize the whole array/object as a string). Parse it back
+  // to the real shape so the cases below can handle it.
+  if (typeof input.questions === 'string') {
+    try {
+      const parsed = JSON.parse(input.questions) as unknown
+      if (parsed !== null && typeof parsed === 'object') {
+        return normalizeAskUserQuestionInput({ ...input, questions: parsed })
+      }
+    } catch {
+      // fall through — leave as-is so the schema reports the real error
     }
   }
 
