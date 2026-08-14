@@ -1,5 +1,3 @@
-import { latestVersion } from './releases'
-
 export const SITE = {
   url: 'https://openclaude.gitlawb.com',
   name: 'openclaude',
@@ -9,9 +7,9 @@ export const SITE = {
   installCommand: 'npm install -g @rayss-dev/openclaude@latest',
   npmUrl: 'https://www.npmjs.com/package/@rayss-dev/openclaude',
   github: 'https://github.com/rayss868/openclaude',
+  releasesUrl: 'https://github.com/rayss868/openclaude/releases',
   gitlawb: 'https://gitlawb.com',
   gitlawbRepo: 'https://gitlawb.com/node/repos/z6MkqDnb/openclaude',
-  version: latestVersion,
   ogDefault: '/og/default.png',
   ogDocs: '/og/docs.png',
 } as const
