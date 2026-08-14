@@ -47,8 +47,8 @@ export function registerMcpAddCommand(mcp: Command): void {
     )
     .option(
       '-s, --scope <scope>',
-      'Configuration scope (local, user, or project)',
-      'local',
+      'Configuration scope (user only; global MCP). Kept for compatibility.',
+      'user',
     )
     .option(
       '-t, --transport <transport>',

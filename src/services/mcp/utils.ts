@@ -299,7 +299,7 @@ export function getScopeLabel(scope: ConfigScope): string {
 }
 
 export function ensureConfigScope(scope?: string): ConfigScope {
-  if (!scope) return 'local'
+  if (!scope) return 'user'
 
   if (!ConfigScopeSchema().options.includes(scope as ConfigScope)) {
     throw new Error(

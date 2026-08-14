@@ -707,6 +707,8 @@ export type GlobalConfig = {
   // configured, this list is used as the fallback so MCP state is consistent
   // across all projects.
   disabledMcpServers?: string[]
+  // Global MCP server enabled list (for default-disabled built-in servers).
+  enabledMcpServers?: string[]
 }
 
 /**
@@ -820,6 +822,7 @@ export const GLOBAL_CONFIG_KEYS = [
   'maxMessagesCompactionThreshold',
   'compactModel',
   'disabledMcpServers',
+  'enabledMcpServers',
 ] as const
 
 export type GlobalConfigKey = (typeof GLOBAL_CONFIG_KEYS)[number]

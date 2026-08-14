@@ -34,7 +34,8 @@ type SelectableItem = {
 
 // Define scope order for display (constant, outside component)
 // 'dynamic' (built-in) is rendered separately at the end
-const SCOPE_ORDER: ConfigScope[] = ['project', 'local', 'user', 'enterprise'];
+// Global-only MCP: project and local scopes are ignored.
+const SCOPE_ORDER: ConfigScope[] = ['user', 'enterprise'];
 
 // Get scope heading parts (label is bold, path is grey)
 function getScopeHeading(scope: ConfigScope): {

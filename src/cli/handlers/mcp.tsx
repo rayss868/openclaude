@@ -23,7 +23,7 @@ import { addMcpConfig, getAllMcpConfigs, getMcpConfigByName, getMcpConfigsByScop
 import type { ConfigScope, ScopedMcpServerConfig } from '../../services/mcp/types.js';
 import { describeMcpConfigFilePath, ensureConfigScope, getScopeLabel } from '../../services/mcp/utils.js';
 import { AppStateProvider } from '../../state/AppState.js';
-import { getCurrentProjectConfig, getGlobalConfig, saveCurrentProjectConfig } from '../../utils/config.js';
+import { getGlobalConfig, saveCurrentProjectConfig } from '../../utils/config.js';
 import { isFsInaccessible } from '../../utils/errors.js';
 import { gracefulShutdown } from '../../utils/gracefulShutdown.js';
 import { safeParseJSON } from '../../utils/json.js';
@@ -197,26 +197,12 @@ export async function mcpRemoveHandler(name: string, options: {
       cliOk(`File modified: ${describeMcpConfigFilePath(scope)}`);
     }
 
-    // If no scope specified, check where the server exists
-    const projectConfig = getCurrentProjectConfig();
+    // Global-only MCP: servers live in the user scope only.
     const globalConfig = getGlobalConfig();
-
-    // Check if server exists in project scope (.mcp.json)
-    const {
-      servers: projectServers
-    } = getMcpConfigsByScope('project');
-    const mcpJsonExists = !!projectServers[name];
-
-    // Count how many scopes contain this server
-    const scopes: Array<Exclude<ConfigScope, 'dynamic'>> = [];
-    if (projectConfig.mcpServers?.[name]) scopes.push('local');
-    if (mcpJsonExists) scopes.push('project');
-    if (globalConfig.mcpServers?.[name]) scopes.push('user');
-    if (scopes.length === 0) {
+    if (!globalConfig.mcpServers?.[name]) {
       cliError(`No MCP server found with name: "${name}"`);
-    } else if (scopes.length === 1) {
-      // Server exists in only one scope, remove it
-      const scope = scopes[0]!;
+    } else {
+      const scope = 'user' as const;
       logEvent('tengu_mcp_delete', {
         name: name as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
         scope: scope as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
@@ -225,17 +211,6 @@ export async function mcpRemoveHandler(name: string, options: {
       cleanupSecureStorage();
       process.stdout.write(`Removed MCP server "${name}" from ${scope} config\n`);
       cliOk(`File modified: ${describeMcpConfigFilePath(scope)}`);
-    } else {
-      // Server exists in multiple scopes
-      process.stderr.write(`MCP server "${name}" exists in multiple scopes:\n`);
-      scopes.forEach(scope => {
-        process.stderr.write(`  - ${getScopeLabel(scope)} (${describeMcpConfigFilePath(scope)})\n`);
-      });
-      process.stderr.write('\nTo remove from a specific scope, use:\n');
-      scopes.forEach(scope => {
-        process.stderr.write(`  openclaude mcp remove "${name}" -s ${scope}\n`);
-      });
-      cliError();
     }
   } catch (error) {
     cliError((error as Error).message);

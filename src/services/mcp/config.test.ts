@@ -80,10 +80,10 @@ describe('enable', () => {
     expect(isMcpServerDisabled('s')).toBe(false)
   })
 
-  test('stays local (M1)', () => {
+  test('removes from global (global-only)', () => {
     setMcpServerEnabled('s', false)
     setMcpServerEnabled('s', true)
-    expect(getGlobalConfig().disabledMcpServers).toContain('s')
+    expect(getGlobalConfig().disabledMcpServers).not.toContain('s')
   })
 
   test('idempotent', () => {

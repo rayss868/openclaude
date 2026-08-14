@@ -1,19 +1,12 @@
 import { feature } from 'bun:bundle'
-import { chmod, open, rename, stat, unlink } from 'fs/promises'
 import mapValues from 'lodash-es/mapValues.js'
 import memoize from 'lodash-es/memoize.js'
-import { dirname, join, parse } from 'path'
+import { join } from 'path'
 import { getPlatform } from 'src/utils/platform.js'
 import type { PluginError } from '../../types/plugin.js'
 import { getPluginErrorMessage } from '../../types/plugin.js'
 import { isClaudeInChromeMCPServer } from '../../utils/claudeInChrome/common.js'
-import {
-  getCurrentProjectConfig,
-  getGlobalConfig,
-  saveCurrentProjectConfig,
-  saveGlobalConfig,
-} from '../../utils/config.js'
-import { getCwd } from '../../utils/cwd.js'
+import { getGlobalConfig, saveGlobalConfig } from '../../utils/config.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { getErrnoCode } from '../../utils/errors.js'
 import { getFsImplementation } from '../../utils/fsOperations.js'
@@ -78,56 +71,6 @@ function addScopeToServers(
     scopedServers[name] = { ...config, scope }
   }
   return scopedServers
-}
-
-/**
- * Internal utility: Write MCP config to .mcp.json file.
- * Preserves file permissions and flushes to disk before rename.
- * Uses the original path for rename (does not follow symlinks).
- */
-async function writeMcpjsonFile(config: McpJsonConfig): Promise<void> {
-  const mcpJsonPath = join(getCwd(), '.mcp.json')
-
-  // Read existing file permissions to preserve them
-  let existingMode: number | undefined
-  try {
-    const stats = await stat(mcpJsonPath)
-    existingMode = stats.mode
-  } catch (e: unknown) {
-    const code = getErrnoCode(e)
-    if (code !== 'ENOENT') {
-      throw e
-    }
-    // File doesn't exist yet -- no permissions to preserve
-  }
-
-  // Write to temp file, flush to disk, then atomic rename
-  const tempPath = `${mcpJsonPath}.tmp.${process.pid}.${Date.now()}`
-  const handle = await open(tempPath, 'w', existingMode ?? 0o644)
-  try {
-    await handle.writeFile(jsonStringify(config, null, 2), {
-      encoding: 'utf8',
-    })
-    await handle.datasync()
-  } finally {
-    await handle.close()
-  }
-
-  try {
-    // Restore original file permissions on the temp file before rename
-    if (existingMode !== undefined) {
-      await chmod(tempPath, existingMode)
-    }
-    await rename(tempPath, mcpJsonPath)
-  } catch (e: unknown) {
-    // Clean up temp file on failure
-    try {
-      await unlink(tempPath)
-    } catch {
-      // Best-effort cleanup
-    }
-    throw e
-  }
 }
 
 /**
@@ -680,24 +623,16 @@ export async function addMcpConfig(
 
   // Check if server already exists in the target scope
   switch (scope) {
-    case 'project': {
-      const { servers } = getProjectMcpConfigsFromCwd()
-      if (servers[name]) {
-        throw new Error(`MCP server ${name} already exists in .mcp.json`)
-      }
-      break
-    }
+    case 'project':
+    case 'local':
+      // Global-only MCP: project/local scopes are unsupported for writes.
+      throw new Error(
+        `Cannot add MCP server to scope: ${scope}. MCP servers are global-only; use user scope.`,
+      )
     case 'user': {
       const globalConfig = getGlobalConfig()
       if (globalConfig.mcpServers?.[name]) {
         throw new Error(`MCP server ${name} already exists in user config`)
-      }
-      break
-    }
-    case 'local': {
-      const projectConfig = getCurrentProjectConfig()
-      if (projectConfig.mcpServers?.[name]) {
-        throw new Error(`MCP server ${name} already exists in local config`)
       }
       break
     }
@@ -711,41 +646,8 @@ export async function addMcpConfig(
 
   // Add based on scope
   switch (scope) {
-    case 'project': {
-      const { servers: existingServers } = getProjectMcpConfigsFromCwd()
-
-      const mcpServers: Record<string, McpServerConfig> = {}
-      for (const [serverName, serverConfig] of Object.entries(
-        existingServers,
-      )) {
-        const { scope: _, ...configWithoutScope } = serverConfig
-        mcpServers[serverName] = configWithoutScope
-      }
-      mcpServers[name] = validatedConfig
-      const mcpConfig = { mcpServers }
-
-      // Write back to .mcp.json
-      try {
-        await writeMcpjsonFile(mcpConfig)
-      } catch (error) {
-        throw new Error(`Failed to write to .mcp.json: ${error}`)
-      }
-      break
-    }
-
     case 'user': {
       saveGlobalConfig(current => ({
-        ...current,
-        mcpServers: {
-          ...current.mcpServers,
-          [name]: validatedConfig,
-        },
-      }))
-      break
-    }
-
-    case 'local': {
-      saveCurrentProjectConfig(current => ({
         ...current,
         mcpServers: {
           ...current.mcpServers,
@@ -771,32 +673,6 @@ export async function removeMcpConfig(
   scope: ConfigScope,
 ): Promise<void> {
   switch (scope) {
-    case 'project': {
-      const { servers: existingServers } = getProjectMcpConfigsFromCwd()
-
-      if (!existingServers[name]) {
-        throw new Error(`No MCP server found with name: ${name} in .mcp.json`)
-      }
-
-      // Strip scope information when writing back to .mcp.json
-      const mcpServers: Record<string, McpServerConfig> = {}
-      for (const [serverName, serverConfig] of Object.entries(
-        existingServers,
-      )) {
-        if (serverName !== name) {
-          const { scope: _, ...configWithoutScope } = serverConfig
-          mcpServers[serverName] = configWithoutScope
-        }
-      }
-      const mcpConfig = { mcpServers }
-      try {
-        await writeMcpjsonFile(mcpConfig)
-      } catch (error) {
-        throw new Error(`Failed to remove from .mcp.json: ${error}`)
-      }
-      break
-    }
-
     case 'user': {
       const config = getGlobalConfig()
       if (!config.mcpServers?.[name]) {
@@ -812,71 +688,14 @@ export async function removeMcpConfig(
       break
     }
 
-    case 'local': {
-      // Check if server exists before updating
-      const config = getCurrentProjectConfig()
-      if (!config.mcpServers?.[name]) {
-        throw new Error(`No project-local MCP server found with name: ${name}`)
-      }
-      saveCurrentProjectConfig(current => {
-        const { [name]: _, ...restMcpServers } = current.mcpServers ?? {}
-        return {
-          ...current,
-          mcpServers: restMcpServers,
-        }
-      })
-      break
-    }
-
+    case 'project':
+    case 'local':
+      // Global-only MCP: project/local scopes are unsupported.
+      throw new Error(
+        `No MCP server found in project or local scope: ${name} (MCP servers are global-only)`,
+      )
     default:
       throw new Error(`Cannot remove MCP server from scope: ${scope}`)
-  }
-}
-
-/**
- * Get MCP configs from current directory only (no parent traversal).
- * Used by addMcpConfig and removeMcpConfig to modify the local .mcp.json file.
- * Exported for testing purposes.
- *
- * @returns Servers with scope information and any validation errors from current directory's .mcp.json
- */
-export function getProjectMcpConfigsFromCwd(): {
-  servers: Record<string, ScopedMcpServerConfig>
-  errors: ValidationError[]
-} {
-  // Check if project source is enabled
-  if (!isSettingSourceEnabled('projectSettings')) {
-    return { servers: {}, errors: [] }
-  }
-
-  const mcpJsonPath = join(getCwd(), '.mcp.json')
-
-  const { config, errors } = parseMcpConfigFromFilePath({
-    filePath: mcpJsonPath,
-    expandVars: true,
-    scope: 'project',
-  })
-
-  // Missing .mcp.json is expected, but malformed files should report errors
-  if (!config) {
-    const nonMissingErrors = errors.filter(
-      e => !e.message.startsWith('MCP config file not found'),
-    )
-    if (nonMissingErrors.length > 0) {
-      logForDebugging(
-        `MCP config errors for ${mcpJsonPath}: ${jsonStringify(nonMissingErrors.map(e => e.message))}`,
-        { level: 'error' },
-      )
-      return { servers: {}, errors: nonMissingErrors }
-    }
-    return { servers: {}, errors: [] }
-  }
-
-  return {
-    servers: config.mcpServers
-      ? addScopeToServers(config.mcpServers, 'project')
-      : {},
-    errors: errors || [],
   }
 }
 
@@ -907,57 +726,8 @@ export function getMcpConfigsByScope(
 
   switch (scope) {
     case 'project': {
-      const allServers: Record<string, ScopedMcpServerConfig> = {}
-      const allErrors: ValidationError[] = []
-
-      // Build list of directories to check
-      const dirs: string[] = []
-      let currentDir = getCwd()
-
-      while (currentDir !== parse(currentDir).root) {
-        dirs.push(currentDir)
-        currentDir = dirname(currentDir)
-      }
-
-      // Process from root downward to CWD (so closer files have higher priority)
-      for (const dir of dirs.reverse()) {
-        const mcpJsonPath = join(dir, '.mcp.json')
-
-        const { config, errors } = parseMcpConfigFromFilePath({
-          filePath: mcpJsonPath,
-          expandVars: true,
-          scope: 'project',
-        })
-
-        // Missing .mcp.json in parent directories is expected, but malformed files should report errors
-        if (!config) {
-          const nonMissingErrors = errors.filter(
-            e => !e.message.startsWith('MCP config file not found'),
-          )
-          if (nonMissingErrors.length > 0) {
-            logForDebugging(
-              `MCP config errors for ${mcpJsonPath}: ${jsonStringify(nonMissingErrors.map(e => e.message))}`,
-              { level: 'error' },
-            )
-            allErrors.push(...nonMissingErrors)
-          }
-          continue
-        }
-
-        if (config.mcpServers) {
-          // Merge servers, with files closer to CWD overriding parent configs
-          Object.assign(allServers, addScopeToServers(config.mcpServers, scope))
-        }
-
-        if (errors.length > 0) {
-          allErrors.push(...errors)
-        }
-      }
-
-      return {
-        servers: allServers,
-        errors: allErrors,
-      }
+      // Global-only MCP: project-scoped .mcp.json files are ignored entirely.
+      return { servers: {}, errors: [] }
     }
     case 'user': {
       const mcpServers = getGlobalConfig().mcpServers
@@ -977,21 +747,8 @@ export function getMcpConfigsByScope(
       }
     }
     case 'local': {
-      const mcpServers = getCurrentProjectConfig().mcpServers
-      if (!mcpServers) {
-        return { servers: {}, errors: [] }
-      }
-
-      const { config, errors } = parseMcpConfig({
-        configObject: { mcpServers },
-        expandVars: true,
-        scope: 'local',
-      })
-
-      return {
-        servers: addScopeToServers(config?.mcpServers, scope),
-        errors,
-      }
+      // Global-only MCP: per-folder local MCP config is ignored entirely.
+      return { servers: {}, errors: [] }
     }
     case 'enterprise': {
       const enterpriseMcpPath = getEnterpriseMcpFilePath()
@@ -1526,18 +1283,12 @@ function isDefaultDisabledBuiltin(name: string): boolean {
  * @returns true if the server is disabled
  */
 export function isMcpServerDisabled(name: string): boolean {
-  const projectConfig = getCurrentProjectConfig()
+  // Global-only MCP: disabled/enabled state lives in the global config only.
+  const globalConfig = getGlobalConfig()
   if (isDefaultDisabledBuiltin(name)) {
-    const enabledServers = projectConfig.enabledMcpServers || []
+    const enabledServers = globalConfig.enabledMcpServers || []
     return !enabledServers.includes(name)
   }
-  // Use project-level disabledMcpServers if explicitly set (even if empty),
-  // otherwise fall back to the global list so MCP state is consistent
-  // across all projects.
-  if (projectConfig.disabledMcpServers !== undefined) {
-    return projectConfig.disabledMcpServers.includes(name)
-  }
-  const globalConfig = getGlobalConfig()
   return (globalConfig.disabledMcpServers || []).includes(name)
 }
 
@@ -1560,7 +1311,8 @@ export function setMcpServerEnabled(name: string, enabled: boolean): void {
   const isBuiltinStateChange =
     isDefaultDisabledBuiltin(name) && isMcpServerDisabled(name) === enabled
 
-  saveCurrentProjectConfig(current => {
+  // Global-only MCP: enabled/disabled state lives in the global config only.
+  saveGlobalConfig(current => {
     if (isDefaultDisabledBuiltin(name)) {
       const prev = current.enabledMcpServers || []
       const next = toggleMembership(prev, name, enabled)
@@ -1568,46 +1320,11 @@ export function setMcpServerEnabled(name: string, enabled: boolean): void {
       return { ...current, enabledMcpServers: next }
     }
 
-    const prev = current.disabledMcpServers
-    if (prev === undefined) {
-      // No project-level override yet. Determine the effective inherited list
-      // so we can decide whether a write is needed.
-      const inherited = getGlobalConfig().disabledMcpServers || []
-
-      if (!enabled) {
-        // Disabling: materialize a project list that includes the inherited
-        // disables *plus* the new one so we don't silently un-disable servers
-        // that were disabled globally.
-        const next = toggleMembership(inherited, name, true)
-        return { ...current, disabledMcpServers: next }
-      }
-
-      // Enabling: if the server isn't disabled via the global fallback there
-      // is nothing to override — return early.  If it *is* globally disabled,
-      // materialize an explicit empty list so the local override takes effect.
-      if (!inherited.includes(name)) {
-        return current
-      }
-      return { ...current, disabledMcpServers: [] }
-    }
-
+    const prev = current.disabledMcpServers || []
     const next = toggleMembership(prev, name, !enabled)
     if (next === prev) return current
     return { ...current, disabledMcpServers: next }
   })
-
-  // Propagate only the *disable* direction to global so that disabling a
-  // server in one project takes effect everywhere by default, but enabling
-  // stays project-local (avoids silently force-enabling in unrelated projects).
-  // Builtins are exempt — they track state via enabledMcpServers.
-  if (!enabled && !isDefaultDisabledBuiltin(name)) {
-    saveGlobalConfig(current => {
-      const prev = current.disabledMcpServers || []
-      const next = toggleMembership(prev, name, true)
-      if (next === prev) return current
-      return { ...current, disabledMcpServers: next }
-    })
-  }
 
   if (isBuiltinStateChange) {
     logEvent('tengu_builtin_mcp_toggle', {
