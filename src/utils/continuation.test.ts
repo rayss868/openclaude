@@ -134,3 +134,86 @@ describe('analyzeContinuationIntent waiting for agent', () => {
     ).toBe(true)
   })
 })
+
+// Completion-insistence guard: after the harness has already nudged the model
+// to continue, a reply that again declares the task done (without a strong
+// action intent) must end the turn. Re-nudging it produces the "tugas
+// selesai" spam loop until the nudge budget is exhausted.
+describe('analyzeContinuationIntent completion insistence after nudge', () => {
+  test('does not re-nudge a completion reply after an earlier nudge (Indonesian)', () => {
+    expect(
+      analyzeContinuationIntent(
+        'Tugas sudah selesai sepenuhnya dan tidak ada pekerjaan lanjutan yang perlu dilakukan.',
+        { alreadyNudged: true },
+      ).shouldNudge,
+    ).toBe(false)
+    expect(
+      analyzeContinuationIntent('Analisis komparatif sudah selesai dan tidak ada perubahan kode.',
+        { alreadyNudged: true }).shouldNudge,
+    ).toBe(false)
+    expect(
+      analyzeContinuationIntent('Tugas sudah selesai sepenuhnya', { alreadyNudged: true }).shouldNudge,
+    ).toBe(false)
+  })
+
+  test('does not re-nudge a completion reply after an earlier nudge (English/French/Spanish)', () => {
+    expect(
+      analyzeContinuationIntent('Task is done. No more work needed.', { alreadyNudged: true }).shouldNudge,
+    ).toBe(false)
+    expect(
+      analyzeContinuationIntent('● All done. The report is complete with no pending work.', { alreadyNudged: true })
+        .shouldNudge,
+    ).toBe(false)
+    expect(
+      analyzeContinuationIntent("C'est terminé, aucune autre étape nécessaire.", { alreadyNudged: true }).shouldNudge,
+    ).toBe(false)
+    expect(
+      analyzeContinuationIntent('Tarea completada, no hay más trabajo pendiente.', { alreadyNudged: true }).shouldNudge,
+    ).toBe(false)
+  })
+
+  test('still nudges a strong action intent after an earlier nudge', () => {
+    expect(
+      analyzeContinuationIntent('OK I will now run the tests.', { alreadyNudged: true }).shouldNudge,
+    ).toBe(true)
+    expect(
+      analyzeContinuationIntent('Let me check the file first.', { alreadyNudged: true }).shouldNudge,
+    ).toBe(true)
+    expect(
+      analyzeContinuationIntent('Baik, saya akan menjalankan test sekarang', { alreadyNudged: true }).shouldNudge,
+    ).toBe(true)
+  })
+
+  test('still nudges unpunctuated progressive actions even with an earlier completion marker', () => {
+    expect(
+      analyzeContinuationIntent('The download is complete. Now processing the files').shouldNudge,
+    ).toBe(true)
+    expect(
+      analyzeContinuationIntent('Semua data sudah lengkap, sedang memproses hasilnya').shouldNudge,
+    ).toBe(true)
+  })
+})
+
+// Weak-signal false positives: a summary that matches a verb-shaped noun
+// (e.g. "testing" in a category list) without terminal punctuation must not
+// be treated as truncated work when it already declares completion.
+describe('analyzeContinuationIntent weak-signal completion summaries', () => {
+  test('does not nudge unpunctuated completed summary with weak verb-noun match', () => {
+    expect(
+      analyzeContinuationIntent(
+        'Ringkasan penyelesaian: analisis komparatif sudah selesai, mencakup arsitektur, agent loop, tool, provider, MCP, session, persistence, security, UI, konfigurasi, testing, extensibility, trade-off, dan rekomendasi adopsi untuk OpenClaude.',
+      ).shouldNudge,
+    ).toBe(false)
+    expect(
+      analyzeContinuationIntent(
+        'Summary: comparative analysis is complete, covering architecture, agent loop, tooling, testing, and adoption recommendations for OpenClaude.',
+      ).shouldNudge,
+    ).toBe(false)
+  })
+
+  test('does not nudge unpunctuated completion reply with completion marker in late window', () => {
+    expect(
+      analyzeContinuationIntent('Sudah selesai semua testing sudah jalan').shouldNudge,
+    ).toBe(false)
+  })
+})

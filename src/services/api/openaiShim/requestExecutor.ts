@@ -531,6 +531,7 @@ export async function executeOpenAIRequest(
   const attemptedLocalRequestUrls = new Set<string>([requestUrl])
   let didRetryWithoutTools = false
   let didRetryWithoutToolStream = false
+  let didRetryWithoutReasoningEffort = false
   let retryCredentialLease: CredentialLease | null = null
   let didRefreshCopilotToken = false
   let refreshedCopilotToken: string | undefined
@@ -1042,6 +1043,28 @@ export async function executeOpenAIRequest(
       effectiveTransport === 'gemini'
         ? Array.isArray(params.tools) && params.tools.length > 0
         : Array.isArray(body.tools) && body.tools.length > 0
+
+    if (
+      !didRetryWithoutReasoningEffort &&
+      (response.status === 400 || response.status === 422) &&
+      /reasoning[_\s-]?effort/i.test(errorBody) &&
+      /unsupported|unknown|invalid|not supported|unrecognized|unexpected/i.test(
+        errorBody,
+      ) &&
+      Object.prototype.hasOwnProperty.call(body, 'reasoning_effort')
+    ) {
+      didRetryWithoutReasoningEffort = true
+      maxAttempts += 1
+      delete body.reasoning_effort
+      refreshSerializedBody()
+      retryCredentialLease = credentialLease
+
+      logForDebugging(
+        `[OpenAIShim] self-heal retry reason=reasoning_effort_unsupported method=POST url=${redactUrlForDiagnostics(requestUrl)} model=${request.resolvedModel}`,
+        { level: 'warn' },
+      )
+      continue
+    }
 
     if (
       !didRetryWithoutTools &&

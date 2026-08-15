@@ -1067,6 +1067,11 @@ function ModelPickerWrapper({
           ? withInactiveProfileSwitchOptions(optionsOverride)
           : undefined
       }
+      effortContext={
+        discoveryContext?.routeId
+          ? { apiProvider: 'openai', routeId: discoveryContext.routeId }
+          : undefined
+      }
       discoveryState={discoveryState}
       onRefresh={
         discoveryContext?.canRefresh

@@ -454,10 +454,13 @@ function legacyModelSupportsEffort(
   // the model launch DRI and research. This is a sensitive setting that can
   // greatly affect model quality and bashing.
 
-  // Default to true for unknown model strings on 1P.
-  // Do not default to true for 3P as they have different formats for their
-  // model strings (ex. anthropics/claude-code#30795)
-  return getReasoningApiProvider(context) === 'firstParty'
+  // Default to true for unknown model strings on 1P and custom OpenAI-compatible routes.
+  // Custom routes cannot reliably identify every upstream model from the model string,
+  // so effort remains user-selectable and the request layer can fall back to auto.
+  return (
+    getReasoningApiProvider(context) === 'firstParty' ||
+    (getReasoningApiProvider(context) === 'openai' && context?.routeId === 'custom')
+  )
 }
 
 function resolveLegacyReasoningControl(
@@ -978,7 +981,15 @@ export function resolveAppliedEffort(
   if (envOverride === null) {
     return undefined
   }
-  if (!modelSupportsEffort(model, context)) {
+  // Universal effort: an explicit user (or env) selection is always forwarded,
+  // even for models without known reasoning metadata. Only derived defaults
+  // are gated on model capability; the request-level self-heal retry drops
+  // the field if the provider rejects it.
+  if (
+    envOverride === undefined &&
+    appStateEffortValue === undefined &&
+    !modelSupportsEffort(model, context)
+  ) {
     return undefined
   }
 

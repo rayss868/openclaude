@@ -2650,6 +2650,7 @@ async function* queryLoop(
 
           const { shouldNudge, reason: nudgeReason } = analyzeContinuationIntent(
             lastText,
+            { alreadyNudged: state.continuationNudgeCount > 0 },
           )
 
           if (shouldNudge) {

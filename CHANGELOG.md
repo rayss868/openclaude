@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.28.3](https://github.com/rayss868/openclaude/compare/v0.28.2...v0.28.3) (2026-08-16)
+
+
+### Features
+
+* **effort:** force the user-selected reasoning effort to every model — including custom/unknown models like `oc/hy3-free`, `gpt-5.6-luna`, and `fbf/deepseek/deepseek-v4-flash` — instead of silently dropping it for models without known reasoning metadata. Previously an explicit `high`/`medium`/`low` selection was discarded for unrecognized models, so the API fell back to its server default (e.g. `medium`). The applied-effort resolver now forwards an explicit user choice for all models; only derived defaults remain gated on model capability. Level normalization (e.g. `xhigh` → `high`) still applies.
+
+
+### Bug Fixes
+
+* **effort:** add a self-healing request retry that drops the `reasoning_effort` field and falls back to `auto` when a gateway rejects it (HTTP 400/422 naming `reasoning_effort` as unsupported/invalid), so a mistaken effort choice no longer hard-fails the request.
+
+
+## [0.28.2](https://github.com/rayss868/openclaude/compare/v0.28.1...v0.28.2) (2026-08-15)
+
+
+### Features
+
+* **model-picker:** match model search across spaces and separators — "oc deepseek" finds "oc/deepseek-v3"
+
+
 ## [0.28.0](https://github.com/rayss868/openclaude/compare/v0.27.0...v0.28.0) (2026-08-11)
 
 

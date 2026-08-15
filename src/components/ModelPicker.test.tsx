@@ -336,3 +336,26 @@ test('shows cross-profile switch options when allowProfileSwitch is set', async 
   }
 })
 
+test('model search matches space-separated tokens against label and model id', async () => {
+  const { modelOptionMatchesSearch } = await import(
+    `./ModelPicker.js?search-tokens-${Date.now()}-${Math.random()}`
+  )
+  const option = {
+    label: 'DeepSeek V3',
+    value: 'oc/deepseek-v3',
+    description: 'Provider: OpenClaude',
+  }
+
+  expect(modelOptionMatchesSearch(option, 'oc deepseek')).toBe(true)
+  expect(modelOptionMatchesSearch(option, 'deepseek oc')).toBe(true)
+  expect(modelOptionMatchesSearch(option, 'deepseek v3')).toBe(true)
+  expect(modelOptionMatchesSearch(option, 'oc v3')).toBe(true)
+  // separators are transparent: "ocdeepseek" matches "oc/deepseek-v3"
+  expect(modelOptionMatchesSearch(option, 'ocdeepseek')).toBe(true)
+  // every token must match somewhere
+  expect(modelOptionMatchesSearch(option, 'oc claude')).toBe(false)
+  expect(modelOptionMatchesSearch(option, 'deepseek r1')).toBe(false)
+  // empty query matches everything
+  expect(modelOptionMatchesSearch(option, '')).toBe(true)
+  expect(modelOptionMatchesSearch(option, '   ')).toBe(true)
+})

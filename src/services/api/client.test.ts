@@ -1700,9 +1700,44 @@ test('normal OpenAI gpt effort uses catalog metadata', async () => {
   expect(requestBody?.reasoning).toEqual({ effort: 'xhigh', summary: 'auto' })
 })
 
+test('universal effort sends the selected level for an unknown model', async () => {
+  let requestBody: Record<string, unknown> | undefined
+  delete process.env.CLAUDE_CODE_USE_GEMINI
+  delete process.env.GEMINI_API_KEY
+  process.env.CLAUDE_CODE_USE_OPENAI = '1'
+  process.env.OPENAI_BASE_URL = 'https://custom.example.test/v1'
+  process.env.OPENAI_API_KEY = 'test-key'
+
+  globalThis.fetch = (async (_input, init) => {
+    requestBody = JSON.parse(String(init?.body))
+    return new Response(JSON.stringify({
+      id: 'chatcmpl-universal-effort',
+      model: 'vendor/unknown-model',
+      choices: [{
+        message: { role: 'assistant', content: 'ok' },
+        finish_reason: 'stop',
+      }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    }), { headers: { 'Content-Type': 'application/json' } })
+  }) as FetchType
+
+  const client = (await getAnthropicClient({
+    maxRetries: 0,
+    model: 'vendor/unknown-model',
+    effortValue: 'high',
+  })) as unknown as ShimClient
+
+  await client.beta.messages.create({
+    model: 'vendor/unknown-model',
+    messages: [{ role: 'user', content: 'hello' }],
+    max_tokens: 64,
+    stream: false,
+  })
+
+  expect(requestBody?.reasoning_effort).toBe('high')
+})
 test('auto-routed Azure gpt-5.4 and gpt-5.5 requests preserve selected effort', async () => {
   const requestBodies: Record<string, unknown>[] = []
-  delete process.env.CLAUDE_CODE_USE_GEMINI
   delete process.env.GEMINI_API_KEY
   process.env.CLAUDE_CODE_USE_OPENAI = '1'
   process.env.OPENAI_BASE_URL = 'https://myres.openai.azure.com/openai/v1'
@@ -1727,8 +1762,8 @@ test('auto-routed Azure gpt-5.4 and gpt-5.5 requests preserve selected effort', 
   }
 
   expect(requestBodies).toEqual([
-    expect.objectContaining({ reasoning: { effort: 'xhigh', summary: 'auto' } }),
-    expect.objectContaining({ reasoning: { effort: 'xhigh', summary: 'auto' } }),
+    expect.objectContaining({ reasoning_effort: 'xhigh' }),
+    expect.objectContaining({ reasoning_effort: 'xhigh' }),
   ])
 })
 
@@ -1759,7 +1794,7 @@ test('OPENAI_API_BASE gateway does not inherit first-party GPT-5.6 effort metada
   await client.beta.messages.create({ model: 'gpt-5.6-sol', messages: [{ role: 'user', content: 'hello' }], max_tokens: 64, stream: false })
 
   expect(requestUrl).toBe('https://gateway.example/v1/chat/completions')
-  expect(requestBody?.reasoning_effort).toBeUndefined()
+  expect(requestBody?.reasoning_effort).toBe('xhigh')
 })
 
 test('providerOverride Azure gpt effort uses the override base for catalog metadata', async () => {

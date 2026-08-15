@@ -474,14 +474,16 @@ export async function getAnthropicClient({
       }
     : undefined
   const supportsShimReasoningEffort = effortModel
-    ? effortShimConfig
-      ? modelSupportsShimReasoningEffort(
-        effortModel,
-        effortShimConfig.thinkingRequestFormat,
-        effortShimConfig.removeBodyFields,
-        effortContext,
-      )
-      : modelSupportsWireEffort(effortModel)
+    ? effortValue !== undefined
+      ? !effortShimConfig?.removeBodyFields?.includes('reasoning_effort')
+      : effortShimConfig
+        ? modelSupportsShimReasoningEffort(
+          effortModel,
+          effortShimConfig.thinkingRequestFormat,
+          effortShimConfig.removeBodyFields,
+          effortContext,
+        )
+        : modelSupportsWireEffort(effortModel)
     : false
   const reasoningControl = effortModel
     ? resolveModelReasoningControl(effortModel, effortContext)

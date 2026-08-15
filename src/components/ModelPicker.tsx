@@ -10,7 +10,7 @@ import { useKeybindings } from '../keybindings/useKeybinding.js';
 import { useSearchInput } from '../hooks/useSearchInput.js';
 import { SearchBox } from './SearchBox.js';
 import { useAppState, useSetAppState } from '../state/AppState.js';
-import { convertEffortValueToLevel, type EffortLevel, getAvailableEffortLevels, getDefaultEffortForModel, modelSupportsEffort, modelSupportsMaxEffort, resolvePickerEffortPersistence, toPersistableEffort } from '../utils/effort.js';
+import { convertEffortValueToLevel, type EffortLevel, getAvailableEffortLevels, getDefaultEffortForModel, modelSupportsEffort, modelSupportsMaxEffort, resolvePickerEffortPersistence, toPersistableEffort, type ReasoningControlContext } from '../utils/effort.js';
 import { isModelAllowed } from '../utils/model/modelAllowlist.js';
 import { getDefaultMainLoopModel, type ModelSetting, modelDisplayString, parseUserSpecifiedModel } from '../utils/model/model.js';
 import { getModelOptions, SWITCH_PROFILE_VALUE_PREFIX, type ModelOption, parseSwitchProfileValue, resolveSelectedSwitchProfileId } from '../utils/model/modelOptions.js';
@@ -53,6 +53,7 @@ export type Props = {
    */
   skipSettingsWrite?: boolean;
   optionsOverride?: ModelOption[];
+  effortContext?: ReasoningControlContext;
   discoveryState?: ModelPickerDiscoveryState;
   onRefresh?: () => void;
   /**
@@ -75,6 +76,42 @@ function optionMatchesPickerValue(option: ModelOption, value: string): boolean {
   const optionKey = normalizeModelPickerValue(option.value);
   const valueKey = normalizeModelPickerValue(value);
   return optionKey !== null && valueKey !== null && optionKey === valueKey;
+}
+
+// Model search is token-based: "oc deepseek" must match every query word
+// somewhere in the option's label or model id (e.g. "oc/deepseek-v3").
+// Separators (`/`, `-`, `.`, `_`, `:`) are transparent, so "ocdeepseek"
+// matches "oc/deepseek" too and "deepseek" matches "deep-seek".
+const MODEL_SEARCH_SEPARATORS = /[\s/._:+-]+/g;
+
+export function modelSearchTokens(query: string): string[] {
+  return query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(token => token.replace(MODEL_SEARCH_SEPARATORS, '').length > 0);
+}
+
+function modelSearchHaystack(option: ModelOption): string {
+  const value = typeof option.value === 'string' ? option.value : '';
+  return `${option.label} ${value}`.toLowerCase();
+}
+
+function searchTokenMatchesHaystack(token: string, haystack: string): boolean {
+  if (haystack.includes(token)) {
+    return true;
+  }
+  return haystack
+    .replace(MODEL_SEARCH_SEPARATORS, '')
+    .includes(token.replace(MODEL_SEARCH_SEPARATORS, ''));
+}
+
+export function modelOptionMatchesSearch(option: ModelOption, query: string): boolean {
+  const tokens = modelSearchTokens(query);
+  if (tokens.length === 0) {
+    return true;
+  }
+  const haystack = modelSearchHaystack(option);
+  return tokens.every(token => searchTokenMatchesHaystack(token, haystack));
 }
 
 function resolvePickerOptionValue(options: ModelOption[], value: string): string | undefined {
@@ -106,6 +143,7 @@ export function ModelPicker(t0) {
     headerText,
     skipSettingsWrite,
     optionsOverride,
+    effortContext,
     discoveryState,
     onRefresh,
     allowProfileSwitch
@@ -204,10 +242,7 @@ export function ModelPicker(t0) {
   }
   const selectOptions = t5;
   const filteredSelectOptions = searchQuery
-    ? selectOptions.filter(opt =>
-        typeof opt.label === 'string' &&
-        opt.label.toLowerCase().includes(searchQuery.toLowerCase())
-      )
+    ? selectOptions.filter(opt => modelOptionMatchesSearch(opt, searchQuery))
     : selectOptions;
   let t6;
   if ($[14] !== initialValue || $[15] !== selectOptions) {
@@ -236,8 +271,8 @@ export function ModelPicker(t0) {
   let t8;
   if ($[20] !== focusedValue) {
     const focusedModel = resolveOptionModel(focusedValue);
-    focusedSupportsEffort = focusedModel ? modelSupportsEffort(focusedModel) : false;
-    t8 = focusedModel ? modelSupportsMaxEffort(focusedModel) : false;
+    focusedSupportsEffort = focusedModel ? modelSupportsEffort(focusedModel, effortContext) : false;
+    t8 = focusedModel ? modelSupportsMaxEffort(focusedModel, effortContext) : false;
     $[20] = focusedValue;
     $[21] = focusedSupportsEffort;
     $[22] = t8;
@@ -248,11 +283,11 @@ export function ModelPicker(t0) {
   const focusedSupportsMax = t8;
   const focusedAvailableLevels: EffortLevel[] = (() => {
     const focusedModel = resolveOptionModel(focusedValue);
-    return focusedModel ? getAvailableEffortLevels(focusedModel) : [];
+    return focusedModel ? getAvailableEffortLevels(focusedModel, effortContext) : [];
   })();
   let t9;
   if ($[23] !== focusedValue) {
-    t9 = getDefaultEffortLevelForOption(focusedValue);
+    t9 = getDefaultEffortLevelForOption(focusedValue, effortContext);
     $[23] = focusedValue;
     $[24] = t9;
   } else {
@@ -266,7 +301,7 @@ export function ModelPicker(t0) {
       const selectedValue = resolvePickerOptionValue(selectOptions, value) ?? value;
       setFocusedValue(selectedValue);
       if (!hasToggledEffort && effortValue === undefined) {
-        setEffort(getDefaultEffortLevelForOption(selectedValue));
+        setEffort(getDefaultEffortLevelForOption(selectedValue, effortContext));
       }
     };
     $[25] = effortValue;
@@ -335,7 +370,7 @@ export function ModelPicker(t0) {
         effort: clampedEffort as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
       });
       if (!skipSettingsWrite) {
-        const effortLevel = resolvePickerEffortPersistence(clampedEffort, getDefaultEffortLevelForOption(selectedValue), getSettingsForSource("userSettings")?.effortLevel, hasToggledEffort);
+        const effortLevel = resolvePickerEffortPersistence(clampedEffort, getDefaultEffortLevelForOption(selectedValue, effortContext), getSettingsForSource("userSettings")?.effortLevel, hasToggledEffort);
         const persistable = toPersistableEffort(effortLevel);
         if (persistable !== undefined) {
           updateSettingsForSource("userSettings", {
@@ -347,7 +382,7 @@ export function ModelPicker(t0) {
           effortValue: effortLevel
         }));
       }
-      const selectedEffort = hasToggledEffort && selectedModel && modelSupportsEffort(selectedModel) ? clampedEffort : undefined;
+      const selectedEffort = hasToggledEffort && selectedModel && modelSupportsEffort(selectedModel, effortContext) ? clampedEffort : undefined;
       if (selectedValue === NO_PREFERENCE) {
         onSelect(null, selectedEffort);
         return;
@@ -589,8 +624,11 @@ function cycleEffortLevel(current: EffortLevel, direction: 'left' | 'right', lev
     return levels[(currentIndex - 1 + levels.length) % levels.length]!;
   }
 }
-function getDefaultEffortLevelForOption(value?: string): EffortLevel {
+function getDefaultEffortLevelForOption(
+  value?: string,
+  context?: ReasoningControlContext,
+): EffortLevel {
   const resolved = resolveOptionModel(value) ?? getDefaultMainLoopModel();
-  const defaultValue = getDefaultEffortForModel(resolved);
+  const defaultValue = getDefaultEffortForModel(resolved, context);
   return defaultValue !== undefined ? convertEffortValueToLevel(defaultValue) : 'high';
 }

@@ -4394,19 +4394,33 @@ test('omits reasoning_effort on chat_completions when no override and model has 
   expect(requestBody && 'reasoning_effort' in requestBody).toBe(false)
 })
 
-test('emits reasoning_effort from codex alias default when no override is passed', async () => {
-  process.env.OPENAI_BASE_URL = 'https://api.openai.com/v1'
+test('falls back to auto when a custom route rejects reasoning_effort', async () => {
+  process.env.OPENAI_BASE_URL = 'https://custom.example.test/v1'
   process.env.OPENAI_API_KEY = 'test-key'
   process.env.OPENAI_API_FORMAT = 'chat_completions'
 
-  let requestBody: Record<string, unknown> | undefined
+  const requestBodies: Array<Record<string, unknown>> = []
 
   globalThis.fetch = (async (_input, init) => {
-    requestBody = JSON.parse(String(init?.body))
+    const requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+    requestBodies.push(requestBody)
+
+    if (requestBodies.length === 1) {
+      return new Response(
+        JSON.stringify({
+          error: { message: 'Unsupported parameter: reasoning_effort' },
+        }),
+        {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
     return new Response(
       JSON.stringify({
         id: 'chatcmpl-1',
-        model: 'gpt-5.4',
+        model: 'oc/hy3-free',
         choices: [
           {
             message: { role: 'assistant', content: 'ok' },
@@ -4419,16 +4433,20 @@ test('emits reasoning_effort from codex alias default when no override is passed
     )
   }) as unknown as FetchType
 
-  const client = createOpenAIShimClient({}) as OpenAIShimClient
+  const client = createOpenAIShimClient({
+    reasoningEffort: 'high',
+  }) as OpenAIShimClient
 
   await client.beta.messages.create({
-    model: 'gpt-5.4',
+    model: 'oc/hy3-free',
     messages: [{ role: 'user', content: 'hi' }],
     max_tokens: 16,
     stream: false,
   })
 
-  expect(requestBody?.reasoning_effort).toBe('high')
+  expect(requestBodies).toHaveLength(2)
+  expect(requestBodies[0]?.reasoning_effort).toBe('high')
+  expect(requestBodies[1] && 'reasoning_effort' in requestBodies[1]).toBe(false)
 })
 
 // Extraction boundary: history pruning | executor Copilot refresh behavior.

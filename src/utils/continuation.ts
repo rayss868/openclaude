@@ -159,6 +159,14 @@ export const CONTINUATION_SIGNALS = buildContinuationSignals()
 
 export const COMPLETION_MARKERS = /\b(done|finished|completed|complete|summary|that's all|that is all|all set|hope this helps|let me know if|no issues|lgtm|selesai|lengkap|beres|tuntas)\b/i
 
+// Strong first-person action intent. These override completion markers: the
+// assistant commits to doing more work, so it must be nudged to follow
+// through even when "done"/"selesai" also appears in the text.
+const STRONG_CONTINUATION_INTENT =
+  /\b(i (will|shall|need to|must|should|now)|let (me|us)|je (vais|reviens)|passons à|moving on to|continuing with|proceeding to|next step is to)\b/i
+const STRONG_INDONESIAN_INTENT =
+  /\b(saya (akan|ingin|mau|harus|perlu|sedang|cek|periksa|lihat|baca)|mari (kita)?|lalu (saya|kita)|langkah (berikutnya|selanjutnya)|mulai|melanjutkan|lanjut)\b/i
+
 // Waiting markers: the assistant is explicitly pausing for an external agent
 // (sub-agent, verifier, MCP process, etc.) that is still running. Unlike
 // continuation signals, these indicate an intentional stop, so a nudge would
@@ -218,12 +226,25 @@ export const UNFINISHED_SENTIMENT_SIGNALS = [
   /```[a-z]*\s*$/i,
 ]
 
+interface ContinuationIntentOptions {
+  /**
+   * True when the agent loop already nudged this model to continue in a
+   * previous turn. Once nudged, a reply that again declares the task done
+   * is treated as the model's final answer instead of being re-nudged,
+   * which prevents completion spam loops ("tugas selesai" repeated until
+   * the nudge budget is exhausted).
+   */
+  alreadyNudged?: boolean
+}
+
 /**
  * Analyzes assistant text to determine if a continuation nudge is required.
  */
 export function analyzeContinuationIntent(
   text: string,
+  options: ContinuationIntentOptions = {},
 ): ContinuationResult {
+  const { alreadyNudged = false } = options
   const lastText = text.trim()
   if (lastText.length === 0) return { shouldNudge: false }
   
@@ -288,8 +309,8 @@ export function analyzeContinuationIntent(
     const hasTerminalPunctuation = /[.!??"'`)\]]\s*$/.test(lastText) || lastText.endsWith('`')
     if (hasTerminalPunctuation) {
       const strongIntent =
-        /\b(i (will|shall|need to|must|should|now)|let (me|us)|je (vais|reviens)|passons à|moving on to|continuing with|proceeding to|next step is to)\b/i.test(lowerText) ||
-        /\b(saya (akan|ingin|mau|harus|perlu|sedang|cek|periksa|lihat|baca)|mari (kita)?|lalu (saya|kita)|langkah (berikutnya|selanjutnya)|mulai|melanjutkan|lanjut)\b/i.test(lowerText) ||
+        STRONG_CONTINUATION_INTENT.test(lowerText) ||
+        STRONG_INDONESIAN_INTENT.test(lowerText) ||
         /je suis en train d'/i.test(lowerText) || /◻/.test(lastText)
       const presentProgressive =
         new RegExp(`\\bnow (?:${VERB_ING})\\b`, 'i').test(lateText) ||
@@ -307,8 +328,45 @@ export function analyzeContinuationIntent(
         return { shouldNudge: true, reason: 'continuation_signal' }
       }
     } else {
-      return { shouldNudge: true, reason: 'continuation_signal' }
+      // Unpunctuated late signal. Nudges by default, but an already-finished
+      // answer whose late signal is only a weak verb-shaped match — e.g.
+      // "testing" appearing as a noun in a category list — is not truncated
+      // work. "now/sedang + verb" progressives keep nudging: the model is
+      // still mid-action ("The download is complete. Now processing the
+      // files"). Standalone first-person intents also keep nudging.
+      const hasProgressivePrefix =
+        new RegExp(`\\bnow (?:${VERB_ING})\\b`, 'i').test(lateText) ||
+        new RegExp(`\\bsedang (?:${INDONESIAN_VERB_ALT})\\b`, 'i').test(lateText)
+      if (
+        COMPLETION_MARKERS.test(lateText) &&
+        !hasProgressivePrefix &&
+        !STRONG_CONTINUATION_INTENT.test(lowerText) &&
+        !STRONG_INDONESIAN_INTENT.test(lowerText) &&
+        !/je suis en train d'/i.test(lowerText) &&
+        !/◻/.test(lastText)
+      ) {
+        // Completion is believed; the guards below end the turn.
+      } else {
+        return { shouldNudge: true, reason: 'continuation_signal' }
+      }
     }
+  }
+
+  // 2.5 Completion-insistence guard: once the harness has already nudged the
+  // model to continue (a previous turn of the same loop), a reply that again
+  // declares the task done — with no strong intent to do more work — is the
+  // model's final answer. Honoring it ends the turn. Without this, a model
+  // that keeps insisting "done"/"selesai" without calling tools is re-nudged
+  // until MAX_CONTINUATION_NUDGES, producing the completion spam loop.
+  if (
+    alreadyNudged &&
+    COMPLETION_MARKERS.test(lowerText) &&
+    !STRONG_CONTINUATION_INTENT.test(lowerText) &&
+    !STRONG_INDONESIAN_INTENT.test(lowerText) &&
+    !/je suis en train d'/i.test(lowerText) &&
+    !/◻/.test(lastText)
+  ) {
+    return { shouldNudge: false }
   }
 
   // 3. Completion Marker Guard (Final check for sound, completed messages)
@@ -322,10 +380,20 @@ export function analyzeContinuationIntent(
   // Global fallback for unpunctuated signals (must be a clear transition)
   const hasTerminalPunctuation = /[.!??"'`)\]]\s*$/.test(lastText) || lastText.endsWith('`')
   if (
-    CONTINUATION_SIGNALS.some(re => re.test(lowerText)) && 
+    CONTINUATION_SIGNALS.some(re => re.test(lowerText)) &&
     !hasTerminalPunctuation
   ) {
-    return { shouldNudge: true, reason: 'continuation_signal' }
+    // A completion marker with only weak signal matches (e.g. "testing",
+    // "analyze", "apply" appearing as nouns in an otherwise finished
+    // summary) is a complete answer, not truncated work — unless a strong
+    // action intent or an open-task marker says otherwise.
+    const strongIntent =
+      STRONG_CONTINUATION_INTENT.test(lowerText) ||
+      STRONG_INDONESIAN_INTENT.test(lowerText) ||
+      /je suis en train d'/i.test(lowerText) || /◻/.test(lastText)
+    if (!COMPLETION_MARKERS.test(lowerText) || strongIntent) {
+      return { shouldNudge: true, reason: 'continuation_signal' }
+    }
   }
 
   return { shouldNudge: false }

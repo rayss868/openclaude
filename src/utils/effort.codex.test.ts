@@ -115,6 +115,23 @@ async function importFreshEffortModule(options: {
   }
 }
 
+test('unknown models on a custom OpenAI-compatible route allow effort selection', async () => {
+  const { getAvailableEffortLevels, modelSupportsEffort } =
+    await importFreshEffortModule({
+      provider: 'openai',
+      supportsCodexReasoningEffort: true,
+      routeId: 'custom',
+    })
+
+  expect(modelSupportsEffort('oc/hy3-free')).toBe(true)
+  expect(getAvailableEffortLevels('oc/hy3-free')).toEqual([
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+  ])
+})
+
 test('gpt-5.4 on the ChatGPT Codex backend supports effort selection', async () => {
   const { getAvailableEffortLevels, modelSupportsEffort } =
     await importFreshEffortModule({
@@ -513,7 +530,9 @@ test('supportsReasoning-only catalog entries do not enable effort or wire mutati
   expect(modelSupportsEffort('moonshotai/kimi-k2.5')).toBe(false)
   expect(modelSupportsWireEffort('moonshotai/kimi-k2.5')).toBe(false)
   expect(getAvailableEffortLevels('moonshotai/kimi-k2.5')).toEqual([])
-  expect(resolveAppliedEffort('moonshotai/kimi-k2.5', 'high')).toBeUndefined()
+  // Universal effort: an explicit user selection is still forwarded even
+  // though the model has no known reasoning metadata.
+  expect(resolveAppliedEffort('moonshotai/kimi-k2.5', 'high')).toBe('high')
 })
 
 test('explicit reasoning metadata enables model-level effort without provider-wide inference', async () => {
@@ -574,7 +593,34 @@ test('explicit reasoning metadata enables model-level effort without provider-wi
   })
   expect(modelSupportsEffort('xai/grok-build-0.1')).toBe(false)
   expect(modelSupportsWireEffort('xai/grok-build-0.1')).toBe(false)
-  expect(resolveAppliedEffort('xai/grok-build-0.1', 'high')).toBeUndefined()
+  expect(resolveAppliedEffort('xai/grok-build-0.1', 'high')).toBe('high')
+})
+
+test('explicit user effort is force-applied even when the model has no known reasoning control', async () => {
+  const { resolveAppliedEffort } = await importFreshEffortModule({
+    provider: 'openai',
+    supportsCodexReasoningEffort: false,
+    routeId: 'atlas-cloud',
+    catalogEntries: [
+      {
+        id: 'moonshotai/kimi-k2.5',
+        apiName: 'moonshotai/kimi-k2.5',
+        capabilities: { supportsReasoning: true },
+      },
+      {
+        id: 'xai/grok-build-0.1',
+        apiName: 'xai/grok-build-0.1',
+        capabilities: { supportsReasoning: false },
+      },
+    ],
+  })
+
+  // Universal effort: an explicit user selection is forwarded even for models
+  // without known reasoning metadata. The request-level self-heal retry drops
+  // the field if the provider rejects it.
+  expect(resolveAppliedEffort('moonshotai/kimi-k2.5', 'high')).toBe('high')
+  expect(resolveAppliedEffort('xai/grok-build-0.1', 'high')).toBe('high')
+  expect(resolveAppliedEffort('oc/hy3-free', 'high')).toBe('high')
 })
 
 test('Moonshot direct and Kimi Code catalogs expose verified reasoning controls', async () => {
@@ -891,7 +937,7 @@ test('Atlas Cloud catalog exposes only verified reasoning controls for exact mod
   })
   expect(modelSupportsEffort('xai/grok-build-0.1')).toBe(false)
   expect(modelSupportsWireEffort('xai/grok-build-0.1')).toBe(false)
-  expect(resolveAppliedEffort('xai/grok-build-0.1', 'high')).toBeUndefined()
+  expect(resolveAppliedEffort('xai/grok-build-0.1', 'high')).toBe('high')
 })
 
 test('xAI catalog exposes live-verified reasoning controls for direct Grok models', async () => {
@@ -967,7 +1013,8 @@ test('xAI catalog exposes live-verified reasoning controls for direct Grok model
     })
     expect(modelSupportsEffort(model)).toBe(false)
     expect(modelSupportsWireEffort(model)).toBe(false)
-    expect(resolveAppliedEffort(model, 'xhigh')).toBeUndefined()
+    // Universal effort: user-set xhigh is downgraded to high, not dropped.
+    expect(resolveAppliedEffort(model, 'xhigh')).toBe('high')
   }
 
   expect(resolveModelReasoningControl('grok-4.20-0309-non-reasoning')).toMatchObject({
@@ -1011,7 +1058,7 @@ test('explicit non-controllable metadata opts out even when the model matches le
   expect(modelSupportsEffort('gpt-5.4')).toBe(false)
   expect(modelSupportsWireEffort('gpt-5.4')).toBe(false)
   expect(getAvailableEffortLevels('gpt-5.4')).toEqual([])
-  expect(resolveAppliedEffort('gpt-5.4', 'high')).toBeUndefined()
+  expect(resolveAppliedEffort('gpt-5.4', 'high')).toBe('high')
 })
 
 test('toggle reasoning metadata stays non-controllable until toggle serialization exists', async () => {
@@ -1048,7 +1095,7 @@ test('toggle reasoning metadata stays non-controllable until toggle serializatio
   expect(modelSupportsEffort('toggle-model')).toBe(false)
   expect(modelSupportsWireEffort('toggle-model')).toBe(false)
   expect(getAvailableEffortLevels('toggle-model')).toEqual([])
-  expect(resolveAppliedEffort('toggle-model', 'high')).toBeUndefined()
+  expect(resolveAppliedEffort('toggle-model', 'high')).toBe('high')
 })
 
 test('compat DeepSeek routes can use /effort without catalog reasoning metadata', async () => {
@@ -1113,7 +1160,7 @@ test('compat DeepSeek routes stay non-controllable when the runtime shim strips 
   expect(modelSupportsEffort('deepseek-r1-distill-llama-70b')).toBe(false)
   expect(modelSupportsWireEffort('deepseek-r1-distill-llama-70b')).toBe(false)
   expect(getAvailableEffortLevels('deepseek-r1-distill-llama-70b')).toEqual([])
-  expect(resolveAppliedEffort('deepseek-r1-distill-llama-70b', 'xhigh')).toBeUndefined()
+  expect(resolveAppliedEffort('deepseek-r1-distill-llama-70b', 'xhigh')).toBe('high')
 })
 
 test('compat Z.AI routes expose only verified levels and clamp stale values', async () => {
