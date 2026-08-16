@@ -623,12 +623,27 @@ export function resolveOpenAIShimReasoningRequestPlan(options: {
   )
 
   if (wireFormat === 'deepseek_compatible') {
-    const thinkingType = requestedThinkingType
-    const reasoningEffort = thinkingType === 'enabled' && options.requestedEffort
-      ? normalizeDeepSeekReasoningEffort(options.requestedEffort)
-      : undefined
+    // Universal effort: an explicit user selection enables thinking and is
+    // forwarded, even without an explicit thinking type — mirroring the
+    // zai_compatible branch. Only derived defaults require model metadata.
+    // An explicit "disabled" thinking type (param or model query) wins.
+    const thinkingType = requestedThinkingType ?? defaultThinkingType
+    const shouldEnableThinking =
+      thinkingType !== 'disabled' &&
+      (thinkingType === 'enabled' || options.requestedEffort !== undefined)
+    const reasoningEffort =
+      shouldEnableThinking && options.requestedEffort
+        ? normalizeDeepSeekReasoningEffort(options.requestedEffort)
+        : undefined
     return {
-      thinkingType,
+      // Keep an explicit param-level disable; only drop the field when the
+      // disable came from a model-query default (e.g. `?thinking=disabled`
+      // on a client configured with an effort pick).
+      thinkingType: shouldEnableThinking
+        ? 'enabled'
+        : requestedThinkingType === 'disabled'
+          ? 'disabled'
+          : undefined,
       reasoningEffort,
       wireFormat,
       source,

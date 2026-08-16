@@ -1241,6 +1241,17 @@ test('OpenAI shim reasoning request plan centralizes DeepSeek and Z.AI serializa
   })
 
   expect(resolveOpenAIShimReasoningRequestPlan({
+    model: 'deepseek-v4-pro',
+    requestedEffort: 'xhigh',
+    thinkingRequestFormat: 'deepseek-compatible',
+  })).toEqual({
+    thinkingType: 'enabled',
+    reasoningEffort: 'max',
+    wireFormat: 'deepseek_compatible',
+    source: 'compat',
+  })
+
+  expect(resolveOpenAIShimReasoningRequestPlan({
     model: 'glm-5.2',
     requestedEffort: 'xhigh',
     thinkingRequestFormat: 'zai-compatible',
