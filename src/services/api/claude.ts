@@ -175,6 +175,13 @@ import { CHROME_TOOL_SEARCH_INSTRUCTIONS } from 'src/utils/claudeInChrome/prompt
 import { COMPACT_MAX_OUTPUT_TOKENS, getContextWindowForModel, getMaxThinkingTokensForModel } from 'src/utils/context.js'
 import { logForDebugging } from 'src/utils/debug.js'
 import { logForDiagnosticsNoPII } from 'src/utils/diagLogs.js'
+import {
+  flushInterruptionTrace,
+  getInterruptionErrorCausalEventId,
+  getInterruptionSignalAbortEventId,
+  requestAbort,
+  traceInterruptionEvent,
+} from 'src/utils/interruptionTrace.js'
 import { type EffortValue, modelSupportsEffort } from 'src/utils/effort.js'
 import type { QueryLifecycleOperationTracker } from 'src/utils/queryLifecycle.js'
 import {
@@ -1157,6 +1164,21 @@ async function* queryModel(
   void
 > {
   const providerRequestModel = options.requestModel ?? options.model
+  function traceFallbackSettlement(
+    outcome: 'superseded' | 'aborted' | 'failed' | 'completed',
+    causalEventId: string | undefined,
+    error?: unknown,
+  ): void {
+    traceInterruptionEvent('claude_stream.fallback_settled', {
+      subsystem: 'claude_stream',
+      transport: 'anthropic_messages',
+      model: options.model,
+      outcome,
+      causalEventId,
+      ...(error === undefined ? {} : { error }),
+    })
+    flushInterruptionTrace('claude_stream_fallback_settled')
+  }
   // Check cheap conditions first — the off-switch await blocks on GrowthBook
   // init (~10ms). For non-Opus models (haiku, sonnet) this skips the await
   // entirely. Subscribers don't hit this path at all.
@@ -2106,6 +2128,7 @@ async function* queryModel(
     const STREAM_IDLE_TIMEOUT_MS = getStreamIdleTimeoutMs()
     const STREAM_IDLE_WARNING_MS = STREAM_IDLE_TIMEOUT_MS / 2
     let streamIdleAborted = false
+    let streamSettlementCausalEventId: string | undefined
     // performance.now() snapshot when watchdog fires, for measuring abort propagation delay
     let streamWatchdogFiredAt: number | null = null
     let streamIdleWarningTimer: ReturnType<typeof setTimeout> | null = null
@@ -2128,19 +2151,36 @@ async function* queryModel(
         { level: 'warn' },
       )
       logForDiagnosticsNoPII('warn', 'cli_streaming_idle_warning')
+      traceInterruptionEvent('claude_stream.idle_warning', {
+        subsystem: 'claude_stream',
+        transport: 'anthropic_messages',
+        model: options.model,
+        sinceLastYieldMs: warnMs,
+      })
     }
 
     function closeStreamIterator(
       iterator: AsyncIterator<BetaRawMessageStreamEvent>,
       reason: Error,
+      source: 'claude_stream_watchdog' | 'claude_stream_parent',
+      causalEventId?: string,
     ): void {
       const activeStream = stream
-      releaseStreamResources()
       try {
-        activeStream?.controller?.abort(reason)
+        if (activeStream?.controller) {
+          requestAbort(activeStream.controller, reason, {
+            source,
+            causalEventId,
+            subsystem: 'claude_stream',
+            transport: 'anthropic_messages',
+            model: options.model,
+            controllerRole: 'provider-stream',
+          })
+        }
       } catch {
         // Ignore - the stream may already be closed by the SDK.
       }
+      releaseStreamResources()
 
       try {
         const returned = iterator.return?.()
@@ -2163,6 +2203,14 @@ async function* queryModel(
         { level: 'error' },
       )
       logForDiagnosticsNoPII('error', 'cli_streaming_idle_timeout')
+      const causalEventId = traceInterruptionEvent('claude_stream.idle_timeout', {
+        subsystem: 'claude_stream',
+        transport: 'anthropic_messages',
+        model: options.model,
+        sinceLastYieldMs: STREAM_IDLE_TIMEOUT_MS,
+      })
+      streamSettlementCausalEventId = causalEventId
+      flushInterruptionTrace('claude_stream_idle_timeout')
       logEvent('tengu_streaming_idle_timeout', {
         model:
           options.model as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
@@ -2171,7 +2219,12 @@ async function* queryModel(
         timeout_ms: STREAM_IDLE_TIMEOUT_MS,
       })
 
-      closeStreamIterator(iterator, timeoutError)
+      closeStreamIterator(
+        iterator,
+        timeoutError,
+        'claude_stream_watchdog',
+        causalEventId,
+      )
     }
 
     function readNextStreamPart(
@@ -2179,7 +2232,14 @@ async function* queryModel(
     ): Promise<IteratorResult<BetaRawMessageStreamEvent>> {
       if (signal.aborted) {
         const abortError = new APIUserAbortError()
-        closeStreamIterator(iterator, abortError)
+        streamSettlementCausalEventId =
+          getInterruptionSignalAbortEventId(signal)
+        closeStreamIterator(
+          iterator,
+          abortError,
+          'claude_stream_parent',
+          getInterruptionSignalAbortEventId(signal),
+        )
         return Promise.reject(abortError)
       }
 
@@ -2205,7 +2265,22 @@ async function* queryModel(
         }
         const onAbort = () => {
           const abortError = new APIUserAbortError()
-          closeStreamIterator(iterator, abortError)
+          const parentCausalEventId = getInterruptionSignalAbortEventId(signal)
+          const causalEventId = traceInterruptionEvent('claude_stream.parent_abort', {
+            subsystem: 'claude_stream',
+            transport: 'anthropic_messages',
+            model: options.model,
+            reason: signal.reason,
+            causalEventId: parentCausalEventId,
+          })
+          streamSettlementCausalEventId =
+            causalEventId ?? parentCausalEventId
+          closeStreamIterator(
+            iterator,
+            abortError,
+            'claude_stream_parent',
+            causalEventId ?? parentCausalEventId,
+          )
           settleReject(abortError)
         }
 
@@ -2636,6 +2711,14 @@ async function* queryModel(
           streamWatchdogFiredAt !== null
             ? Math.round(performance.now() - streamWatchdogFiredAt)
             : -1
+        traceInterruptionEvent('claude_stream.loop_settled', {
+          subsystem: 'claude_stream',
+          transport: 'anthropic_messages',
+          model: options.model,
+          outcome: 'clean',
+          causalEventId: streamSettlementCausalEventId,
+          sinceLastYieldMs: exitDelayMs,
+        })
         logForDiagnosticsNoPII(
           'info',
           'cli_stream_loop_exited_after_watchdog_clean',
@@ -2752,6 +2835,20 @@ async function* queryModel(
     } catch (streamingError) {
       // Clear the idle timeout watchdog on error path too
       clearStreamIdleTimers()
+      streamSettlementCausalEventId =
+        getInterruptionErrorCausalEventId(streamingError) ??
+        streamSettlementCausalEventId
+      traceInterruptionEvent('claude_stream.error', {
+        subsystem: 'claude_stream',
+        transport: 'anthropic_messages',
+        model: options.model,
+        outcome: signal.aborted ? 'root_aborted' : 'external_error',
+        reason: signal.reason,
+        causalEventId:
+          getInterruptionSignalAbortEventId(signal) ??
+          streamSettlementCausalEventId,
+        error: streamingError,
+      })
 
       // Instrumentation: if the watchdog had already fired and the for-await
       // threw (rather than exiting cleanly), record that the loop DID exit and
@@ -2760,6 +2857,15 @@ async function* queryModel(
         const exitDelayMs = Math.round(
           performance.now() - streamWatchdogFiredAt,
         )
+        traceInterruptionEvent('claude_stream.loop_settled', {
+          subsystem: 'claude_stream',
+          transport: 'anthropic_messages',
+          model: options.model,
+          outcome: 'error',
+          causalEventId: streamSettlementCausalEventId,
+          error: streamingError,
+          sinceLastYieldMs: exitDelayMs,
+        })
         logForDiagnosticsNoPII(
           'info',
           'cli_stream_loop_exited_after_watchdog_error',
@@ -2895,6 +3001,16 @@ async function* queryModel(
       // Instrumentation: proves executeNonStreamingRequest was entered (vs. the
       // fallback event firing but the call itself hanging at dispatch).
       logForDiagnosticsNoPII('info', 'cli_nonstreaming_fallback_started')
+      const fallbackStartedEventId = traceInterruptionEvent(
+        'claude_stream.fallback_started', {
+        subsystem: 'claude_stream',
+        transport: 'anthropic_messages',
+        model: options.model,
+        trigger: streamIdleAborted ? 'watchdog' : 'other',
+        causalEventId: streamSettlementCausalEventId,
+        },
+      )
+      flushInterruptionTrace('claude_stream_fallback_started')
       logEvent('tengu_nonstreaming_fallback_started', {
         request_id: (streamRequestId ??
           'unknown') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
@@ -2905,54 +3021,69 @@ async function* queryModel(
           : 'other') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
       })
       endActiveApiCall()
-      const result = yield* executeNonStreamingRequest(
-        { model: providerRequestModel, source: options.querySource, providerOverride: options.providerOverride, effortValue: effort },
-        {
-          model: providerRequestModel,
-          fallbackModel: options.fallbackModel,
-          thinkingConfig,
-          ...(isFastModeEnabled() && { fastMode: isFastMode }),
-          signal,
-          initialConsecutive529Errors: is529Error(streamingError) ? 1 : 0,
-          querySource: options.querySource,
-        },
-        paramsFromContext,
-        (attempt, _startTime, tokens) => {
-          attemptNumber = attempt
-          maxOutputTokens = tokens
-        },
-        params => captureAPIRequest(params, options.querySource),
-        streamRequestId,
-        options.queryLifecycle,
-        options.onProviderRequestStart,
-      )
+      let result: BetaMessage | null
+      let fallbackResultMessage: AssistantMessage | undefined
+      try {
+        result = yield* executeNonStreamingRequest(
+          { model: providerRequestModel, source: options.querySource, providerOverride: options.providerOverride, effortValue: effort },
+          {
+            model: providerRequestModel,
+            fallbackModel: options.fallbackModel,
+            thinkingConfig,
+            ...(isFastModeEnabled() && { fastMode: isFastMode }),
+            signal,
+            initialConsecutive529Errors: is529Error(streamingError) ? 1 : 0,
+            querySource: options.querySource,
+          },
+          paramsFromContext,
+          (attempt, _startTime, tokens) => {
+            attemptNumber = attempt
+            maxOutputTokens = tokens
+          },
+          params => captureAPIRequest(params, options.querySource),
+          streamRequestId,
+          options.queryLifecycle,
+          options.onProviderRequestStart,
+        )
 
-      if (result === null) return
+        if (result === null) {
+          traceFallbackSettlement('superseded', fallbackStartedEventId)
+          return
+        }
 
-      const m: AssistantMessage = {
-        message: {
-          ...result,
-          content: normalizeContentFromAPI(
-            result.content,
-            tools,
-            options.agentId,
-          ),
-        },
-        requestId: streamRequestId ?? undefined,
-        type: 'assistant',
-        uuid: randomUUID(),
-        timestamp: new Date().toISOString(),
-        ...(process.env.USER_TYPE === 'ant' &&
-          research !== undefined && {
-            research,
+        fallbackResultMessage = {
+          message: {
+            ...result,
+            content: normalizeContentFromAPI(
+              result.content,
+              tools,
+              options.agentId,
+            ),
+          },
+          requestId: streamRequestId ?? undefined,
+          type: 'assistant',
+          uuid: randomUUID(),
+          timestamp: new Date().toISOString(),
+          ...(process.env.USER_TYPE === 'ant' &&
+            research !== undefined && {
+              research,
+            }),
+          ...(advisorModel && {
+            advisorModel,
           }),
-        ...(advisorModel && {
-          advisorModel,
-        }),
+        }
+        newMessages.push(fallbackResultMessage)
+        fallbackMessage = fallbackResultMessage
+      } catch (error) {
+        traceFallbackSettlement(
+          signal.aborted ? 'aborted' : 'failed',
+          fallbackStartedEventId,
+          error,
+        )
+        throw error
       }
-      newMessages.push(m)
-      fallbackMessage = m
-      yield m
+      traceFallbackSettlement('completed', fallbackStartedEventId)
+      yield fallbackResultMessage
     } finally {
       clearStreamIdleTimers()
     }
@@ -2992,6 +3123,16 @@ async function* queryModel(
       errorFromRetry.originalError.status === 404
 
     if (is404StreamCreationError) {
+      const streamCreationErrorEventId = traceInterruptionEvent(
+        'claude_stream.error',
+        {
+          subsystem: 'claude_stream',
+          phase: 'stream_creation',
+          transport: 'anthropic_messages',
+          model: options.model,
+          error: errorFromRetry,
+        },
+      )
       // 404 is thrown at .withResponse() before streamRequestId is assigned,
       // and CannotRetryError means every retry failed — so grab the failed
       // request's ID from the error header instead.
@@ -3020,6 +3161,18 @@ async function* queryModel(
         fallback_cause:
           '404_stream_creation' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
       })
+
+      const fallbackStartedEventId = traceInterruptionEvent(
+        'claude_stream.fallback_started',
+        {
+          subsystem: 'claude_stream',
+          transport: 'anthropic_messages',
+          model: options.model,
+          trigger: '404_stream_creation',
+          causalEventId: streamCreationErrorEventId,
+        },
+      )
+      flushInterruptionTrace('claude_stream_fallback_started')
 
       try {
         // Fall back to non-streaming mode
@@ -3050,7 +3203,10 @@ async function* queryModel(
           options.onProviderRequestStart,
         )
 
-        if (result === null) return
+        if (result === null) {
+          traceFallbackSettlement('superseded', fallbackStartedEventId)
+          return
+        }
 
         const m: AssistantMessage = {
           message: {
@@ -3071,10 +3227,16 @@ async function* queryModel(
         }
         newMessages.push(m)
         fallbackMessage = m
+        traceFallbackSettlement('completed', fallbackStartedEventId)
         yield m
 
         // Continue to success logging below
       } catch (fallbackError) {
+        traceFallbackSettlement(
+          signal.aborted ? 'aborted' : 'failed',
+          fallbackStartedEventId,
+          fallbackError,
+        )
         // Propagate model-fallback signal to query.ts (see comment above).
         if (fallbackError instanceof FallbackTriggeredError) {
           throw fallbackError
@@ -3298,7 +3460,11 @@ export function cleanupStream(
   try {
     // Abort the stream via its controller if not already aborted
     if (!stream.controller.signal.aborted) {
-      stream.controller.abort()
+      requestAbort(stream.controller, undefined, {
+        source: 'claude_stream_cleanup',
+        subsystem: 'claude_stream',
+        controllerRole: 'provider-stream',
+      })
     }
   } catch {
     // Ignore - stream may already be closed

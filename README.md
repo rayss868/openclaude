@@ -185,7 +185,17 @@ usually `~/.openclaude/bg-sessions/`; `OPENCLAUDE_CONFIG_DIR` can point
 OpenClaude somewhere else. `CLAUDE_CONFIG_DIR` is ignored for OpenClaude
 background-session storage. Session names can be reused after older sessions
 reach a terminal state; use the session ID to inspect older logs with the same
-name.
+name. A naturally finished session is recorded as `exited` when its process
+returns zero and `failed` when it returns nonzero or handles a termination
+signal. `stale` remains the conservative result when the process disappears
+without an observed outcome; an explicit successful `openclaude kill` is
+recorded as `killed`, and `killed` takes precedence over a natural `exited` or
+`failed` outcome for the same process. Terminal outcomes are stored separately
+under `bg-sessions/terminal/`; deleting that directory makes finished sessions
+fall back to liveness-derived status. OpenClaude does not infer POSIX signal
+names on Windows.
+Unobservable force termination, host crashes, and power loss remain `stale` on
+every platform.
 
 `openclaude attach <id-or-name>` currently reports the matching session and
 points to `openclaude logs <id> -f`; full terminal reattach is not implemented
@@ -383,7 +393,7 @@ OpenClaude supports multiple providers, but behavior is not identical across all
 - Some providers impose lower output caps than the CLI defaults, and OpenClaude adapts where possible
 - AI/ML API uses the OpenAI-compatible route, defaults to `gpt-4o`, and only surfaces chat-capable models from its public catalog
 - Gitlawb Opengateway is the fresh-install startup default and requires an API key from https://gitlawb.com/opengateway/keys. It uses one OpenAI-compatible base URL; switch between `mimo-*` and `google/gemini-3.1-flash-lite-preview` with `/model`, and do not pin the base URL to `/v1/xiaomi-mimo`.
-- Z.AI GLM Coding Plan uses `https://api.z.ai/api/coding/paas/v4` with `glm-5.2` by default. Use `glm-5.2?reasoning=high` for enhanced reasoning, `glm-5.2?reasoning=xhigh` to request Z.AI `reasoning_effort=max`, or `glm-5.2?thinking=disabled` for faster direct answers.
+- Z.AI GLM Coding Plan uses `https://api.z.ai/api/coding/paas/v4` with `glm-5.2` by default. GLM-5.3 is selectable as `glm-5.3`; use `glm-5.3?reasoning=low`, `glm-5.3?reasoning=high`, or `glm-5.3?reasoning=xhigh` to request its documented low, high, or maximum effort. The existing GLM-5.2 query controls remain supported.
 - Xiaomi MiMo uses `api-key` header auth on the direct OpenAI-compatible route and currently does not support `/usage` reporting in OpenClaude
 - GitHub Copilot serializes sub-agent execution by default to reduce Premium Request consumption — see [Agent Routing and Step Limits](docs/agent-routing.md#github-copilot-sub-agent-optimization) for tuning
 
