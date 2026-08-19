@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.28.4](https://github.com/rayss868/openclaude/compare/v0.28.3...v0.28.4) (2026-08-18)
+
+
+### Bug Fixes
+
+* **compaction:** preserve the recent message tail through compaction so the next turn keeps its images and tool context — the "Compaction: recent messages kept" setting (`compactTailTurns`) is now honored by both auto-compact and manual `/compact`. Previously the tail was only a display/pick count: compaction summarized the entire conversation and the summarizer stripped image blocks (`stripImagesFromMessages`), so when the last message before compaction was an image the model lost the image data entirely and got confused in the following turn. Compaction now splits the conversation with `splitMessagesForCompactTail` into a summarized older portion and a verbatim tail of the last `compactTailTurns` messages; the split lands on API-round boundaries so `tool_use`/`tool_result` pairs are never separated; the kept tail is re-attached after the summary with relink metadata (`preservedSegment` head/anchor/tail UUIDs) so transcript loaders splice it back correctly; the forked-agent summarizer reads only the summarized portion (`forkContextMessages`); and token accounting (`compactedMessageCount`, `truePostCompactTokenCount`) includes the kept tail. Conversations shorter than the tail count, or a tail that starts on the very first API round, fall back to the previous full-summarize behavior. Default tail is unchanged at 3; set 2/3/5/8 in the config picker.
+
+
 ## [0.28.3](https://github.com/rayss868/openclaude/compare/v0.28.2...v0.28.3) (2026-08-16)
 
 

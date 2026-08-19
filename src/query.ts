@@ -1111,6 +1111,7 @@ async function* queryLoop(
         originalMessageCount: messages.length,
         compactedMessageCount:
           compactionResult.summaryMessages.length +
+          (compactionResult.messagesToKeep?.length ?? 0) +
           compactionResult.attachments.length +
           compactionResult.hookResults.length,
         preCompactTokenCount,
@@ -3381,6 +3382,26 @@ async function* queryLoop(
 	    // actually ends.
 	    if (toolUseBlocks.some(b => b.name === TASK_COMPLETE_TOOL_NAME)) {
 	      hasCalledTaskComplete = true
+
+	      // Stop the turn here when TaskComplete is the only tool in this
+	      // response and a summary text is present. The completion check above
+	      // only runs on tool-free iterations (needsFollowUp === false), so a
+	      // model that pairs every summary with TaskComplete — the "call
+	      // TaskComplete when fully complete" instruction in the nudge invites
+	      // exactly this — re-calls it each iteration and never reaches that
+	      // path, looping forever. Iterations mixing TaskComplete with other
+	      // tools still fall through to the nudge so their results can be read.
+	      const hasOtherTools = toolUseBlocks.some(
+	        b => b.name !== TASK_COMPLETE_TOOL_NAME,
+	      )
+	      const hasSummaryText = assistantMessages.some(msg =>
+	        msg.message.content.some(
+	          block => block.type === 'text' && block.text.trim().length > 0,
+	        ),
+	      )
+	      if (!hasOtherTools && hasSummaryText) {
+	        return { reason: 'completed' }
+	      }
 	    }
 
 	    // Add a continuation nudge after tool results to prevent the model

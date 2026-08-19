@@ -121,6 +121,7 @@ import {
   roughTokenCountEstimationForMessages,
 } from '../tokenEstimation.js'
 import { groupMessagesByApiRound } from './grouping.js'
+import { normalizeCompactTailTurns } from '../../utils/relevancePruning.js'
 import {
   getCompactPrompt,
   getCompactUserSummaryMessage,
@@ -347,6 +348,43 @@ export function buildPostCompactMessages(result: CompactionResult): Message[] {
 }
 
 /**
+ * Split messages into the portion to summarize and the recent tail to keep
+ * verbatim after compaction. Preserving the tail (per `compactTailTurns`)
+ * keeps recent context — including image blocks, which stripImagesFromMessages
+ * would otherwise remove — so the post-compact model stays oriented. The cut
+ * lands on an API-round boundary so tool_use/tool_result pairs are never
+ * separated.
+ *
+ * Falls back to summarizing everything (empty tail) when the tail would cover
+ * the whole conversation — there is nothing older worth summarizing, and an
+ * empty summary would break the compaction contract.
+ */
+export function splitMessagesForCompactTail(
+  messages: Message[],
+  tailTurns: number,
+): { toSummarize: Message[]; toKeep: Message[] } {
+  if (tailTurns <= 0 || messages.length <= tailTurns) {
+    return { toSummarize: messages, toKeep: [] }
+  }
+  const cutIndex = messages.length - tailTurns
+  let tailStart = 0
+  for (const group of groupMessagesByApiRound(messages)) {
+    const next = tailStart + group.length
+    if (next > cutIndex) {
+      break
+    }
+    tailStart = next
+  }
+  if (tailStart === 0) {
+    return { toSummarize: messages, toKeep: [] }
+  }
+  return {
+    toSummarize: messages.slice(0, tailStart),
+    toKeep: messages.slice(tailStart),
+  }
+}
+
+/**
  * Annotate a compact boundary with relink metadata for messagesToKeep.
  * Preserved messages keep their original parentUuids on disk (dedup-skipped);
  * the loader uses this to patch head→anchor and anchor's-other-children→tail.
@@ -481,8 +519,19 @@ export async function compactConversation(
       content: compactPrompt,
     })
 
-    let messagesToSummarize = messages
-    let retryCacheSafeParams = cacheSafeParams
+    // Preserve the recent tail verbatim (per compactTailTurns) instead of
+    // folding it into the summary: the tail — including image blocks, which
+    // stripImagesFromMessages would remove — stays intact in the post-compact
+    // context, and the summarizer only sees the older portion.
+    const { toSummarize, toKeep: messagesToKeep } = splitMessagesForCompactTail(
+      messages,
+      normalizeCompactTailTurns(getGlobalConfig().compactTailTurns),
+    )
+    let messagesToSummarize = toSummarize
+    let retryCacheSafeParams = {
+      ...cacheSafeParams,
+      forkContextMessages: toSummarize,
+    }
     let summaryResponse: AssistantMessage
     let summary: string | null
     let ptlAttempts = 0
@@ -634,7 +683,7 @@ export async function compactConversation(
 
     // Create the compact boundary marker and summary messages before the
     // event so we can compute the true resulting-context size.
-    const boundaryMarker = createCompactBoundaryMessage(
+    let boundaryMarker = createCompactBoundaryMessage(
       isAutoCompact ? 'auto' : 'manual',
       preCompactTokenCount ?? 0,
       messages.at(-1)?.uuid,
@@ -661,6 +710,15 @@ export async function compactConversation(
         isVisibleInTranscriptOnly: true,
       }),
     ]
+    // Relink metadata so loaders splice the preserved tail after the summary
+    // (anchor = the last summary message, which sits before keep[0]).
+    if (messagesToKeep.length > 0) {
+      boundaryMarker = annotateBoundaryWithPreservedSegment(
+        boundaryMarker,
+        summaryMessages.at(-1)!.uuid,
+        messagesToKeep,
+      )
+    }
 
     // Previously "postCompactTokenCount" — renamed because this is the
     // compact API call's total usage (input_tokens ≈ preCompactTokenCount),
@@ -676,6 +734,7 @@ export async function compactConversation(
     const truePostCompactTokenCount = roughTokenCountEstimationForMessages([
       boundaryMarker,
       ...summaryMessages,
+      ...messagesToKeep,
       ...postCompactFileAttachments,
       ...hookMessages,
     ])
@@ -779,6 +838,7 @@ export async function compactConversation(
       summaryMessages,
       attachments: postCompactFileAttachments,
       hookResults: hookMessages,
+      messagesToKeep,
       userDisplayMessage: combinedUserDisplayMessage || undefined,
       preCompactTokenCount,
       postCompactTokenCount: compactionCallTotalTokens,

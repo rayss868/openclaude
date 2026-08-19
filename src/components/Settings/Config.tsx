@@ -702,6 +702,31 @@ export function Config({
       });
     }
   }, {
+    // How long resumable session transcripts are retained. 'never' is the
+    // default (unset) — nothing is deleted. '0' disables session
+    // persistence entirely. A positive number deletes files older than that
+    // many days.
+    id: 'cleanupPeriodDays',
+    label: 'Session transcript retention',
+    searchText: 'cleanup cleanupPeriodDays session transcripts retention delete purge keep days never',
+    value: cleanupPeriodDaysDisplay(settingsData?.cleanupPeriodDays),
+    // Include the current value so a hand-set number (e.g. 45) round-trips.
+    options: [...new Set(['never', '0', '7', '30', '90', '365', cleanupPeriodDaysDisplay(settingsData?.cleanupPeriodDays)])],
+    type: 'enum' as const,
+    onChange(selected: string) {
+      const cleanupPeriodDays = selected === 'never' ? undefined : Number(selected);
+      updateSettingsForSource('userSettings', {
+        cleanupPeriodDays
+      });
+      setSettingsData(prev => ({
+        ...prev,
+        cleanupPeriodDays
+      }));
+      logEvent('tengu_cleanup_period_days_changed', {
+        value: cleanupPeriodDays as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
+      });
+    }
+  }, {
     id: 'defaultPermissionMode',
     label: 'Default permission mode',
     value: settingsData?.permissions?.defaultMode || 'default',
@@ -1406,6 +1431,10 @@ export function Config({
     if (settingsData?.autoUpdatesChannel !== initialSettingsData.current?.autoUpdatesChannel) {
       formattedChanges.push(`Set auto-update channel to ${chalk.bold(settingsData?.autoUpdatesChannel ?? 'latest')}`);
     }
+    if (settingsData?.cleanupPeriodDays !== initialSettingsData.current?.cleanupPeriodDays) {
+      const retention = cleanupPeriodDaysDisplay(settingsData?.cleanupPeriodDays);
+      formattedChanges.push(`Set session transcript retention to ${chalk.bold(retention)}`);
+    }
     if (formattedChanges.length > 0) {
       onClose(formattedChanges.join('\n'));
     } else {
@@ -1413,7 +1442,7 @@ export function Config({
         display: 'system'
       });
     }
-  }, [showSubmenu, changes, globalConfig, mainLoopModel, currentOutputStyle, currentLanguage, settingsData?.autoUpdatesChannel, isFastModeEnabled() ? (settingsData as Record<string, unknown> | undefined)?.fastMode : undefined, onClose]);
+  }, [showSubmenu, changes, globalConfig, mainLoopModel, currentOutputStyle, currentLanguage, settingsData?.autoUpdatesChannel, settingsData?.cleanupPeriodDays, isFastModeEnabled() ? (settingsData as Record<string, unknown> | undefined)?.fastMode : undefined, onClose]);
 
   // Restore all state stores to their mount-time snapshots. Changes are
   // applied to disk/AppState immediately on toggle, so "cancel" means
@@ -1457,6 +1486,7 @@ export function Config({
       autoUpdatesChannel: iu?.autoUpdatesChannel,
       minimumVersion: iu?.minimumVersion,
       language: iu?.language,
+      cleanupPeriodDays: iu?.cleanupPeriodDays,
       ...(feature('TRANSCRIPT_CLASSIFIER') ? {
         useAutoModeDuringPlan: (iu as {
           useAutoModeDuringPlan?: boolean;
@@ -2066,6 +2096,11 @@ function apiRetryDelayOptions(value: number | undefined): string[] {
   const current = apiRetryDelayMsDisplay(value, { delayMs: value });
   if (current !== 'default' && !opts.includes(current)) opts.push(current);
   return opts;
+}
+// cleanupPeriodDays /config helper — renders the retention value and exposes
+// the option list. 'never' (unset) is the default: nothing is deleted.
+function cleanupPeriodDaysDisplay(value: number | undefined): string {
+  return value === undefined ? 'never' : String(value);
 }
 const THEME_LABELS: Record<string, string> = {
   auto: 'Auto (match terminal)',

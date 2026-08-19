@@ -138,6 +138,21 @@ describe('Agent loop continuation nudge', () => {
 	      'When the task is fully complete, call TaskComplete with a final summary.',
 	    )
 	  })
+
+	test('lone TaskComplete with summary ends the turn in the tool loop', async () => {
+	    // Regression: a model that pairs every summary with a TaskComplete
+	    // call used to loop forever — the completion path only ran on
+	    // tool-free iterations (needsFollowUp === false), so the trailing
+	    // "Continue with the task" nudge kept the turn alive while the model
+	    // kept re-calling TaskComplete. The tool loop must now end the turn
+	    // when TaskComplete is the only tool in the response.
+	    const content = await file('query.ts').text()
+
+	    expect(content).toContain(
+	      'Stop the turn here when TaskComplete is the only tool in this',
+	    )
+	    expect(content).toContain('hasOtherTools')
+	  })
 })
 
 // ---------------------------------------------------------------------------

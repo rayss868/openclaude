@@ -61,6 +61,9 @@ const _realPathModule = await import(
 const _realConfigModule = await import(
   `../../utils/config.js?real=${Date.now()}-${Math.random()}`
 )
+const _realGroupingModule = await import(
+  `./grouping.js?real=${Date.now()}-${Math.random()}`
+)
 const _realProjectInstructionsModule = await import(
   `../../utils/projectInstructions.js?real=${Date.now()}-${Math.random()}`
 )
@@ -345,6 +348,8 @@ export type CompactMockOptions = {
   queryModelWithStreaming?: ReturnType<typeof mock>
   /** Override for getMaxOutputTokensForModel(). */
   getMaxOutputTokensForModel?: ReturnType<typeof mock>
+  /** Override for groupMessagesByApiRound(); real grouping needed for tail-split tests. */
+  groupMessagesByApiRound?: ReturnType<typeof mock>
 }
 
 /**
@@ -500,8 +505,11 @@ function registerCommonCompactStubs(options: CompactMockOptions = {}) {
   }))
 
   // --- Compact grouping (DEFENSIVE) ---
+  // Real grouping by default: tail-split tests assert API-round boundaries.
   mock.module('./grouping.js', () => ({
-    groupMessagesByApiRound: mock((msgs: Message[]) => [msgs]),
+    groupMessagesByApiRound:
+      options.groupMessagesByApiRound ??
+      _realGroupingModule.groupMessagesByApiRound,
   }))
 
   // --- Config (DEFENSIVE) ---
@@ -1003,5 +1011,202 @@ describe('partialCompactConversation tool-pair-safe boundaries', () => {
 
     expect(compacted.messagesToKeep.map(m => m.uuid)).toEqual([head.uuid])
     expect(compacted.messagesToKeep.some(hasToolResultBlock)).toBe(false)
+  })
+})
+
+describe('splitMessagesForCompactTail', () => {
+  function assistantWithId(text: string, id: string): Message {
+    return {
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        id,
+        content: [{ type: 'text', text }],
+      } as never,
+      uuid: randomUUID(),
+      timestamp: new Date().toISOString(),
+    }
+  }
+
+  function imageUserMessage(): Message {
+    return {
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'screenshot' },
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/png',
+              data: 'iVBORw0KGgo=',
+            },
+          },
+        ],
+      },
+      uuid: randomUUID(),
+      timestamp: new Date().toISOString(),
+    } as Message
+  }
+
+  test('keeps the recent tail verbatim and summarizes the older portion', async () => {
+    const { splitMessagesForCompactTail } = await importCompact({})
+    const messages = [
+      userMessage('one'),
+      assistantWithId('1', 'msg-1'),
+      userMessage('two'),
+      assistantWithId('2', 'msg-2'),
+      userMessage('three'),
+      assistantWithId('3', 'msg-3'),
+      userMessage('four'),
+      assistantWithId('4', 'msg-4'),
+    ]
+    const { toSummarize, toKeep } = splitMessagesForCompactTail(messages, 3)
+    // Real API-round grouping: each new assistant id starts a round, so the
+    // groups are [u0],[a1,u1],[a2,u2],[a3,u3],[a4]. cutIndex=5 lands exactly
+    // on the [a2,u2] boundary → tail = [a3,u3,a4].
+    expect(toSummarize.map(m => m.uuid)).toEqual(
+      messages.slice(0, 5).map(m => m.uuid),
+    )
+    expect(toKeep.map(m => m.uuid)).toEqual(messages.slice(5).map(m => m.uuid))
+  })
+
+  test('preserves image blocks in the kept tail', async () => {
+    const { splitMessagesForCompactTail } = await importCompact({})
+    const messages = [
+      userMessage('one'),
+      assistantWithId('1', 'msg-1'),
+      imageUserMessage(),
+      assistantWithId('2', 'msg-2'),
+    ]
+    const { toSummarize, toKeep } = splitMessagesForCompactTail(messages, 2)
+    // Groups: [u0],[a1,imageUser],[a2]. cutIndex=2 lands inside [a1,imageUser],
+    // so the whole round moves to the tail.
+    expect(toSummarize.map(m => m.uuid)).toEqual(
+      messages.slice(0, 1).map(m => m.uuid),
+    )
+    expect(toKeep.map(m => m.uuid)).toEqual(messages.slice(1).map(m => m.uuid))
+    const imageBlock = (toKeep[1] as { message: { content: unknown[] } })
+      .message.content
+    expect(
+      imageBlock.some(block => (block as { type?: string }).type === 'image'),
+    ).toBe(true)
+  })
+
+  test('never splits a tool_use/tool_result pair across the cut', async () => {
+    const { splitMessagesForCompactTail } = await importCompact({})
+    const toolUseId = 'toolu_tail'
+    const messages = [
+      userMessage('older'),
+      assistantWithId('1', 'msg-1'),
+      assistantToolUseMessage(toolUseId),
+      toolResultMessage(toolUseId),
+    ]
+    const { toSummarize, toKeep } = splitMessagesForCompactTail(messages, 1)
+    expect(toSummarize.map(m => m.uuid)).toEqual(
+      messages.slice(0, 2).map(m => m.uuid),
+    )
+    expect(toKeep.map(m => m.uuid)).toEqual(messages.slice(2).map(m => m.uuid))
+    expect(toKeep.some(hasToolResultBlock)).toBe(true)
+  })
+
+  test('falls back to summarizing everything when the conversation fits in the tail', async () => {
+    const { splitMessagesForCompactTail } = await importCompact({})
+    const messages = [
+      userMessage('one'),
+      assistantWithId('1', 'msg-1'),
+    ]
+    const { toSummarize, toKeep } = splitMessagesForCompactTail(messages, 3)
+    expect(toSummarize).toBe(messages)
+    expect(toKeep).toEqual([])
+  })
+
+  test('falls back when the cut lands inside the first API round', async () => {
+    const { splitMessagesForCompactTail } = await importCompact({})
+    // Assistant messages without a message.id never fire a boundary, so the
+    // whole conversation is one API round → nothing older to summarize.
+    const messages = [
+      userMessage('one'),
+      assistantMessage('1'),
+      userMessage('two'),
+      assistantMessage('2'),
+    ]
+    const { toSummarize, toKeep } = splitMessagesForCompactTail(messages, 2)
+    expect(toSummarize).toBe(messages)
+    expect(toKeep).toEqual([])
+  })
+})
+
+describe('compactConversation tail preservation', () => {
+  function assistantWithId(text: string, id: string): Message {
+    return {
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        id,
+        content: [{ type: 'text', text }],
+      } as never,
+      uuid: randomUUID(),
+      timestamp: new Date().toISOString(),
+    }
+  }
+
+  test('keeps the tail in the result, annotates the boundary, and excludes the tail from the summary', async () => {
+    const { compactConversation, runForkedAgent } = await importCompact({
+      getGlobalConfig: mock(() => ({
+        ..._realConfigModule.getGlobalConfig(),
+        compactTailTurns: 2,
+      })),
+    })
+    const messages = [
+      userMessage('one'),
+      assistantWithId('1', 'msg-1'),
+      userMessage('two'),
+      assistantWithId('2', 'msg-2'),
+      userMessage('three'),
+      assistantWithId('3', 'msg-3'),
+    ]
+    const ctx = toolUseContext()
+    const csp = cacheSafeParams(messages)
+    const result = await compactConversation(messages, ctx, csp, true)
+
+    // Groups: [u0],[a1,u1],[a2,u2],[a3]. cutIndex=4 lands inside [a2,u2],
+    // so the tail = [a2,u2,a3] and the summary covers [u0,a1,u1].
+    expect(result.messagesToKeep?.map(m => m.uuid)).toEqual(
+      messages.slice(3).map(m => m.uuid),
+    )
+    expect(
+      result.boundaryMarker.compactMetadata?.preservedSegment?.headUuid,
+    ).toBe(messages[3].uuid)
+    expect(
+      result.boundaryMarker.compactMetadata?.preservedSegment?.anchorUuid,
+    ).toBe(result.summaryMessages.at(-1)?.uuid)
+
+    const forkInput = runForkedAgent.mock.calls[0]?.[0] as {
+      cacheSafeParams: { forkContextMessages: Message[] }
+    }
+    expect(forkInput.cacheSafeParams.forkContextMessages.map(m => m.uuid)).toEqual(
+      messages.slice(0, 3).map(m => m.uuid),
+    )
+  })
+
+  test('returns no messagesToKeep when the conversation fits in the tail', async () => {
+    const { compactConversation } = await importCompact({
+      getGlobalConfig: mock(() => ({
+        ..._realConfigModule.getGlobalConfig(),
+        compactTailTurns: 8,
+      })),
+    })
+    const messages = [
+      userMessage('Hello'),
+      assistantMessage('Hi there!'),
+    ]
+    const ctx = toolUseContext()
+    const csp = cacheSafeParams(messages)
+    const result = await compactConversation(messages, ctx, csp, true)
+
+    expect(result.messagesToKeep).toEqual([])
+    expect(result.boundaryMarker.compactMetadata?.preservedSegment).toBeUndefined()
   })
 })

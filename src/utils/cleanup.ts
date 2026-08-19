@@ -30,6 +30,19 @@ function getCutoffDate(): Date {
   return new Date(Date.now() - cleanupPeriodMs)
 }
 
+/**
+ * Cutoff date for session data (transcripts, session-env dirs, file-history
+ * backups). Returns null when cleanupPeriodDays is unset — the default is to
+ * keep session data forever instead of deleting it after 30 days.
+ */
+function getSessionCleanupCutoffDate(): Date | null {
+  const settings = getSettings_DEPRECATED() || {}
+  const cleanupPeriodDays = settings.cleanupPeriodDays
+  if (cleanupPeriodDays === undefined) return null
+  const cleanupPeriodMs = cleanupPeriodDays * 24 * 60 * 60 * 1000
+  return new Date(Date.now() - cleanupPeriodMs)
+}
+
 export type CleanupResult = {
   messages: number
   errors: number
@@ -153,7 +166,8 @@ async function tryRmdir(dirPath: string, fsImpl: FsOperations): Promise<void> {
 }
 
 export async function cleanupOldSessionFiles(): Promise<CleanupResult> {
-  const cutoffDate = getCutoffDate()
+  const cutoffDate = getSessionCleanupCutoffDate()
+  if (cutoffDate === null) return { messages: 0, errors: 0 }
   const projectsDir = getProjectsDir()
   const fsImpl = getFsImplementation()
 
@@ -315,7 +329,8 @@ export function cleanupOldPlanFiles(): Promise<CleanupResult> {
 }
 
 export async function cleanupOldFileHistoryBackups(): Promise<CleanupResult> {
-  const cutoffDate = getCutoffDate()
+  const cutoffDate = getSessionCleanupCutoffDate()
+  if (cutoffDate === null) return { messages: 0, errors: 0 }
   const result: CleanupResult = { messages: 0, errors: 0 }
   const fsImpl = getFsImplementation()
 
@@ -360,7 +375,8 @@ export async function cleanupOldFileHistoryBackups(): Promise<CleanupResult> {
 }
 
 export async function cleanupOldSessionEnvDirs(): Promise<CleanupResult> {
-  const cutoffDate = getCutoffDate()
+  const cutoffDate = getSessionCleanupCutoffDate()
+  if (cutoffDate === null) return { messages: 0, errors: 0 }
   const result: CleanupResult = { messages: 0, errors: 0 }
   const fsImpl = getFsImplementation()
 
@@ -586,7 +602,7 @@ export async function cleanupOldVersionsThrottled(): Promise<void> {
 
 export async function cleanupOldMessageFilesInBackground(): Promise<void> {
   // If settings have validation errors but the user explicitly set cleanupPeriodDays,
-  // skip cleanup entirely rather than falling back to the default (30 days).
+  // skip cleanup entirely rather than falling back to the unset default (keep everything).
   // This prevents accidentally deleting files when the user intended a different retention period.
   const { errors } = getSettingsWithAllErrors()
   if (errors.length > 0 && rawSettingsContainsKey('cleanupPeriodDays')) {
