@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.29.1](https://github.com/rayss868/openclaude/compare/v0.29.0...v0.29.1) (2026-08-19)
+
+
+### Features
+
+* **resume:** add session delete feature — press Delete key on a session in the /resume picker to permanently remove it, with y/n confirmation prompt. Shows keyboard shortcut hints in the UI.
+
+
 ## [0.28.4](https://github.com/rayss868/openclaude/compare/v0.28.3...v0.28.4) (2026-08-18)
 
 

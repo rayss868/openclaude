@@ -18,6 +18,8 @@ import { getWorktreePaths } from '../utils/getWorktreePaths.js';
 import { getBranch } from '../utils/git.js';
 import { getLogDisplayTitle } from '../utils/log.js';
 import { getFirstMeaningfulUserMessageTextContent, getSessionIdFromLog, isCustomTitleEnabled, saveCustomTitle } from '../utils/sessionStorage.js';
+import { unlink } from 'fs/promises';
+import { resolveSessionFilePath } from '../utils/sessionStoragePortable.js';
 import { getTheme } from '../utils/theme.js';
 import { ConfigurableShortcutHint } from './ConfigurableShortcutHint.js';
 import { Select, type OptionWithDescription } from './CustomSelect/select.js';
@@ -66,7 +68,7 @@ export type ResumeLogGroup = {
   logs: LogOption[];
   firstIndex: number;
 };
-type ViewMode = 'list' | 'preview' | 'rename' | 'search';
+type ViewMode = 'list' | 'preview' | 'rename' | 'search' | 'confirm-delete';
 type DeepSearchResult = {
   log: LogOption;
   score?: number;
@@ -1127,6 +1129,26 @@ export function LogSelector(t0: LogSelectorProps) {
         return;
       }
       if (viewMode === "rename") {} else {
+        if (viewMode === "confirm-delete") {
+          if (input.toLowerCase() === "y") {
+            const id = focusedLog ? getSessionIdFromLog(focusedLog) : null;
+            if (id) {
+              resolveSessionFilePath(id, getOriginalCwd()).then(resolved => {
+                if (resolved) {
+                  return unlink(resolved.filePath);
+                }
+              }).then(() => {
+                setViewMode("list");
+                onLogsChanged?.();
+                logEvent("tengu_session_delete_confirmed", {});
+              });
+            }
+          } else {
+            setViewMode("list");
+            logEvent("tengu_session_delete_cancelled", {});
+          }
+          return;
+        }
         if (viewMode === "search") {
           if (input.toLowerCase() === "n" && key.ctrl) {
             exitSearchMode();
@@ -1203,19 +1225,24 @@ export function LogSelector(t0: LogSelectorProps) {
                     setRenameValue("");
                     logEvent("tengu_session_rename_started", {});
                   } else {
-                    if (lowerInput === "v" && key.ctrl && focusedLog) {
-                      setPreviewLog(focusedLog);
-                      setViewMode("preview");
-                      logEvent("tengu_session_preview_opened", {
-                        messageCount: focusedLog.messageCount
-                      });
+                    if (key.delete && focusedLog) {
+                      setViewMode("confirm-delete");
+                      logEvent("tengu_session_delete_started", {});
                     } else {
-                      if (focusedLog && keyIsNotCtrlOrMeta && input.length > 0 && !/^\s+$/.test(input)) {
-                        setViewMode("search");
-                        setSearchQuery(input);
-                        logEvent("tengu_session_search_toggled", {
-                          enabled: true
+                      if (lowerInput === "v" && key.ctrl && focusedLog) {
+                        setPreviewLog(focusedLog);
+                        setViewMode("preview");
+                        logEvent("tengu_session_preview_opened", {
+                          messageCount: focusedLog.messageCount
                         });
+                      } else {
+                        if (focusedLog && keyIsNotCtrlOrMeta && input.length > 0 && !/^\s+$/.test(input)) {
+                          setViewMode("search");
+                          setSearchQuery(input);
+                          logEvent("tengu_session_search_toggled", {
+                            enabled: true
+                          });
+                        }
                       }
                     }
                   }
@@ -1426,7 +1453,7 @@ export function LogSelector(t0: LogSelectorProps) {
   }
   let t70;
   if ($[202] !== agenticSearchState.status || $[203] !== branchFilterEnabled || $[204] !== columns || $[205] !== displayedLogs || $[206] !== expandedGroupSessionIds || $[207] !== flatOptions || $[208] !== focusedLog || $[209] !== focusedNode?.id || $[210] !== handleFlatOptionsSelectFocus || $[211] !== handleRenameSubmit || $[212] !== handleTreeSelectFocus || $[213] !== isAgenticSearchOptionFocused || $[214] !== onCancel || $[215] !== onSelect || $[216] !== renameCursorOffset || $[217] !== renameValue || $[218] !== treeNodes || $[219] !== viewMode || $[220] !== visibleCount) {
-    t70 = agenticSearchState.status === "searching" ? null : viewMode === "rename" && focusedLog ? <Box paddingLeft={2} flexDirection="column"><Text bold={true}>Rename session:</Text><Box paddingTop={1}><TextInput value={renameValue} onChange={setRenameValue} onSubmit={handleRenameSubmit} placeholder={getResumeLogDisplayTitle(focusedLog) || "Enter new session name"} columns={columns} cursorOffset={renameCursorOffset} onChangeCursorOffset={setRenameCursorOffset} showCursor={true} /></Box></Box> : isResumeWithRenameEnabled ? <TreeSelect nodes={treeNodes} onSelect={node_0 => {
+    t70 = agenticSearchState.status === "searching" ? null : viewMode === "confirm-delete" ? <Box paddingLeft={2} flexDirection="column"><Text color="red" bold={true}>Hapus session ini? (y/n)</Text></Box> : viewMode === "rename" && focusedLog ? <Box paddingLeft={2} flexDirection="column"><Text bold={true}>Rename session:</Text><Box paddingTop={1}><TextInput value={renameValue} onChange={setRenameValue} onSubmit={handleRenameSubmit} placeholder={getResumeLogDisplayTitle(focusedLog) || "Enter new session name"} columns={columns} cursorOffset={renameCursorOffset} onChangeCursorOffset={setRenameCursorOffset} showCursor={true} /></Box></Box> : isResumeWithRenameEnabled ? <TreeSelect nodes={treeNodes} onSelect={node_0 => {
       onSelect(node_0.value.log);
     }} onFocus={handleTreeSelectFocus} onCancel={onCancel} focusNodeId={focusedNode?.id} visibleOptionCount={visibleCount} layout="expanded" isDisabled={viewMode === "search" || isAgenticSearchOptionFocused} hideIndexes={false} isNodeExpanded={nodeId => {
       if (viewMode === "search" || branchFilterEnabled) {
@@ -1481,7 +1508,7 @@ export function LogSelector(t0: LogSelectorProps) {
   }
   let t71;
   if ($[222] !== agenticSearchState.status || $[223] !== currentBranch || $[224] !== exitState.keyName || $[225] !== exitState.pending || $[226] !== getExpandCollapseHint || $[227] !== hasMultipleWorktrees || $[228] !== isAgenticSearchOptionFocused || $[229] !== isSearching || $[230] !== onToggleAllProjects || $[231] !== showAllProjects || $[232] !== showAllWorktrees || $[233] !== viewMode) {
-    t71 = <Box paddingLeft={2}>{exitState.pending ? <Text dimColor={true}>Press {exitState.keyName} again to exit</Text> : viewMode === "rename" ? <Text dimColor={true}><Byline><KeyboardShortcutHint shortcut="Enter" action="save" /><ConfigurableShortcutHint action="confirm:no" context="Confirmation" fallback="Esc" description="cancel" /></Byline></Text> : agenticSearchState.status === "searching" ? <Text dimColor={true}><Byline><Text>Searching with Claude…</Text><ConfigurableShortcutHint action="confirm:no" context="Confirmation" fallback="Esc" description="cancel" /></Byline></Text> : isAgenticSearchOptionFocused ? <Text dimColor={true}><Byline><KeyboardShortcutHint shortcut="Enter" action="search" /><KeyboardShortcutHint shortcut={"\u2193"} action="skip" /><ConfigurableShortcutHint action="confirm:no" context="Confirmation" fallback="Esc" description="cancel" /></Byline></Text> : viewMode === "search" ? <Text dimColor={true}><Byline><Text>{isSearching && false ? "Searching\u2026" : "Type to Search"}</Text><KeyboardShortcutHint shortcut="Enter" action="select" /><ConfigurableShortcutHint action="confirm:no" context="Confirmation" fallback="Esc" description="clear" /></Byline></Text> : <Text dimColor={true}><Byline>{onToggleAllProjects && <KeyboardShortcutHint shortcut="Ctrl+A" action={`show ${showAllProjects ? "current dir" : "all projects"}`} />}{currentBranch && <KeyboardShortcutHint shortcut="Ctrl+B" action="toggle branch" />}{hasMultipleWorktrees && <KeyboardShortcutHint shortcut="Ctrl+W" action={`show ${showAllWorktrees ? "current worktree" : "all worktrees"}`} />}<KeyboardShortcutHint shortcut="Ctrl+V" action="preview" /><KeyboardShortcutHint shortcut="Ctrl+R" action="rename" /><Text>Type to search</Text><ConfigurableShortcutHint action="confirm:no" context="Confirmation" fallback="Esc" description="cancel" />{getExpandCollapseHint() && <Text>{getExpandCollapseHint()}</Text>}</Byline></Text>}</Box>;
+    t71 = <Box paddingLeft={2}>{exitState.pending ? <Text dimColor={true}>Press {exitState.keyName} again to exit</Text> : viewMode === "confirm-delete" ? <Text dimColor={true}><Byline><KeyboardShortcutHint shortcut="y" action="hapus" /><KeyboardShortcutHint shortcut="n" action="batal" /></Byline></Text> : viewMode === "rename" ? <Text dimColor={true}><Byline><KeyboardShortcutHint shortcut="Enter" action="save" /><ConfigurableShortcutHint action="confirm:no" context="Confirmation" fallback="Esc" description="cancel" /></Byline></Text> : agenticSearchState.status === "searching" ? <Text dimColor={true}><Byline><Text>Searching with Claude…</Text><ConfigurableShortcutHint action="confirm:no" context="Confirmation" fallback="Esc" description="cancel" /></Byline></Text> : isAgenticSearchOptionFocused ? <Text dimColor={true}><Byline><KeyboardShortcutHint shortcut="Enter" action="search" /><KeyboardShortcutHint shortcut={"\u2193"} action="skip" /><ConfigurableShortcutHint action="confirm:no" context="Confirmation" fallback="Esc" description="cancel" /></Byline></Text> : viewMode === "search" ? <Text dimColor={true}><Byline><Text>{isSearching && false ? "Searching\u2026" : "Type to Search"}</Text><KeyboardShortcutHint shortcut="Enter" action="select" /><ConfigurableShortcutHint action="confirm:no" context="Confirmation" fallback="Esc" description="clear" /></Byline></Text> : <Text dimColor={true}><Byline>{onToggleAllProjects && <KeyboardShortcutHint shortcut="Ctrl+A" action={`show ${showAllProjects ? "current dir" : "all projects"}`} />}{currentBranch && <KeyboardShortcutHint shortcut="Ctrl+B" action="toggle branch" />}{hasMultipleWorktrees && <KeyboardShortcutHint shortcut="Ctrl+W" action={`show ${showAllWorktrees ? "current worktree" : "all worktrees"}`} />}<KeyboardShortcutHint shortcut="Ctrl+V" action="preview" /><KeyboardShortcutHint shortcut="Ctrl+R" action="rename" /><KeyboardShortcutHint shortcut="Del" action="delete" /><Text>Type to search</Text><ConfigurableShortcutHint action="confirm:no" context="Confirmation" fallback="Esc" description="cancel" />{getExpandCollapseHint() && <Text>{getExpandCollapseHint()}</Text>}</Byline></Text>}</Box>;
     $[222] = agenticSearchState.status;
     $[223] = currentBranch;
     $[224] = exitState.keyName;

@@ -24,7 +24,7 @@ Use OpenAI-compatible APIs, Gemini, GitHub Models, Codex OAuth, Codex, Ollama, A
 OpenClaude is also mirrored to GitLawb:
 [gitlawb.com/node/repos/z6MkqDnb/openclaude](https://gitlawb.com/node/repos/z6MkqDnb/openclaude)
 
-[Quick Start](#quick-start) | [Setup Guides](#setup-guides) | [Providers](#supported-providers) | [Development](#development) | [VS Code Extension](#vs-code-extension) | [Partners](#partners) | [Community](#community)
+[Quick Start](#quick-start) | [Setup Guides](#setup-guides) | [Providers](#supported-providers) | [Development](#development) | [VS Code Extension](#vs-code-extension) | [Partners](#partners) | [Community](#community) | [Changelog](CHANGELOG.md) | [Releases](https://github.com/rayss868/openclaude/releases)
 
 ## Partners
 
@@ -139,6 +139,10 @@ paru -S openclaude
 ```
 
 If the install later reports `ripgrep not found`, install ripgrep system-wide and confirm `rg --version` works in the same terminal before starting OpenClaude.
+
+### Releases and changelog
+
+See the [changelog](CHANGELOG.md) for the complete version history and [GitHub Releases](https://github.com/rayss868/openclaude/releases) for published release notes and assets. The npm `latest` tag points to the current stable release.
 
 **Verify / troubleshoot installed version:**
 
