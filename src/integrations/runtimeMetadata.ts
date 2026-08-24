@@ -145,9 +145,9 @@ function mergeOpenAIShimConfig(
   inferredConfig: Partial<OpenAIShimTransportConfig> | undefined,
 ): OpenAIShimTransportConfig {
   return {
+    ...inferredConfig,
     ...baseConfig,
     ...entryConfig,
-    ...inferredConfig,
     removeBodyFields: mergeRemoveBodyFields(
       baseConfig?.removeBodyFields,
       entryConfig?.removeBodyFields,

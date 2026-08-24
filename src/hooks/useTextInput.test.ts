@@ -1,10 +1,19 @@
-import { describe, expect, test } from 'bun:test'
+import { PassThrough } from 'node:stream'
 
+import { describe, expect, test } from 'bun:test'
+import { createElement, useState } from 'react'
+
+import { createRoot, type Key } from '../ink.js'
+import { AppStateProvider } from '../state/AppState.js'
+import type { TextInputState } from '../types/textInputTypes.js'
 import { Cursor } from '../utils/Cursor.js'
 import {
   applyCoalescedDelInput,
   applyPrintableInput,
+  composeCombiningMark,
   prepareTextInputEvent,
+  replacePreviousWithChar,
+  useTextInput,
 } from './useTextInput.js'
 
 const insert = (cursor: Cursor, text: string): Cursor => cursor.insert(text)
@@ -23,6 +32,82 @@ test('applyPrintableInput detects an ANSI-wrapped mode character', () => {
   expect(notifications).toEqual(['!'])
 })
 
+test('applyPrintableInput inserts NFD input fully composed', () => {
+  const result = applyPrintableInput(Cursor.fromText('', 80, 0), 'a\u0306')
+
+  expect(result?.text).toBe('ă')
+  expect(result?.offset).toBe(1)
+})
+
+describe('composeCombiningMark', () => {
+  test('composes a standalone breve onto the preceding vowel', () => {
+    expect(composeCombiningMark('a', 1, '\u0306')).toEqual({
+      text: 'ă',
+      offset: 1,
+    })
+  })
+
+  test('composes sequential IME marks into a single precomposed char', () => {
+    // tiếng: e + circumflex → ê, then acute → ế (U+1EBF, one code unit)
+    const stepOne = composeCombiningMark('tie', 3, '\u0302')
+    expect(stepOne?.text).toBe('tiê')
+
+    const stepTwo = composeCombiningMark(stepOne!.text, stepOne!.offset, '\u0301')
+    expect(stepTwo?.text).toBe('tiế')
+    expect([...(stepTwo?.text ?? '')].length).toBe(4)
+  })
+
+  test('composes mid-text without disturbing trailing characters', () => {
+    // Offset 1 = cursor right after the base vowel "a", mirroring real NFD
+    // arrival: the mark composes onto the character before the cursor.
+    expect(composeCombiningMark('ab c', 1, '\u0306')).toEqual({
+      text: 'ăb c',
+      offset: 1,
+    })
+  })
+
+  test('composes a mark outside the old U+0300-U+036F range (Hebrew point)', () => {
+    // HEBREW POINT SHEVA (U+05B0, general category Mn) sits outside the
+    // previous [\u0300-\u036f] matcher; \p{M} must still compose it.
+    expect(composeCombiningMark('בית', 1, '\u05B0')).toEqual({
+      text: 'ב\u05B0ית',
+      offset: 2,
+    })
+  })
+
+  test('returns null when nothing precedes the cursor', () => {
+    expect(composeCombiningMark('', 0, '\u0306')).toBeNull()
+  })
+
+  test('returns null for non-mark input', () => {
+    expect(composeCombiningMark('a', 1, 'w')).toBeNull()
+  })
+})
+
+describe('replacePreviousWithChar', () => {
+  test('replaces the previous character with the composed replacement', () => {
+    expect(replacePreviousWithChar('xin cha', 7, 'ò')).toEqual({
+      text: 'xin chà',
+      offset: 7,
+    })
+  })
+
+  test('replaces mid-text preserving surrounding characters', () => {
+    expect(replacePreviousWithChar('abc', 2, 'ă')).toEqual({
+      text: 'aăc',
+      offset: 2,
+    })
+  })
+
+  test('returns null when nothing precedes the cursor', () => {
+    expect(replacePreviousWithChar('a', 0, 'ă')).toBeNull()
+  })
+
+  test('ignores ASCII replacements', () => {
+    expect(replacePreviousWithChar('a', 1, 'b')).toBeNull()
+  })
+})
+
 function apply(
   text: string,
   input: string,
@@ -38,6 +123,14 @@ function apply(
 describe('applyCoalescedDelInput', () => {
   test('preserves the raw DEL workaround', () => {
     expect(apply('abc', '\x7f').cursor.text).toBe('ab')
+  })
+
+  test('treats Ctrl-H backspace bytes like DEL', () => {
+    expect(apply('a', '\bă').cursor.text).toBe('ă')
+  })
+
+  test('handles mixed DEL and Ctrl-H runs before inserting', () => {
+    expect(apply('abc', '\x7f\bă').cursor.text).toBe('aă')
   })
 
   test('inserts replacement text after DEL', () => {
@@ -241,5 +334,106 @@ describe('prepareTextInputEvent', () => {
       input: '\\\x1b[0m\n',
       shouldSubmit: false,
     })
+  })
+})
+
+async function waitFor(
+  predicate: () => boolean,
+  timeoutMs = 2500,
+): Promise<void> {
+  const startedAt = Date.now()
+
+  while (Date.now() - startedAt < timeoutMs) {
+    if (predicate()) return
+    await Bun.sleep(5)
+  }
+
+  throw new Error('Timed out waiting for useTextInput state')
+}
+
+// Renders useTextInput through its public onInput API (same probe pattern
+// as components/TextInput.test.tsx) so IME composition paths can be
+// exercised end-to-end against user-visible text and cursor outcomes.
+async function runOnInputScenario(options: {
+  initialValue: string
+  input: string
+  key?: Partial<Key>
+}): Promise<{ value: string; cursorOffset: number }> {
+  const { initialValue, input } = options
+  const key = options.key ?? {}
+  let inputState: TextInputState | undefined
+  let observedValue = initialValue
+  let observedCursorOffset = initialValue.length
+
+  function ImeProbe(): null {
+    const [value, setValue] = useState(initialValue)
+    const [offset, setOffset] = useState(initialValue.length)
+
+    inputState = useTextInput({
+      value,
+      onChange: nextValue => {
+        observedValue = nextValue
+        setValue(nextValue)
+      },
+      onSubmit: () => {},
+      cursorChar: ' ',
+      invert: text => text,
+      themeText: text => text,
+      columns: 60,
+      externalOffset: offset,
+      onOffsetChange: nextOffset => {
+        observedCursorOffset = nextOffset
+        setOffset(nextOffset)
+      },
+      multiline: true,
+    })
+
+    return null
+  }
+
+  const stdout = new PassThrough()
+  ;(stdout as unknown as { columns: number }).columns = 80
+  const root = await createRoot({
+    stdout: stdout as unknown as NodeJS.WriteStream,
+    patchConsole: false,
+  })
+
+  try {
+    root.render(createElement(AppStateProvider, null, createElement(ImeProbe)))
+    await waitFor(() => inputState !== undefined)
+    inputState!.onInput(input, key as Key)
+    await Bun.sleep(25)
+  } finally {
+    root.unmount()
+  }
+
+  return { value: observedValue, cursorOffset: observedCursorOffset }
+}
+
+describe('useTextInput IME composition regression (#2018)', () => {
+  test('composes a backspace-flagged replacement into user-visible text', async () => {
+    // Telex/VNI compose events arrive flagged as backspace while carrying
+    // the precomposed replacement character; the visible result is the
+    // composed word, not a deleted character plus stray text.
+    const result = await runOnInputScenario({
+      initialValue: 'xin cha',
+      input: 'ò',
+      key: { backspace: true },
+    })
+
+    expect(result.value).toBe('xin chà')
+    expect(result.cursorOffset).toBe(7)
+  })
+
+  test('composes a delayed standalone combining mark onto its base character', async () => {
+    // NFD path: the base vowel commits first and the tone mark arrives
+    // later as its own standalone text event.
+    const result = await runOnInputScenario({
+      initialValue: 'tiê',
+      input: '\u0301',
+    })
+
+    expect(result.value).toBe('tiế')
+    expect(result.cursorOffset).toBe(3)
   })
 })

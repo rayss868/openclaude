@@ -313,6 +313,7 @@ Advanced and source-build guides:
 | Z.AI GLM Coding Plan | `/provider` or OpenAI-compatible env vars | Uses `OPENAI_API_KEY` at `https://api.z.ai/api/coding/paas/v4` and defaults to `glm-5.2` |
 | AI/ML API | `/provider` or `AIMLAPI_API_KEY` ([setup guide](docs/aimlapi-setup.md)) | Uses `https://api.aimlapi.com/v1`, auto-detects the OpenAI-compatible route from `AIMLAPI_API_KEY`, sends OpenClaude attribution headers, and discovers chat-capable models from the public `/models` catalog |
 | Concentrate | `/provider` or `CONCENTRATE_API_KEY` | Unified OpenAI-compatible gateway at `https://api.concentrate.ai/v1`; defaults to `deepseek-v4-flash` and auto-discovers the chat model catalog |
+| LLMTR | `/provider` or OpenAI-compatible env vars | Multi-model gateway at `https://llmtr.com/v1`; `/provider` and `--provider llmtr` default to `deepseek/deepseek-v4-flash`, while raw env setup must set `OPENAI_BASE_URL=https://llmtr.com/v1` and `OPENAI_MODEL`; accepts `LLMTR_API_KEY` or `OPENAI_API_KEY` after the route is selected and discovers tool-capable Chat Completions models from the public catalog |
 | ApiSmart | `/provider` or `APISMART_API_KEY` | Uses `https://gw.apismart.ai/v1`, defaults to `DEEPSEEK_V4_FLASH`, and supports optional `APISMART_MODEL` plus authenticated model discovery |
 | Hicap | `/provider` or OpenAI-compatible env vars | Uses `api-key` auth, discovers models from unauthenticated `/models`, and supports Responses mode for `gpt-` models |
 | Fireworks AI | `/provider` or env vars | First-class provider with 276 curated models (DeepSeek, Qwen, Llama, Gemma, and more); uses `FIREWORKS_API_KEY` |
@@ -485,7 +486,7 @@ Day-to-day commands:
 - `bun test path/to/file.test.ts` — focused runs for the areas you touch
 - `bun run test:coverage` — coverage to `coverage/lcov.info` plus a visual report at `coverage/index.html` (`bun run test:coverage:ui` rebuilds just the UI)
 - `bun run smoke` — smoke checks
-- `bun run doctor:runtime`, `bun run verify:privacy`, `bun run security:pr-scan -- --base origin/main`
+- `bun run doctor:runtime`, `bun run verify:privacy`; for PR intent scanning, use the fresh-upstream, explicit-ref workflow in the [local pre-push validation contract](CONTRIBUTING.md#validation)
 
 Focused suites: `bun run test:provider`, `bun run test:provider-recommendation`.
 
@@ -513,7 +514,7 @@ OpenClaude leaves Node's standard compile-cache controls authoritative. Set
 `NODE_DISABLE_COMPILE_CACHE=1` to disable the optimization, including for V8
 coverage runs that require uncached compilation.
 
-Recommended validation before opening a PR:
+Before opening or updating a PR, run the authoritative [local pre-push validation contract](CONTRIBUTING.md#validation). The commands below are useful for narrow iteration, but they do not replace that required preflight:
 
 - `bun run build`
 - `bun run smoke`
