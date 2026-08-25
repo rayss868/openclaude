@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import type { FileHandle } from 'node:fs/promises'
 import {
+  chmod,
   lstat,
   open,
   readlink,
@@ -289,6 +290,65 @@ export async function replaceFileAtomic(
       }
     }
 
+    throw error
+  }
+}
+
+/**
+ * Atomically commits an already-written temporary sibling file.
+ * Stale-target rejection leaves the temporary file available for recovery.
+ */
+export async function commitSiblingTempFileAtomic(
+  tempPath: string,
+  targetPath: string,
+  options: { expectedTargetMtimeMs?: number | null } = {},
+): Promise<void> {
+  const resolvedTemp = resolve(tempPath)
+  const resolvedTarget = resolve(targetPath)
+
+  if (dirname(resolvedTemp) !== dirname(resolvedTarget)) {
+    throw new Error('Sibling temp file must be in the target directory')
+  }
+
+  const tempStat = await lstat(resolvedTemp)
+  if (!tempStat.isFile()) {
+    throw new Error('Sibling temp file is not a regular file')
+  }
+
+  const expected = options.expectedTargetMtimeMs
+  let targetMode: number | undefined
+  try {
+    const targetStat = await stat(resolvedTarget)
+    targetMode = targetStat.isFile()
+      ? Number(targetStat.mode) & 0o7777
+      : undefined
+  } catch (error) {
+    if (getErrnoCode(error) !== 'ENOENT') throw error
+  }
+
+  if (targetMode !== undefined) {
+    await chmod(resolvedTemp, targetMode)
+  }
+
+  if (expected !== null && expected !== undefined) {
+    let currentTargetStat: Awaited<ReturnType<typeof stat>>
+    try {
+      currentTargetStat = await stat(resolvedTarget)
+    } catch (error) {
+      if (getErrnoCode(error) === 'ENOENT') {
+        throw new Error('Target was modified before commit')
+      }
+      throw error
+    }
+    if (Math.floor(Number(currentTargetStat.mtimeMs)) !== expected) {
+      throw new Error('Target was modified before commit')
+    }
+  }
+
+  try {
+    await rename(resolvedTemp, resolvedTarget)
+  } catch (error) {
+    await unlink(resolvedTemp).catch(() => {})
     throw error
   }
 }

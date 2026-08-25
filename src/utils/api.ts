@@ -716,9 +716,20 @@ export function normalizeToolInput<T extends Tool>(
       // SAFETY: See comment in BashTool case above
       return {
         file_path: parsedInput.file_path,
-        content: isMarkdown
-          ? parsedInput.content
-          : stripTrailingWhitespace(parsedInput.content),
+        ...(parsedInput.content !== undefined && {
+          content: isMarkdown
+            ? parsedInput.content
+            : stripTrailingWhitespace(parsedInput.content),
+        }),
+        ...(parsedInput.write_mode !== undefined && {
+          write_mode: parsedInput.write_mode,
+        }),
+        ...(parsedInput.write_id !== undefined && {
+          write_id: parsedInput.write_id,
+        }),
+        ...(parsedInput.chunk_index !== undefined && {
+          chunk_index: parsedInput.chunk_index,
+        }),
       } as z.infer<T['inputSchema']>
     }
     case TASK_OUTPUT_TOOL_NAME: {

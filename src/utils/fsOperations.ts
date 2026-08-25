@@ -1,5 +1,6 @@
 import * as fs from 'fs'
 import {
+  appendFile as appendFilePromise,
   cp as cpPromise,
   lstat as lstatPromise,
   mkdir as mkdirPromise,
@@ -95,6 +96,12 @@ export type FsOperations = {
     buffer: Buffer
     bytesRead: number
   }
+  /** Appends string to file asynchronously */
+  appendFile(
+    path: string,
+    data: string,
+    options?: { encoding?: BufferEncoding; mode?: number },
+  ): Promise<void>
   /** Appends string to file */
   appendFileSync(path: string, data: string, options?: { mode?: number }): void
   /**
@@ -535,6 +542,10 @@ export const NodeFsOperations: FsOperations = {
     } finally {
       if (fd) fs.closeSync(fd)
     }
+  },
+
+  async appendFile(path, data, options) {
+    return appendFilePromise(path, data, options)
   },
 
   appendFileSync(path, data, options) {

@@ -21,7 +21,7 @@ const ideDiffSupport: IDEDiffSupport<FileWriteToolInput> = {
       if (!isENOENT(e)) throw e;
       oldContent = '';
     }
-    return createSingleEditDiffConfig(input.file_path, oldContent, input.content, false // For file writes, we replace the entire content
+    return createSingleEditDiffConfig(input.file_path, oldContent, input.content ?? '', false // For file writes, we replace the entire content
     );
   },
   applyChanges: (input: FileWriteToolInput, modifiedEdits: FileEdit[]) => {

@@ -130,25 +130,28 @@ function FileWriteToolCreatedMessage(t0: FileWriteToolCreatedMessageProps): Reac
   }
   return t9;
 }
-export function userFacingName(input: Partial<{
-  file_path: string;
-  content: string;
-}> | undefined): string {
+type WriteToolInput = Partial<{
+  file_path: string
+  write_mode: 'replace' | 'start' | 'append' | 'finish'
+  write_id: string
+  chunk_index: number
+  content: string
+}>
+
+export function userFacingName(input: WriteToolInput | undefined): string {
   if (input?.file_path?.startsWith(getPlansDirectory())) {
-    return 'Updated plan';
+    return 'Updated plan'
   }
-  return 'Write';
+  return 'Write'
 }
 
 /** Gates fullscreen click-to-expand. Only `create` truncates (to
  *  MAX_LINES_TO_RENDER); `update` renders the full diff regardless of verbose.
  *  Called per visible message on hover/scroll, so early-exit after finding the
  *  (MAX+1)th line instead of splitting the whole (possibly huge) content. */
-export function isResultTruncated({
-  type,
-  content
-}: Output): boolean {
-  if (type !== 'create') return false;
+export function isResultTruncated(output: Output): boolean {
+  if (output.type !== 'create') return false
+  const { content } = output
   let pos = 0;
   for (let i = 0; i < MAX_LINES_TO_RENDER; i++) {
     pos = content.indexOf(EOL, pos);
@@ -158,19 +161,13 @@ export function isResultTruncated({
   // countLines treats a trailing EOL as a terminator, not a new line
   return pos < content.length;
 }
-export function getToolUseSummary(input: Partial<{
-  file_path: string;
-  content: string;
-}> | undefined): string | null {
+export function getToolUseSummary(input: WriteToolInput | undefined): string | null {
   if (!input?.file_path) {
     return null;
   }
   return getDisplayPath(input.file_path);
 }
-export function renderToolUseMessage(input: Partial<{
-  file_path: string;
-  content: string;
-}>, {
+export function renderToolUseMessage(input: WriteToolInput, {
   verbose
 }: {
   verbose: boolean;
@@ -186,20 +183,20 @@ export function renderToolUseMessage(input: Partial<{
       {verbose ? input.file_path : getDisplayPath(input.file_path)}
     </FilePathLink>;
 }
-export function renderToolUseRejectedMessage({
-  file_path,
-  content
-}: {
-  file_path: string;
-  content: string;
-}, {
-  style,
-  verbose
-}: {
-  style?: 'condensed';
-  verbose: boolean;
-}): React.ReactNode {
-  return <WriteRejectionDiff filePath={file_path} content={content} style={style} verbose={verbose} />;
+export function renderToolUseRejectedMessage(
+  input: WriteToolInput,
+  {
+    style,
+    verbose,
+  }: {
+    style?: 'condensed'
+    verbose: boolean
+  },
+): React.ReactNode {
+  if (!input.file_path || input.content === undefined) {
+    return null
+  }
+  return <WriteRejectionDiff filePath={input.file_path} content={input.content} style={style} verbose={verbose} />
 }
 type RejectionDiffData = {
   type: 'create';
@@ -378,46 +375,53 @@ export function renderToolUseErrorMessage(result: ToolResultBlockParam['content'
   }
   return <FallbackToolUseErrorMessage result={result} verbose={verbose} />;
 }
-export function renderToolResultMessage({
-  filePath,
-  content,
-  structuredPatch,
-  type,
-  originalFile
-}: Output, _progressMessagesForMessage: ProgressMessage<ToolProgressData>[], {
-  style,
-  verbose
-}: {
-  style?: 'condensed';
-  verbose: boolean;
-}): React.ReactNode {
-  switch (type) {
-    case 'create':
-      {
-        const isPlanFile = filePath.startsWith(getPlansDirectory());
-
-        // Plan files: invert condensed behavior
-        // - Regular mode: just show hint (user can type /plan to see full content)
-        // - Condensed mode (subagent view): show full content
-        if (isPlanFile && !verbose) {
-          if (style !== 'condensed') {
-            return <MessageResponse>
-              <Text dimColor>/plan to preview</Text>
-            </MessageResponse>;
-          }
-        } else if (style === 'condensed' && !verbose) {
-          const numLines = countLines(content);
-          return <Text>
-            Wrote <Text bold>{numLines}</Text> lines to{' '}
-            <Text bold>{relative(getCwd(), filePath)}</Text>
-          </Text>;
-        }
-        return <FileWriteToolCreatedMessage filePath={filePath} content={content} verbose={verbose} />;
-      }
-    case 'update':
-      {
-        const isPlanFile = filePath.startsWith(getPlansDirectory());
-        return <FileEditToolUpdatedMessage filePath={filePath} structuredPatch={structuredPatch} firstLine={content.split('\n')[0] ?? null} fileContent={originalFile ?? undefined} style={style} verbose={verbose} previewHint={isPlanFile ? '/plan to preview' : undefined} />;
-      }
+export function renderToolResultMessage(
+  output: Output,
+  _progressMessagesForMessage: ProgressMessage<ToolProgressData>[],
+  {
+    style,
+    verbose
+  }: {
+    style?: 'condensed';
+    verbose: boolean;
+  },
+): React.ReactNode {
+  if (output.type === 'chunked_start' || output.type === 'chunked_append') {
+    const nextChunk = `; next chunk index is ${output.nextChunkIndex}`
+    return <MessageResponse>
+      <Text dimColor>{output.type.replace('chunked_', 'Chunked ')}: {output.filePath}{nextChunk}</Text>
+    </MessageResponse>
   }
+  if (output.type === 'chunked_finish') {
+    return <MessageResponse>
+      <Text dimColor>Chunked finish: {output.filePath}</Text>
+    </MessageResponse>
+  }
+
+  if (output.type === 'create') {
+    const { filePath, content } = output
+    const isPlanFile = filePath.startsWith(getPlansDirectory())
+
+    // Plan files: invert condensed behavior
+    // - Regular mode: just show hint (user can type /plan to see full content)
+    // - Condensed mode (subagent view): show full content
+    if (isPlanFile && !verbose) {
+      if (style !== 'condensed') {
+        return <MessageResponse>
+          <Text dimColor>/plan to preview</Text>
+        </MessageResponse>
+      }
+    } else if (style === 'condensed' && !verbose) {
+      const numLines = countLines(content)
+      return <Text>
+        Wrote <Text bold>{numLines}</Text> lines to{' '}
+        <Text bold>{relative(getCwd(), filePath)}</Text>
+      </Text>
+    }
+    return <FileWriteToolCreatedMessage filePath={filePath} content={content} verbose={verbose} />
+  }
+
+  const { filePath, content, structuredPatch, originalFile } = output
+  const isPlanFile = filePath.startsWith(getPlansDirectory())
+  return <FileEditToolUpdatedMessage filePath={filePath} structuredPatch={structuredPatch} firstLine={content.split('\n')[0] ?? null} fileContent={originalFile ?? undefined} style={style} verbose={verbose} previewHint={isPlanFile ? '/plan to preview' : undefined} />
 }

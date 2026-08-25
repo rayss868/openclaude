@@ -24,7 +24,11 @@ export type TurnDiff = {
   }
 }
 
-type FileEditResult = FileEditOutput | FileWriteOutput
+type LegacyFileWriteOutput = Extract<
+  FileWriteOutput,
+  { type: 'create' | 'update' }
+>
+type FileEditResult = FileEditOutput | LegacyFileWriteOutput
 
 type TurnDiffCache = {
   completedTurns: TurnDiff[]
@@ -46,7 +50,9 @@ function isFileEditResult(result: unknown): result is FileEditResult {
   return hasFilePath && (hasStructuredPatch || isNewFile)
 }
 
-function isFileWriteOutput(result: FileEditResult): result is FileWriteOutput {
+function isFileWriteOutput(
+  result: FileEditResult,
+): result is LegacyFileWriteOutput {
   return (
     'type' in result && (result.type === 'create' || result.type === 'update')
   )

@@ -1,4 +1,5 @@
 import { dirname, sep } from 'path'
+import { type UUID } from 'crypto'
 import { logEvent } from 'src/services/analytics/index.js'
 import { z } from 'zod/v4'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
@@ -44,6 +45,12 @@ import { FILE_UNEXPECTEDLY_MODIFIED_ERROR } from '../FileEditTool/constants.js'
 import { gitDiffSchema, hunkSchema } from '../FileEditTool/types.js'
 import { FILE_WRITE_TOOL_NAME, getWriteToolDescription } from './prompt.js'
 import {
+  appendChunkedWrite,
+  commitChunkedWrite,
+  MAX_FILE_WRITE_CHUNK_CHARS,
+  startChunkedWrite,
+} from './chunkedWrite.js'
+import {
   getToolUseSummary,
   isResultTruncated,
   renderToolResultMessage,
@@ -53,43 +60,302 @@ import {
   userFacingName,
 } from './UI.js'
 
-const inputSchema = lazySchema(() =>
-  z.strictObject({
-    file_path: z
-      .string()
-      .describe(
-        'The absolute path to the file to write (must be absolute, not relative)',
-      ),
-    content: z.string().describe('The content to write to the file'),
-  }),
+export const inputSchema = lazySchema(() =>
+  z
+    .strictObject({
+      file_path: z
+        .string()
+        .describe(
+          'The absolute path to the file to write (must be absolute, not relative)',
+        ),
+      write_mode: z
+        .enum(['replace', 'start', 'append', 'finish'])
+        .default('replace')
+        .describe('Write lifecycle mode'),
+      write_id: z.string().optional().describe('Chunked write identifier'),
+      chunk_index: z
+        .number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe('Zero-based chunk sequence index'),
+      content: z.string().optional().describe('Content to write to the file'),
+    })
+    .superRefine((value, ctx) => {
+      if (value.write_mode === 'finish') {
+        if (value.content !== undefined) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['content'],
+            message: 'content must be omitted when write_mode is finish',
+          })
+        }
+        if (!value.write_id) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['write_id'],
+            message: 'write_id is required when write_mode is finish',
+          })
+        }
+        return
+      }
+
+      if (value.content === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['content'],
+          message: `content is required when write_mode is ${value.write_mode}`,
+        })
+      } else if (value.content.length > MAX_FILE_WRITE_CHUNK_CHARS) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['content'],
+          message: `content must be at most ${MAX_FILE_WRITE_CHUNK_CHARS} characters`,
+        })
+      }
+
+      if (value.write_mode === 'replace' || value.write_mode === 'start') {
+        if (value.write_id !== undefined || value.chunk_index !== undefined) {
+          ctx.addIssue({
+            code: 'custom',
+            message: `write_id and chunk_index are only valid for append mode`,
+          })
+        }
+      } else {
+        if (!value.write_id) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['write_id'],
+            message: 'write_id is required when write_mode is append',
+          })
+        }
+        if (value.chunk_index === undefined) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['chunk_index'],
+            message: 'chunk_index is required when write_mode is append',
+          })
+        }
+      }
+    }),
 )
 type InputSchema = ReturnType<typeof inputSchema>
 
 const outputSchema = lazySchema(() =>
-  z.object({
-    type: z
-      .enum(['create', 'update'])
-      .describe(
-        'Whether a new file was created or an existing file was updated',
-      ),
-    filePath: z.string().describe('The path to the file that was written'),
-    content: z.string().describe('The content that was written to the file'),
-    structuredPatch: z
-      .array(hunkSchema())
-      .describe('Diff patch showing the changes'),
-    originalFile: z
-      .string()
-      .nullable()
-      .describe(
-        'The original file content before the write (null for new files)',
-      ),
-    gitDiff: gitDiffSchema().optional(),
-  }),
+  z.union([
+    z.object({
+      type: z.literal('create'),
+      filePath: z.string().describe('The path to the file that was written'),
+      content: z.string().describe('The content that was written to the file'),
+      structuredPatch: z
+        .array(hunkSchema())
+        .describe('Diff patch showing the changes'),
+      originalFile: z
+        .literal(null)
+        .describe('The original file content before the write'),
+      gitDiff: gitDiffSchema().optional(),
+    }),
+    z.object({
+      type: z.literal('update'),
+      filePath: z.string().describe('The path to the file that was written'),
+      content: z.string().describe('The content that was written to the file'),
+      structuredPatch: z
+        .array(hunkSchema())
+        .describe('Diff patch showing the changes'),
+      originalFile: z
+        .string()
+        .describe('The original file content before the write'),
+      gitDiff: gitDiffSchema().optional(),
+    }),
+    z.object({
+      type: z.literal('chunked_start'),
+      filePath: z.string(),
+      writeId: z.string(),
+      nextChunkIndex: z.number().int().nonnegative(),
+    }),
+    z.object({
+      type: z.literal('chunked_append'),
+      filePath: z.string(),
+      writeId: z.string(),
+      nextChunkIndex: z.number().int().nonnegative(),
+    }),
+    z.object({
+      type: z.literal('chunked_finish'),
+      filePath: z.string(),
+      writeId: z.string(),
+    }),
+  ]),
 )
 type OutputSchema = ReturnType<typeof outputSchema>
 
 export type Output = z.infer<OutputSchema>
 export type FileWriteToolInput = InputSchema
+
+async function runPreWriteEffects({
+  filePath,
+  updateFileHistoryState,
+  dynamicSkillDirTriggers,
+  parentMessage,
+}: {
+  filePath: string
+  updateFileHistoryState: ToolUseContext['updateFileHistoryState']
+  dynamicSkillDirTriggers: ToolUseContext['dynamicSkillDirTriggers']
+  parentMessage: { uuid: UUID }
+}): Promise<void> {
+  const cwd = getCwd()
+  const newSkillDirs = await discoverSkillDirsForPaths([filePath], cwd)
+  if (newSkillDirs.length > 0) {
+    for (const skillDir of newSkillDirs) {
+      dynamicSkillDirTriggers?.add(skillDir)
+    }
+    addSkillDirectories(newSkillDirs).catch(() => {})
+  }
+  activateConditionalSkillsForPaths([filePath], cwd)
+
+  await diagnosticTracker.beforeFileEditedCompat(filePath)
+  await getFsImplementation().mkdir(dirname(filePath))
+  if (fileHistoryEnabled()) {
+    await fileHistoryTrackEdit(
+      updateFileHistoryState,
+      filePath,
+      parentMessage.uuid,
+    )
+  }
+}
+
+type FinalizedWriteEffectsArgs = {
+  filePath: string
+  displayPath: string
+  content: string
+  oldContent: string | null
+  readFileState: ToolUseContext['readFileState']
+  dynamicSkillDirTriggers: ToolUseContext['dynamicSkillDirTriggers']
+}
+
+async function runFinalizedWriteEffects(
+  args: FinalizedWriteEffectsArgs & { compactOnly: true },
+): Promise<void>
+async function runFinalizedWriteEffects(
+  args: FinalizedWriteEffectsArgs & { compactOnly?: false },
+): Promise<Output>
+async function runFinalizedWriteEffects({
+  filePath,
+  displayPath,
+  content,
+  oldContent,
+  readFileState,
+  dynamicSkillDirTriggers,
+  compactOnly = false,
+}: FinalizedWriteEffectsArgs & { compactOnly?: boolean }): Promise<Output | void> {
+  const cwd = getCwd()
+  const newSkillDirs = await discoverSkillDirsForPaths([filePath], cwd)
+  if (newSkillDirs.length > 0) {
+    for (const skillDir of newSkillDirs) {
+      dynamicSkillDirTriggers?.add(skillDir)
+    }
+    addSkillDirectories(newSkillDirs).catch(() => {})
+  }
+  activateConditionalSkillsForPaths([filePath], cwd)
+
+  const lspManager = getLspServerManager()
+  if (lspManager) {
+    clearDeliveredDiagnosticsForFile(`file://${filePath}`)
+    lspManager.changeFile(filePath, content).catch((err: Error) => {
+      logForDebugging(
+        `LSP: Failed to notify server of file change for ${filePath}: ${err.message}`,
+      )
+      logError(err)
+    })
+    lspManager.saveFile(filePath).catch((err: Error) => {
+      logForDebugging(
+        `LSP: Failed to notify server of file save for ${filePath}: ${err.message}`,
+      )
+      logError(err)
+    })
+  }
+
+  notifyVscodeFileUpdated(filePath, oldContent, content)
+  readFileState.set(filePath, {
+    content,
+    timestamp: getFileModificationTime(filePath),
+    offset: undefined,
+    limit: undefined,
+  })
+
+  if (filePath.endsWith(`${sep}AGENTS.md`) || filePath.endsWith(`${sep}CLAUDE.md`)) {
+    logEvent('tengu_write_claudemd', {})
+  }
+
+  if (compactOnly) {
+    logFileOperation({
+      operation: 'write',
+      tool: 'FileWriteTool',
+      filePath,
+      type: oldContent !== null ? 'update' : 'create',
+    })
+    return
+  }
+
+  let gitDiff: ToolUseDiff | undefined
+  if (
+    isEnvTruthy(process.env.CLAUDE_CODE_REMOTE) &&
+    getFeatureValue_CACHED_MAY_BE_STALE('tengu_quartz_lantern', false)
+  ) {
+    const startTime = Date.now()
+    const diff = await fetchSingleFileGitDiff(filePath)
+    if (diff) gitDiff = diff
+    logEvent('tengu_tool_use_diff_computed', {
+      isWriteTool: true,
+      durationMs: Date.now() - startTime,
+      hasDiff: !!diff,
+    })
+  }
+
+  if (oldContent !== null) {
+    const patch = getPatchForDisplay({
+      filePath: displayPath,
+      fileContents: oldContent,
+      edits: [
+        {
+          old_string: oldContent,
+          new_string: content,
+          replace_all: false,
+        },
+      ],
+    })
+    countLinesChanged(patch)
+    logFileOperation({
+      operation: 'write',
+      tool: 'FileWriteTool',
+      filePath,
+      type: 'update',
+    })
+    return {
+      type: 'update',
+      filePath: displayPath,
+      content,
+      structuredPatch: patch,
+      originalFile: oldContent,
+      ...(gitDiff && { gitDiff }),
+    }
+  }
+
+  countLinesChanged([], content)
+  logFileOperation({
+    operation: 'write',
+    tool: 'FileWriteTool',
+    filePath,
+    type: 'create',
+  })
+  return {
+    type: 'create',
+    filePath: displayPath,
+    content,
+    structuredPatch: [],
+    originalFile: null,
+    ...(gitDiff && { gitDiff }),
+  }
+}
 
 export const FileWriteTool = buildTool({
   name: FILE_WRITE_TOOL_NAME,
@@ -117,7 +383,7 @@ export const FileWriteTool = buildTool({
     return outputSchema()
   },
   toAutoClassifierInput(input) {
-    return `${input.file_path}: ${input.content}`
+    return `${input.file_path}: ${input.content ?? ''}`
   },
   getPath(input): string {
     return input.file_path
@@ -150,16 +416,53 @@ export const FileWriteTool = buildTool({
     // shown — phantom. Under-count: tool_use already indexes file_path.
     return ''
   },
-  async validateInput({ file_path, content }, toolUseContext: ToolUseContext) {
+  async validateInput(
+    { file_path, write_mode, write_id, chunk_index, content },
+    toolUseContext: ToolUseContext,
+  ) {
     const fullFilePath = expandPath(file_path)
 
-    // Reject writes to team memory files that contain secrets
-    const secretError = checkTeamMemSecrets(fullFilePath, content)
-    if (secretError) {
-      return { result: false, message: secretError, errorCode: 0 }
+    if (write_mode === 'finish' && !write_id) {
+      return {
+        result: false,
+        message: 'write_id is required when finishing a chunked write.',
+        errorCode: 0,
+      }
     }
 
-    // Check if path should be ignored based on permission settings
+    if (content === undefined && write_mode !== 'finish') {
+      return {
+        result: false,
+        message: `content is required when write_mode is ${write_mode}.`,
+        errorCode: 0,
+      }
+    }
+    if (content !== undefined && content.length > MAX_FILE_WRITE_CHUNK_CHARS) {
+      return {
+        result: false,
+        message:
+          `Content is ${content.length} characters but must be at most ` +
+          `${MAX_FILE_WRITE_CHUNK_CHARS} characters. Use write_mode "start" ` +
+          'and then "append" for larger files.',
+        errorCode: 0,
+      }
+    }
+    if (write_mode === 'append' && (!write_id || chunk_index === undefined)) {
+      return {
+        result: false,
+        message:
+          'write_id and chunk_index are required when appending a chunked write.',
+        errorCode: 0,
+      }
+    }
+
+    if (content !== undefined) {
+      const secretError = checkTeamMemSecrets(fullFilePath, content)
+      if (secretError) {
+        return { result: false, message: secretError, errorCode: 0 }
+      }
+    }
+
     const appState = toolUseContext.getAppState()
     const denyRule = matchingRuleForInput(
       fullFilePath,
@@ -176,9 +479,6 @@ export const FileWriteTool = buildTool({
       }
     }
 
-    // SECURITY: Skip filesystem operations for UNC paths to prevent NTLM credential leaks.
-    // On Windows, fs.existsSync() on UNC paths triggers SMB authentication which could
-    // leak credentials to malicious servers. Let the permission check handle UNC paths.
     if (fullFilePath.startsWith('\\\\') || fullFilePath.startsWith('//')) {
       return { result: true }
     }
@@ -205,9 +505,6 @@ export const FileWriteTool = buildTool({
       }
     }
 
-    // Reuse mtime from the stat above — avoids a redundant statSync via
-    // getFileModificationTime. The readTimestamp guard above ensures this
-    // block is always reached when the file exists.
     const lastWriteTime = Math.floor(fileMtimeMs)
     if (lastWriteTime > readTimestamp.timestamp) {
       return {
@@ -221,47 +518,87 @@ export const FileWriteTool = buildTool({
     return { result: true }
   },
   async call(
-    { file_path, content },
+    { file_path, write_mode, write_id, chunk_index, content },
     { readFileState, updateFileHistoryState, dynamicSkillDirTriggers },
-    _,
+    _canUseTool,
     parentMessage,
+    _onProgress,
   ) {
     const fullFilePath = expandPath(file_path)
+
+    if (write_mode === 'start') {
+      const initialRead = readFileState.get(fullFilePath)
+      let snapshot: ReturnType<typeof readFileSyncWithMetadata> | null
+      try {
+        snapshot = readFileSyncWithMetadata(fullFilePath)
+      } catch (error) {
+        if (isENOENT(error)) {
+          snapshot = null
+        } else {
+          throw error
+        }
+      }
+      const status = await startChunkedWrite(fullFilePath, content!, {
+        expectedInitialMtimeMs:
+          initialRead?.timestamp === undefined
+            ? null
+            : Math.floor(initialRead.timestamp),
+        oldContent: initialRead?.content ?? snapshot?.content ?? null,
+        encoding: snapshot?.encoding ?? 'utf8',
+        lineEndings: snapshot?.lineEndings ?? 'LF',
+      })
+      return { data: status }
+    }
+
+    if (write_mode === 'append') {
+      const status = await appendChunkedWrite(
+        fullFilePath,
+        write_id!,
+        chunk_index!,
+        content!,
+      )
+      return { data: status }
+    }
+
+    if (write_mode === 'finish') {
+      await runPreWriteEffects({
+        filePath: fullFilePath,
+        updateFileHistoryState,
+        dynamicSkillDirTriggers,
+        parentMessage,
+      })
+      const finalized = await commitChunkedWrite(fullFilePath, write_id!)
+      const finalMeta = readFileSyncWithMetadata(fullFilePath)
+      await runFinalizedWriteEffects({
+        filePath: fullFilePath,
+        displayPath: file_path,
+        content: finalMeta.content,
+        oldContent: finalized.oldContent,
+        readFileState,
+        dynamicSkillDirTriggers,
+        compactOnly: true,
+      })
+      return {
+        data: {
+          type: 'chunked_finish',
+          filePath: file_path,
+          writeId: finalized.status.writeId,
+        },
+      }
+    }
+
+    if (content === undefined) {
+      throw new Error('content is required for replace mode')
+    }
+
     const dir = dirname(fullFilePath)
 
-    // Discover skills from this file's path (fire-and-forget, non-blocking)
-    const cwd = getCwd()
-    const newSkillDirs = await discoverSkillDirsForPaths([fullFilePath], cwd)
-    if (newSkillDirs.length > 0) {
-      // Store discovered dirs for attachment display
-      for (const dir of newSkillDirs) {
-        dynamicSkillDirTriggers?.add(dir)
-      }
-      // Don't await - let skill loading happen in the background
-      addSkillDirectories(newSkillDirs).catch(() => {})
-    }
-
-    // Activate conditional skills whose path patterns match this file
-    activateConditionalSkillsForPaths([fullFilePath], cwd)
-
-    await diagnosticTracker.beforeFileEditedCompat(fullFilePath)
-
-    // Ensure parent directory exists before the atomic read-modify-write section.
-    // Must stay OUTSIDE the critical section below (a yield between the staleness
-    // check and writeTextContent lets concurrent edits interleave), and BEFORE the
-    // write (lazy-mkdir-on-ENOENT would fire a spurious tengu_atomic_write_error
-    // inside writeFileSyncAndFlush_DEPRECATED before ENOENT propagates back).
-    await getFsImplementation().mkdir(dir)
-    if (fileHistoryEnabled()) {
-      // Backup captures pre-edit content — safe to call before the staleness
-      // check (idempotent v1 backup keyed on content hash; if staleness fails
-      // later we just have an unused backup, not corrupt state).
-      await fileHistoryTrackEdit(
-        updateFileHistoryState,
-        fullFilePath,
-        parentMessage.uuid,
-      )
-    }
+    await runPreWriteEffects({
+      filePath: fullFilePath,
+      updateFileHistoryState,
+      dynamicSkillDirTriggers,
+      parentMessage,
+    })
 
     // Load current state and confirm no changes since last read.
     // Please avoid async operations between here and writing to disk to preserve atomicity.
@@ -280,14 +617,10 @@ export const FileWriteTool = buildTool({
       const lastWriteTime = getFileModificationTime(fullFilePath)
       const lastRead = readFileState.get(fullFilePath)
       if (!lastRead || lastWriteTime > lastRead.timestamp) {
-        // Timestamp indicates modification, but on Windows timestamps can change
-        // without content changes (cloud sync, antivirus, etc.). For full reads,
-        // compare content as a fallback to avoid false positives.
         const isFullRead =
           lastRead &&
           lastRead.offset === undefined &&
           lastRead.limit === undefined
-        // meta.content is CRLF-normalized — matches readFileState's normalized form.
         if (!isFullRead || meta.content !== lastRead.content) {
           throw new Error(FILE_UNEXPECTEDLY_MODIFIED_ERROR)
         }
@@ -298,127 +631,44 @@ export const FileWriteTool = buildTool({
     const oldContent = meta?.content ?? null
 
     // Write is a full content replacement — the model sent explicit line endings
-    // in `content` and meant them. Do not rewrite them. Previously we preserved
-    // the old file's line endings (or sampled the repo via ripgrep for new
-    // files), which silently corrupted e.g. bash scripts with \r on Linux when
-    // overwriting a CRLF file or when binaries in cwd poisoned the repo sample.
+    // in `content` and meant them.
     writeTextContent(fullFilePath, content, enc, 'LF')
 
-    const lspManager = getLspServerManager()
-    if (lspManager) {
-      // Clear previously delivered diagnostics after a successful write so
-      // new diagnostics will be shown.
-      clearDeliveredDiagnosticsForFile(`file://${fullFilePath}`)
-      // didChange: Content has been modified
-      lspManager.changeFile(fullFilePath, content).catch((err: Error) => {
-        logForDebugging(
-          `LSP: Failed to notify server of file change for ${fullFilePath}: ${err.message}`,
-        )
-        logError(err)
-      })
-      // didSave: File has been saved to disk (triggers diagnostics in TypeScript server)
-      lspManager.saveFile(fullFilePath).catch((err: Error) => {
-        logForDebugging(
-          `LSP: Failed to notify server of file save for ${fullFilePath}: ${err.message}`,
-        )
-        logError(err)
-      })
-    }
-
-    // Notify VSCode about the file change for diff view
-    notifyVscodeFileUpdated(fullFilePath, oldContent, content)
-
-    // Update read timestamp, to invalidate stale writes
-    readFileState.set(fullFilePath, {
-      content,
-      timestamp: getFileModificationTime(fullFilePath),
-      offset: undefined,
-      limit: undefined,
-    })
-
-    // Log when writing to the root project instruction file
-    if (
-      fullFilePath.endsWith(`${sep}AGENTS.md`) ||
-      fullFilePath.endsWith(`${sep}CLAUDE.md`)
-    ) {
-      logEvent('tengu_write_claudemd', {})
-    }
-
-    let gitDiff: ToolUseDiff | undefined
-    if (
-      isEnvTruthy(process.env.CLAUDE_CODE_REMOTE) &&
-      getFeatureValue_CACHED_MAY_BE_STALE('tengu_quartz_lantern', false)
-    ) {
-      const startTime = Date.now()
-      const diff = await fetchSingleFileGitDiff(fullFilePath)
-      if (diff) gitDiff = diff
-      logEvent('tengu_tool_use_diff_computed', {
-        isWriteTool: true,
-        durationMs: Date.now() - startTime,
-        hasDiff: !!diff,
-      })
-    }
-
-    if (oldContent) {
-      const patch = getPatchForDisplay({
-        filePath: file_path,
-        fileContents: oldContent,
-        edits: [
-          {
-            old_string: oldContent,
-            new_string: content,
-            replace_all: false,
-          },
-        ],
-      })
-
-      const data = {
-        type: 'update' as const,
-        filePath: file_path,
-        content,
-        structuredPatch: patch,
-        originalFile: oldContent,
-        ...(gitDiff && { gitDiff }),
-      }
-      // Track lines added and removed for file updates, right before yielding result
-      countLinesChanged(patch)
-
-      logFileOperation({
-        operation: 'write',
-        tool: 'FileWriteTool',
-        filePath: fullFilePath,
-        type: 'update',
-      })
-
-      return {
-        data,
-      }
-    }
-
-    const data = {
-      type: 'create' as const,
-      filePath: file_path,
-      content,
-      structuredPatch: [],
-      originalFile: null,
-      ...(gitDiff && { gitDiff }),
-    }
-
-    // For creation of new files, count all lines as additions, right before yielding the result
-    countLinesChanged([], content)
-
-    logFileOperation({
-      operation: 'write',
-      tool: 'FileWriteTool',
+    const finalMeta = readFileSyncWithMetadata(fullFilePath)
+    const data = await runFinalizedWriteEffects({
       filePath: fullFilePath,
-      type: 'create',
+      displayPath: file_path,
+      content: finalMeta.content,
+      oldContent,
+      readFileState,
+      dynamicSkillDirTriggers,
     })
-
-    return {
-      data,
-    }
+    return { data }
   },
-  mapToolResultToToolResultBlockParam({ filePath, type }, toolUseID) {
+  mapToolResultToToolResultBlockParam(output, toolUseID) {
+    if (output.type === 'chunked_start') {
+      return {
+        tool_use_id: toolUseID,
+        type: 'tool_result',
+        content: `Started chunked write for ${output.filePath}; next chunk index is ${output.nextChunkIndex}.`,
+      }
+    }
+    if (output.type === 'chunked_append') {
+      return {
+        tool_use_id: toolUseID,
+        type: 'tool_result',
+        content: `Appended chunk to ${output.filePath}; next chunk index is ${output.nextChunkIndex}.`,
+      }
+    }
+    if (output.type === 'chunked_finish') {
+      return {
+        tool_use_id: toolUseID,
+        type: 'tool_result',
+        content: `Finished chunked write for ${output.filePath}.`,
+      }
+    }
+
+    const { filePath, type } = output
     switch (type) {
       case 'create':
         return {

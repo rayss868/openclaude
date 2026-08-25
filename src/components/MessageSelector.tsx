@@ -22,8 +22,16 @@ function isTextBlock(block: ContentBlockParam): block is TextBlockParam {
 }
 import * as path from 'path';
 import { useTerminalSize } from 'src/hooks/useTerminalSize.js';
-import type { FileEditOutput } from 'src/tools/FileEditTool/types.js';
 import type { Output as FileWriteToolOutput } from 'src/tools/FileWriteTool/FileWriteTool.js';
+import type { FileEditOutput } from 'src/tools/FileEditTool/types.js';
+function isLegacyFileWriteOutput(
+  result: FileEditOutput | FileWriteToolOutput,
+): result is Extract<FileWriteToolOutput, { type: 'create' | 'update' }> {
+  return (
+    'type' in result &&
+    (result.type === 'create' || result.type === 'update')
+  )
+}
 import { BASH_STDERR_TAG, BASH_STDOUT_TAG, COMMAND_MESSAGE_TAG, LOCAL_COMMAND_STDERR_TAG, LOCAL_COMMAND_STDOUT_TAG, TASK_NOTIFICATION_TAG, TEAMMATE_MESSAGE_TAG, TICK_TAG } from '../constants/xml.js';
 import { count } from '../utils/array.js';
 import { formatRelativeTimeAgo, truncate } from '../utils/format.js';
@@ -730,7 +738,13 @@ function computeDiffStatsBetweenMessages(messages: Message[], fromMessageId: UUI
       continue;
     }
     const result = msg.toolUseResult as FileEditOutput | FileWriteToolOutput;
-    if (!result || !result.filePath || !result.structuredPatch) {
+    if (!result || !result.filePath) {
+      continue;
+    }
+    if ('type' in result && !isLegacyFileWriteOutput(result)) {
+      continue;
+    }
+    if (!result.structuredPatch) {
       continue;
     }
     if (!filesChanged.includes(result.filePath)) {

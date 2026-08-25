@@ -9,6 +9,7 @@ import {
   rm,
   stat,
   symlink,
+  utimes,
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -16,6 +17,7 @@ import { basename, join } from 'node:path'
 
 import {
   type AtomicReplaceFaultStage,
+  commitSiblingTempFileAtomic,
   replaceFileAtomic,
   resetAtomicReplaceFaultInjectorForTesting,
   setAtomicReplaceFaultInjectorForTesting,
@@ -270,4 +272,75 @@ test('concurrent readers observe only complete old or complete new bytes', async
   release()
   await replacing
   expect(await readFile(target, 'utf8')).toBe(newContent)
+})
+
+test('commits a sibling temporary file over an existing target', async () => {
+  const { dir, target } = await tempTarget('old')
+  const temp = join(dir, 'target.txt.chunk.openclaude.tmp')
+  await writeFile(temp, 'new', 'utf8')
+  const expected = Math.floor((await stat(target)).mtimeMs)
+
+  await commitSiblingTempFileAtomic(temp, target, {
+    expectedTargetMtimeMs: expected,
+  })
+
+  expect(await readFile(target, 'utf8')).toBe('new')
+})
+
+test('stale sibling commit preserves target and temporary file', async () => {
+  const { dir, target } = await tempTarget('old')
+  const temp = join(dir, 'target.txt.chunk.openclaude.tmp')
+  await writeFile(temp, 'new', 'utf8')
+  const expected = Math.floor((await stat(target)).mtimeMs)
+  await writeFile(target, 'changed', 'utf8')
+  const changedMtime = (await stat(target)).mtime
+  await utimes(target, changedMtime, new Date(changedMtime.getTime() + 1000))
+
+  await expect(
+    commitSiblingTempFileAtomic(temp, target, {
+      expectedTargetMtimeMs: expected,
+    }),
+  ).rejects.toThrow(/modified/i)
+  expect(await readFile(target, 'utf8')).toBe('changed')
+  expect(await readFile(temp, 'utf8')).toBe('new')
+})
+
+test('missing target is accepted with a null snapshot', async () => {
+  const { dir, target } = await tempTarget()
+  const temp = join(dir, 'target.txt.chunk.openclaude.tmp')
+  await writeFile(temp, 'new', 'utf8')
+
+  await commitSiblingTempFileAtomic(temp, target, {
+    expectedTargetMtimeMs: null,
+  })
+
+  expect(await readFile(target, 'utf8')).toBe('new')
+})
+
+test('sibling commit rejects a temporary file from another directory', async () => {
+  const { dir, target } = await tempTarget('old')
+  const otherDir = await mkdtemp(join(tmpdir(), 'openclaude-atomic-other-'))
+  tempDirs.push(otherDir)
+  const temp = join(otherDir, 'target.tmp')
+  await writeFile(temp, 'new', 'utf8')
+
+  await expect(commitSiblingTempFileAtomic(temp, target)).rejects.toThrow(
+    /target directory/i,
+  )
+  expect(await readFile(target, 'utf8')).toBe('old')
+})
+
+test('sibling commit preserves target mode', async () => {
+  if (process.platform === 'win32') return
+  const { dir, target } = await tempTarget('old')
+  await chmod(target, 0o640)
+  const temp = join(dir, 'target.txt.chunk.openclaude.tmp')
+  await writeFile(temp, 'new', 'utf8')
+  const expected = Math.floor((await stat(target)).mtimeMs)
+
+  await commitSiblingTempFileAtomic(temp, target, {
+    expectedTargetMtimeMs: expected,
+  })
+
+  expect((await stat(target)).mode & 0o777).toBe(0o640)
 })
