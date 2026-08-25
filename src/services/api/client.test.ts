@@ -2332,7 +2332,7 @@ test('OpenCode native endpoints preserve authorized Claude and Gemini effort', a
   })
 })
 
-test('force enable adds effort only for an otherwise unresolved custom shim model', async () => {
+test('applies effort on unresolved custom shim models regardless of force enable', async () => {
   const requestBodies: Record<string, unknown>[] = []
 
   globalThis.fetch = (async (_input, init) => {
@@ -2381,7 +2381,10 @@ test('force enable adds effort only for an otherwise unresolved custom shim mode
     })
   }
 
-  expect(requestBodies[0]?.reasoning_effort).toBeUndefined()
+  // Universal effort (local): unresolved custom shim models carry effort
+  // regardless of force-enable; the self-heal retry drops the field only
+  // if the provider rejects it.
+  expect(requestBodies[0]?.reasoning_effort).toBe('medium')
   expect(requestBodies[1]?.reasoning_effort).toBe('medium')
 })
 

@@ -569,10 +569,14 @@ function legacyModelSupportsEffort(
   // the model launch DRI and research. This is a sensitive setting that can
   // greatly affect model quality and bashing.
 
-  // Default to true for unknown model strings on 1P.
-  // Unresolved custom-route models stay off unless force-enabled above;
-  // third-party providers have different model string formats.
-  return getReasoningApiProvider(context) === 'firstParty'
+  // Default to true for unknown model strings on 1P and custom
+  // OpenAI-compatible routes. Custom routes cannot reliably identify every
+  // upstream model from the model string, so effort remains user-selectable
+  // everywhere and the request layer can fall back to auto.
+  return (
+    getReasoningApiProvider(context) === 'firstParty' ||
+    (getReasoningApiProvider(context) === 'openai' && context?.routeId === 'custom')
+  )
 }
 
 function resolveLegacyReasoningControl(

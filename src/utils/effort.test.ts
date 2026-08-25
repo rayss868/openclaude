@@ -198,7 +198,7 @@ describe('CLAUDE_CODE_ALWAYS_ENABLE_EFFORT precedence', () => {
     }
   })
 
-  test('only force-enables unresolved custom models beyond their provider fallback', async () => {
+  test('keeps unresolved custom models effort-capable by default (universal effort)', async () => {
     const {
       modelSupportsEffort,
       modelSupportsShimReasoningEffort,
@@ -223,12 +223,12 @@ describe('CLAUDE_CODE_ALWAYS_ENABLE_EFFORT precedence', () => {
     ]
 
     delete process.env.CLAUDE_CODE_ALWAYS_ENABLE_EFFORT
-    expect(support()).toEqual([false, false, false])
-    // Universal effort (local): an explicit user selection is still forwarded
-    // for unresolved custom models — the request-level self-heal retry drops
-    // the field if the provider rejects it.
-    expect(resolveAppliedEffort(model, 'medium', context)).toBe('medium')
+    // Universal effort (local): unresolved custom-route models are
+    // effort-capable by default, so the picker exposes levels everywhere.
+    expect(support()).toEqual([true, true, true])
+    // Derived defaults stay gated on capability (none for this model).
     expect(resolveAppliedEffort(model, undefined, context)).toBeUndefined()
+    expect(resolveAppliedEffort(model, 'medium', context)).toBe('medium')
 
     process.env.CLAUDE_CODE_ALWAYS_ENABLE_EFFORT = '1'
     expect(support()).toEqual([true, true, true])
@@ -239,26 +239,35 @@ describe('CLAUDE_CODE_ALWAYS_ENABLE_EFFORT precedence', () => {
     const { modelSupportsEffort, resolveAppliedEffort } =
       await importFreshEffortModule()
     const model = 'gateway-custom-model'
-    const context = {
+
+    // Custom routes are effort-capable by default (universal effort); the
+    // scoped env does not disable that.
+    const customContext = {
       apiProvider: 'openai' as const,
       routeId: 'custom',
+      useRuntimeFallback: false,
+    }
+    delete process.env.CLAUDE_CODE_ALWAYS_ENABLE_EFFORT
+    expect(modelSupportsEffort(model, customContext)).toBe(true)
+    expect(resolveAppliedEffort(model, 'medium', customContext)).toBe('medium')
+
+    // Third-party routes still gate on force-enable, read from
+    // context.processEnv rather than the ambient process.env.
+    const thirdPartyContext = {
+      apiProvider: 'openai' as const,
+      routeId: 'openai',
       useRuntimeFallback: false,
       processEnv: {
         CLAUDE_CODE_ALWAYS_ENABLE_EFFORT: '1',
       } as NodeJS.ProcessEnv,
     }
-
-    delete process.env.CLAUDE_CODE_ALWAYS_ENABLE_EFFORT
-    expect(modelSupportsEffort(model, context)).toBe(true)
-    expect(resolveAppliedEffort(model, 'medium', context)).toBe('medium')
-
-    process.env.CLAUDE_CODE_ALWAYS_ENABLE_EFFORT = '1'
-    context.processEnv = {}
-    expect(modelSupportsEffort(model, context)).toBe(false)
+    expect(modelSupportsEffort(model, thirdPartyContext)).toBe(true)
+    thirdPartyContext.processEnv = {}
+    expect(modelSupportsEffort(model, thirdPartyContext)).toBe(false)
     // Universal effort (local): explicit selections still forward without
     // force-enable; only the derived default stays gated on capability.
-    expect(resolveAppliedEffort(model, 'medium', context)).toBe('medium')
-    expect(resolveAppliedEffort(model, undefined, context)).toBeUndefined()
+    expect(resolveAppliedEffort(model, 'medium', thirdPartyContext)).toBe('medium')
+    expect(resolveAppliedEffort(model, undefined, thirdPartyContext)).toBeUndefined()
   })
 
   test('uses the scoped environment for compatibility and catalog route fallbacks', async () => {
