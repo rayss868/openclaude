@@ -5,6 +5,7 @@
     "src/entrypoints/mcp.ts",
     "src/entrypoints/init.ts",
     "src/entrypoints/sdk/index.ts",
+    "src/entrypoints/acp.ts",
     "src/main.tsx",
     "scripts/**/*.ts",
     "bin/openclaude",
