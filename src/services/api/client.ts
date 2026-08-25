@@ -510,7 +510,7 @@ export async function getAnthropicClient({
       }
     : undefined
   const supportsShimReasoningEffort = effortModel
-    ? effortValue !== undefined
+    ? !providerOverride && effortValue !== undefined
       ? !effortShimConfig?.removeBodyFields?.includes('reasoning_effort')
       : effortShimConfig
         ? modelSupportsShimReasoningEffort(

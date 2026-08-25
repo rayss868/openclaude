@@ -224,7 +224,11 @@ describe('CLAUDE_CODE_ALWAYS_ENABLE_EFFORT precedence', () => {
 
     delete process.env.CLAUDE_CODE_ALWAYS_ENABLE_EFFORT
     expect(support()).toEqual([false, false, false])
-    expect(resolveAppliedEffort(model, 'medium', context)).toBeUndefined()
+    // Universal effort (local): an explicit user selection is still forwarded
+    // for unresolved custom models — the request-level self-heal retry drops
+    // the field if the provider rejects it.
+    expect(resolveAppliedEffort(model, 'medium', context)).toBe('medium')
+    expect(resolveAppliedEffort(model, undefined, context)).toBeUndefined()
 
     process.env.CLAUDE_CODE_ALWAYS_ENABLE_EFFORT = '1'
     expect(support()).toEqual([true, true, true])
@@ -251,7 +255,10 @@ describe('CLAUDE_CODE_ALWAYS_ENABLE_EFFORT precedence', () => {
     process.env.CLAUDE_CODE_ALWAYS_ENABLE_EFFORT = '1'
     context.processEnv = {}
     expect(modelSupportsEffort(model, context)).toBe(false)
-    expect(resolveAppliedEffort(model, 'medium', context)).toBeUndefined()
+    // Universal effort (local): explicit selections still forward without
+    // force-enable; only the derived default stays gated on capability.
+    expect(resolveAppliedEffort(model, 'medium', context)).toBe('medium')
+    expect(resolveAppliedEffort(model, undefined, context)).toBeUndefined()
   })
 
   test('uses the scoped environment for compatibility and catalog route fallbacks', async () => {

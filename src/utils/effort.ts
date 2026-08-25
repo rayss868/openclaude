@@ -569,13 +569,10 @@ function legacyModelSupportsEffort(
   // the model launch DRI and research. This is a sensitive setting that can
   // greatly affect model quality and bashing.
 
-  // Default to true for unknown model strings on 1P and custom OpenAI-compatible routes.
-  // Custom routes cannot reliably identify every upstream model from the model string,
-  // so effort remains user-selectable and the request layer can fall back to auto.
-  return (
-    getReasoningApiProvider(context) === 'firstParty' ||
-    (getReasoningApiProvider(context) === 'openai' && context?.routeId === 'custom')
-  )
+  // Default to true for unknown model strings on 1P.
+  // Unresolved custom-route models stay off unless force-enabled above;
+  // third-party providers have different model string formats.
+  return getReasoningApiProvider(context) === 'firstParty'
 }
 
 function resolveLegacyReasoningControl(
@@ -1103,16 +1100,89 @@ export function resolveAppliedEffort(
   if (envOverride === null) {
     return undefined
   }
-  // Universal effort: an explicit user (or env) selection is always forwarded,
-  // even for models without known reasoning metadata. Only derived defaults
-  // are gated on model capability; the request-level self-heal retry drops
-  // the field if the provider rejects it.
-  if (
-    envOverride === undefined &&
-    appStateEffortValue === undefined &&
-    !modelSupportsEffort(model, context)
-  ) {
-    return undefined
+  if (!modelSupportsEffort(model, context)) {
+    // Universal effort (local feature): an explicit user or env selection is
+    // forwarded even without verified effort support — the request-level
+    // self-heal retry drops the field when the provider rejects it. Derived
+    // defaults stay gated on capability.
+    const provider = getReasoningApiProvider(context)
+    const control = resolveModelReasoningControl(model, context)
+    const metadataPresent = control.source === 'metadata'
+    const metadataCarriesEffort =
+      metadataPresent && metadataWireFormatSupportsEffort(control.wireFormat)
+    // Third-party capability=false stays absolute unless explicit effort
+    // metadata for the model contradicts it (upstream #2148).
+    if (
+      get3PModelCapabilityOverride(model, 'effort', provider) === false &&
+      !metadataCarriesEffort
+    ) {
+      return undefined
+    }
+    // Native-named models without an authorized native transport reject
+    // unknown fields on their native endpoints — absolute veto (mirrors
+    // legacyModelSupportsEffort).
+    const m = model.toLowerCase()
+    const nativeName =
+      m.includes('haiku') ||
+      m.includes('sonnet') ||
+      m.includes('opus') ||
+      m.includes('gemini-')
+    if (nativeName) {
+      const nativeTransport = resolveNativeLegacyEffortTransport(
+        model,
+        context,
+      )
+      const authorizedAnthropic =
+        nativeTransport === 'anthropic' &&
+        (m.includes('opus-4-5') || m.includes('opus-4-6') ||
+          m.includes('opus-4-7') || m.includes('opus-4-8') ||
+          m.includes('sonnet-4-6'))
+      const authorizedGemini =
+        nativeTransport === 'gemini' && m.includes('gemini-3')
+      const codexCompatible =
+        modelUsesOpenAIEffort(model, context) &&
+        modelSupportsCodexReasoningEffort(model, context)
+      if (!(authorizedAnthropic || authorizedGemini || codexCompatible)) {
+        return undefined
+      }
+    }
+    // A compat-resolved transport that strips the field vetoes models whose
+    // effort support was explicitly declared (capability override) — the
+    // declaration promises a contract the transport cannot honor. Unresolved
+    // models still forward under universal effort; force-enable never passes.
+    const compat = resolveCompatibilityReasoningControl(
+      model,
+      undefined,
+      undefined,
+      context,
+    )
+    const processEnv = context?.processEnv ?? process.env
+    const forceEnabled = isEnvTruthy(
+      processEnv.CLAUDE_CODE_ALWAYS_ENABLE_EFFORT,
+    )
+    if (
+      compat &&
+      !compat.controllable &&
+      (forceEnabled ||
+        get3PModelCapabilityOverride(model, 'effort', provider) !== undefined)
+    ) {
+      return undefined
+    }
+    // An identified non-effort reasoning profile is a hard contract under
+    // force-enable (upstream #2148); without force-enable an explicit user
+    // selection still forwards it — the request-level self-heal retry drops
+    // rejected fields (universal effort, local feature).
+    if (forceEnabled && metadataPresent && !metadataCarriesEffort) {
+      return undefined
+    }
+    if (
+      envOverride === undefined &&
+      appStateEffortValue === undefined &&
+      !forceEnabled
+    ) {
+      // Derived defaults stay gated on capability.
+      return undefined
+    }
   }
 
   const resolved =
