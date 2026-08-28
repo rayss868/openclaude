@@ -169,6 +169,17 @@ describe('getSchemaValidationErrorOverride', () => {
       'InputValidationError: Missing skill name. Pass the slash command name as the skill parameter (e.g., skill: "commit" for /commit, skill: "review-pr" for /review-pr).',
     )
   })
+
+  test('steers AskUserQuestion failures back to retrying the question', () => {
+    const override = getSchemaValidationErrorOverride(AskUserQuestionTool, {
+      questions: [{ question: 'X', options: 'garbage' }],
+    })
+    expect(override).toMatch(/Retry calling AskUserQuestion now/)
+    expect(override).toMatch(/do not proceed with any other tool use or edits/)
+    expect(getSchemaValidationToolUseResult(AskUserQuestionTool, {})).toMatch(
+      /InputValidationError: Your AskUserQuestion payload was invalid/,
+    )
+  })
 })
 
 describe('getReplayModifiedFiles', () => {
@@ -880,5 +891,64 @@ describe('normalizeToolInputForValidation', () => {
     }
 
     expect(normalizeToolInputForValidation({ name: 'Read' } as never, input)).toBe(input)
+  })
+
+  test('repairs string-only options inside an already-array questions payload', () => {
+    const normalized = normalizeToolInputForValidation(AskUserQuestionTool, {
+      questions: [
+        {
+          question: 'Bahasa pemrograman apa?',
+          header: 'Bahasa',
+          options: ['Python', 'TypeScript', 'Go'],
+          multiSelect: false,
+        },
+      ],
+    })
+
+    expect(AskUserQuestionTool.inputSchema.safeParse(normalized).success).toBe(true)
+    expect(normalized).toEqual({
+      questions: [
+        {
+          question: 'Bahasa pemrograman apa?',
+          header: 'Bahasa',
+          options: [
+            { label: 'Python', description: 'Python' },
+            { label: 'TypeScript', description: 'TypeScript' },
+            { label: 'Go', description: 'Go' },
+          ],
+          multiSelect: false,
+        },
+      ],
+    })
+  })
+
+  test('coerces quoted multiSelect and derives missing header inside array items', () => {
+    const normalized = normalizeToolInputForValidation(AskUserQuestionTool, {
+      questions: [
+        {
+          question: 'Mau lanjut gimana?',
+          options: [
+            { label: 'Lanjutkan', description: 'Lanjutkan publish' },
+            { label: 'Batalkan', description: 'Batalkan publish' },
+          ],
+          multiSelect: 'false',
+        },
+      ],
+    })
+
+    expect(AskUserQuestionTool.inputSchema.safeParse(normalized).success).toBe(true)
+    expect(normalized).toEqual({
+      questions: [
+        {
+          question: 'Mau lanjut gimana?',
+          header: 'Mau lanjut g',
+          options: [
+            { label: 'Lanjutkan', description: 'Lanjutkan publish' },
+            { label: 'Batalkan', description: 'Batalkan publish' },
+          ],
+          multiSelect: false,
+        },
+      ],
+    })
   })
 })

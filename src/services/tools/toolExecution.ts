@@ -38,7 +38,10 @@ import {
 import type { BashToolInput } from '../../tools/BashTool/BashTool.js'
 import { startSpeculativeClassifierCheck } from '../../tools/BashTool/bashPermissions.js'
 import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
-import { ASK_USER_QUESTION_TOOL_NAME } from '../../tools/AskUserQuestionTool/prompt.js'
+import {
+  ASK_USER_QUESTION_TOOL_CHIP_WIDTH,
+  ASK_USER_QUESTION_TOOL_NAME,
+} from '../../tools/AskUserQuestionTool/prompt.js'
 import { FILE_EDIT_TOOL_NAME } from '../../tools/FileEditTool/constants.js'
 import { FILE_READ_TOOL_NAME } from '../../tools/FileReadTool/prompt.js'
 import { FILE_WRITE_TOOL_NAME } from '../../tools/FileWriteTool/prompt.js'
@@ -713,6 +716,16 @@ export function getSchemaValidationErrorOverride(
   tool: Tool,
   input: unknown,
 ): string | null {
+  if (tool.name === ASK_USER_QUESTION_TOOL_NAME) {
+    return (
+      `Your AskUserQuestion payload was invalid and could not be repaired. Retry calling AskUserQuestion now — ` +
+      `do not proceed with any other tool use or edits until the user has answered. ` +
+      `Correct format: questions: [{ question: string, header: string, ` +
+      `options: [{ label: string, description: string }], multiSelect: boolean }] ` +
+      `(each question needs 2-4 options).`
+    )
+  }
+
   if (tool.name !== SKILL_TOOL_NAME || !input || typeof input !== 'object') {
     return null
   }
@@ -808,17 +821,46 @@ function normalizeAskUserQuestionInput(input: Record<string, unknown>): unknown 
     })
   }
 
+  const sameValue = (a: unknown, b: unknown): boolean => {
+    if (Object.is(a, b)) return true
+    if (typeof a !== typeof b) return false
+    if (Array.isArray(a) && Array.isArray(b)) {
+      return a.length === b.length && a.every((v, i) => sameValue(v, b[i]))
+    }
+    if (isRecord(a) && isRecord(b)) {
+      const aKeys = Object.keys(a)
+      const bKeys = Object.keys(b)
+      return (
+        aKeys.length === bKeys.length &&
+        aKeys.every(key => sameValue(a[key], b[key]))
+      )
+    }
+    return false
+  }
+
+  const coerceMultiSelect = (value: unknown): boolean | undefined => {
+    if (typeof value === 'boolean') return value
+    if (value === 'true' || value === 'yes' || value === '1') return true
+    if (value === 'false' || value === 'no' || value === '0') return false
+    return undefined
+  }
+
   const buildQuestion = (raw: Record<string, unknown>): Record<string, unknown> | null => {
-    if (typeof raw.question !== 'string' || typeof raw.header !== 'string') {
+    if (typeof raw.question !== 'string' || raw.question.trim() === '') {
       return null
     }
     const options = normalizeOptions(raw.options)
     if (!options) return null
+    const header =
+      typeof raw.header === 'string' && raw.header.trim() !== ''
+        ? raw.header
+        : raw.question.slice(0, ASK_USER_QUESTION_TOOL_CHIP_WIDTH)
+    const multiSelect = coerceMultiSelect(raw.multiSelect)
     return {
       question: raw.question,
-      header: raw.header,
+      header,
       options,
-      ...(typeof raw.multiSelect === 'boolean' ? { multiSelect: raw.multiSelect } : {}),
+      ...(multiSelect !== undefined ? { multiSelect } : {}),
     }
   }
 
@@ -836,9 +878,20 @@ function normalizeAskUserQuestionInput(input: Record<string, unknown>): unknown 
     }
   }
 
-  // Case A: schema-correct — questions is already an array.
+  // Case A: schema-correct — questions is already an array. Weak models still
+  // get individual items wrong (options as plain strings, multiSelect quoted,
+  // header omitted), so repair each item that can be repaired.
   if (Array.isArray(input.questions)) {
-    return input
+    if (input.questions.length === 0) return input
+    let changed = false
+    const repaired = input.questions.map(q => {
+      if (!isRecord(q)) return q
+      const fixed = buildQuestion(q)
+      if (!fixed || sameValue(fixed, q)) return q
+      changed = true
+      return fixed
+    })
+    return changed ? { ...input, questions: repaired } : input
   }
 
   // Case B: a single flattened question at the top level.
