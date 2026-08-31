@@ -1,6 +1,6 @@
 {
   "name": "@rayss-dev/openclaude",
-  "version": "0.29.1-by-rayss",
+  "version": "0.30.0-by-rayss",
   "description": "OpenClaude opens coding-agent workflows to any LLM — OpenAI, Gemini, DeepSeek, Ollama, and 200+ models",
   "type": "module",
   "bin": {
