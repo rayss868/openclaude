@@ -923,3 +923,110 @@ test('the upgraded stub reports the recovered pre-truncation length', () => {
   const freshText = getResultText(getResultMessages(fresh)[0]!)
   expect(freshText).toBe(text)
 })
+
+// ---------- omitOldUserImages ----------
+
+function imageBlock(mediaType = 'image/png'): Block {
+  return {
+    type: 'image',
+    source: { type: 'base64', media_type: mediaType, data: 'aW1hZ2U=' },
+  }
+}
+
+function buildConversationWithImages(): Msg[] {
+  return [
+    { role: 'user', content: [{ type: 'text', text: 'first image' }, imageBlock()] },
+    { role: 'assistant', content: [{ type: 'text', text: 'ok' }] },
+    { role: 'user', content: [{ type: 'text', text: 'second image' }, imageBlock()] },
+    { role: 'assistant', content: [{ type: 'text', text: 'ok' }] },
+    { role: 'user', content: [{ type: 'text', text: 'current turn' }, imageBlock()] },
+  ]
+}
+
+test('omitOldUserImages strips image payloads from all but the most recent user message', () => {
+  const messages = buildConversationWithImages()
+  const result = compressToolHistory(messages, 'gpt-4o', {
+    effectiveContextWindowSize: 100_000,
+    omitOldUserImages: true,
+  })
+
+  // Old user messages keep their text but the image payload is replaced
+  // with a text marker.
+  const first = result[0]!
+  expect((first.content as Block[]).map(b => b.type)).toEqual(['text', 'text'])
+  expect((first.content as Block[]).some(b => b.type === 'image')).toBe(false)
+  expect((first.content as Block[]).map(b => b.text)).toEqual([
+    'first image',
+    '[Image omitted from history]',
+  ])
+
+  const third = result[2]!
+  expect((third.content as Block[]).map(b => b.type)).toEqual(['text', 'text'])
+  expect((third.content as Block[]).some(b => b.type === 'image')).toBe(false)
+  expect((third.content as Block[]).map(b => b.text)).toEqual([
+    'second image',
+    '[Image omitted from history]',
+  ])
+
+  // The most recent user message (current turn) keeps its image so the
+  // provider can still see what was just pasted.
+  const last = result[4]!
+  expect((last.content as Block[]).map(b => b.type)).toEqual([
+    'text',
+    'image',
+  ])
+})
+
+test('omitOldUserImages leaves non-image user messages untouched', () => {
+  const messages = [
+    { role: 'user', content: 'plain text' },
+    { role: 'assistant', content: [{ type: 'text', text: 'ok' }] },
+    { role: 'user', content: [{ type: 'text', text: 'still text' }] },
+  ]
+  const result = compressToolHistory(messages, 'gpt-4o', {
+    effectiveContextWindowSize: 100_000,
+    omitOldUserImages: true,
+  })
+  expect(result).toBe(messages)
+})
+
+test('omitOldUserImages is opt-in: default leaves images untouched', () => {
+  const messages = buildConversationWithImages()
+  const result = compressToolHistory(messages, 'gpt-4o', {
+    effectiveContextWindowSize: 100_000,
+  })
+  expect(result).toBe(messages)
+})
+
+test('omitOldUserImages drops stale imagePermissionToolUseIds from stripped messages', () => {
+  const messages: Msg[] = [
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'first image' },
+        imageBlock(),
+        imageBlock(),
+      ],
+      imagePermissionToolUseIds: ['perm-1', 'perm-2'],
+    },
+    { role: 'assistant', content: [{ type: 'text', text: 'ok' }] },
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'current turn' },
+        imageBlock(),
+      ],
+    },
+  ]
+  const result = compressToolHistory(messages, 'gpt-4o', {
+    effectiveContextWindowSize: 100_000,
+    omitOldUserImages: true,
+  })
+
+  const old = result[0]!
+  expect(old.imagePermissionToolUseIds).toEqual([])
+  expect((old.content as Block[]).some(b => b.type === 'image')).toBe(false)
+
+  const last = result[2]!
+  expect((last.content as Block[]).some(b => b.type === 'image')).toBe(true)
+})

@@ -44,6 +44,61 @@ export function joinTextContentParts(parts: OpenAIContentPart[]): string {
   return parts.map(part => part.type === 'text' ? part.text : '').join('')
 }
 
+/**
+ * Extract images from a tool result, replacing them with a text placeholder
+ * so the tool message remains a plain string. Returns the text-only content
+ * and the extracted image parts for injection as a follow-up user message.
+ *
+ * This mirrors the kilocode-legacy approach (openai-format.ts) where images
+ * are sent as separate user messages — needed because:
+ * 1. OpenAI Chat API only accepts string for tool role content
+ * 2. Vision adapters (e.g. 9router) only process image_url from user messages
+ */
+function extractToolResultWithImagePlaceholder(
+  content: unknown,
+  isError?: boolean,
+  options?: { supportsImageInputs?: boolean },
+): { text: string; images: OpenAIContentPart[] } {
+  if (typeof content === 'string') {
+    return { text: isError ? `Error: ${content}` : content, images: [] }
+  }
+  if (!Array.isArray(content)) {
+    const text = JSON.stringify(content ?? '')
+    return { text: isError ? `Error: ${text}` : text, images: [] }
+  }
+  const textChunks: string[] = []
+  const images: OpenAIContentPart[] = []
+  for (const block of content) {
+    if (block?.type === 'text' && typeof block.text === 'string') {
+      textChunks.push(block.text)
+    } else if (block?.type === 'tool_reference' && typeof block.tool_name === 'string') {
+      textChunks.push(`Tool "${block.tool_name}" is now loaded and available to call.`)
+    } else if (block?.type === 'image') {
+      if (options?.supportsImageInputs === false) {
+        throw new Error(
+          'The active provider accepts text-only messages and does not support image inputs.',
+        )
+      }
+      textChunks.push('(see following user message for image)')
+      const source = block.source
+      if (source?.type === 'url' && source.url) {
+        images.push({ type: 'image_url', image_url: { url: source.url } })
+      } else if (source?.type === 'base64' && source.media_type && source.data) {
+        images.push({
+          type: 'image_url',
+          image_url: { url: `data:${source.media_type};base64,${source.data}` },
+        })
+      }
+    } else if (typeof block?.text === 'string') {
+      textChunks.push(block.text)
+    }
+  }
+  let text = textChunks.join('\n\n')
+  if (isError) text = text ? `Error: ${text}` : 'Error:'
+  if (!text && images.length === 0) text = ''
+  return { text, images }
+}
+
 export function convertToolResultContent(
   content: unknown,
   isError?: boolean,
@@ -137,7 +192,7 @@ export function convertContentBlocks(
   if (parts.length === 0) return ''
   if (parts.length === 1 && parts[0].type === 'text') return parts[0].text
   if (parts.every(part => part.type === 'text')) return parts.map(part => part.text).join('\n\n')
-  return ensureTextPartForImageContent(parts)
+  return parts
 }
 
 export function convertMessages(
@@ -182,6 +237,7 @@ export function convertMessages(
         continue
       }
       let otherContent: unknown[] | undefined
+      const toolResultImages: OpenAIContentPart[] = []
       for (const block of content) {
         if (block?.type !== 'tool_result') {
           otherContent ??= []
@@ -190,14 +246,33 @@ export function convertMessages(
         }
         const id = block.tool_use_id ?? 'unknown'
         if (knownToolCallIds.has(id)) {
+          // Extract images from tool results: OpenAI tool role content only
+          // accepts string, not arrays. Also, 9router and similar vision
+          // adapters only process image_url from user role messages, not
+          // embedded in tool results. Mirror the kilocode-legacy approach:
+          // strip images into a follow-up user message so the adapter can
+          // see them.
+          const extracted = extractToolResultWithImagePlaceholder(
+            block.content,
+            block.is_error,
+            options,
+          )
           result.push({
             role: 'tool',
             tool_call_id: id,
-            content: convertToolResultContent(block.content, block.is_error, options),
+            content: extracted.text,
           })
+          toolResultImages.push(...extracted.images)
         } else {
           options.log?.(`Dropping orphan tool_result for ID: ${id} to prevent API error`)
         }
+      }
+      // Emit extracted tool-result images as a separate user message so
+      // vision adapters (e.g. 9router) can process them. Match kilocode-legacy
+      // format: pure image_url array, no text prefix — the vision adapter scans
+      // for image_url parts at the top level of the content array.
+      if (toolResultImages.length > 0) {
+        result.push({ role: 'user', content: toolResultImages })
       }
       if (otherContent?.length) result.push({ role: 'user', content: convertContentBlocks(otherContent, options) })
       continue

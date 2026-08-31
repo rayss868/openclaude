@@ -174,6 +174,7 @@ export function prepareOpenAIRequest({
           textBlockSeparator:
             effectiveTransport === 'chat_completions' ? '\n\n' : '\n',
           runtimeLimits,
+          omitOldUserImages: true,
         })
       : rawMessages
   const useNativeOllamaChat =
@@ -355,6 +356,7 @@ export function prepareOpenAIRequest({
         ? rawMessages
         : compressToolHistory(rawMessages, request.resolvedModel, {
           textBlockSeparator: '\n',
+          omitOldUserImages: true,
         })
       : compressedMessages
     responsesInput ??= convertAnthropicMessagesToResponsesInput(

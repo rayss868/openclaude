@@ -28,7 +28,7 @@ function toolExchange(
   ]
 }
 
-test('preserves image tool results as placeholders in follow-up requests', () => {
+test('extracts image tool results into follow-up user messages for vision-adapter compatibility', () => {
   const messages = convert(toolExchange([
     {
       type: 'image',
@@ -37,13 +37,23 @@ test('preserves image tool results as placeholders in follow-up requests', () =>
   ]))
   const tool = messages.find(message => message.role === 'tool')
 
-  expect(tool?.content).toEqual([
-    { type: 'text', text: 'Image attached.' },
+  // Tool role content is now a plain string (OpenAI Chat API requirement)
+  expect(tool?.content).toBe('(see following user message for image)')
+
+  // A follow-up user message carries the extracted image for vision adapters (e.g. 9router)
+  // Format matches kilocode-legacy: pure image_url array, no text prefix.
+  const imageMessage = messages.find(
+    message => message.role === 'user'
+      && Array.isArray(message.content)
+      && message.content.some((part: any) => part.type === 'image_url'),
+  )
+  expect(imageMessage).toBeDefined()
+  expect(imageMessage?.content).toEqual([
     { type: 'image_url', image_url: { url: 'data:image/png;base64,ZmFrZQ==' } },
   ])
 })
 
-test('adds text part for image-only user messages', () => {
+test('keeps image-only user messages as a pure image_url array (kilocode-compatible)', () => {
   const messages = convert([{
     role: 'user',
     content: [{
@@ -52,8 +62,9 @@ test('adds text part for image-only user messages', () => {
     }],
   }])
 
+  // No synthetic text prefix — vision adapters (e.g. 9router) scan for
+  // image_url parts at the top level of the content array.
   expect(messages[0]?.content).toEqual([
-    { type: 'text', text: 'Image attached.' },
     { type: 'image_url', image_url: { url: 'data:image/png;base64,aW1hZ2U=' } },
   ])
 })
@@ -66,7 +77,7 @@ test('rejects image content for text-only providers', () => {
   )).toThrow('does not support image inputs')
 })
 
-test('reports multipart shape for text+image tool results', () => {
+test('extracts text+image tool results as text tool message + follow-up user image', () => {
   const messages = convert(toolExchange([
     { type: 'text', text: 'Screenshot captured' },
     {
@@ -76,8 +87,17 @@ test('reports multipart shape for text+image tool results', () => {
   ], 'call_image_2'))
   const tool = messages.find(message => message.role === 'tool')
 
-  expect(tool?.content).toEqual([
-    { type: 'text', text: 'Screenshot captured' },
+  // Tool role is plain text (OpenAI Chat API constraint)
+  expect(tool?.content).toBe('Screenshot captured\n\n(see following user message for image)')
+
+  // Image extracted into follow-up user message (pure image_url array, kilocode-style)
+  const imageMessage = messages.find(
+    message => message.role === 'user'
+      && Array.isArray(message.content)
+      && message.content.some((part: any) => part.type === 'image_url'),
+  )
+  expect(imageMessage).toBeDefined()
+  expect(imageMessage?.content).toEqual([
     { type: 'image_url', image_url: { url: 'data:image/png;base64,ZmFrZQ==' } },
   ])
 })
@@ -260,7 +280,7 @@ test('collapses multiple text blocks into a single string for DeepSeek compatibi
   ])
 })
 
-test('preserves mixed text and image tool results as multipart content', () => {
+test('extracts mixed text and image tool results as separate user image message', () => {
   const messages = convert(toolExchange([
     { type: 'text', text: 'Here is the image:' },
     {
@@ -269,12 +289,21 @@ test('preserves mixed text and image tool results as multipart content', () => {
     },
   ]))
   const tool = messages.find(message => message.role === 'tool')
-  const content = tool?.content
 
-  expect(Array.isArray(content)).toBe(true)
-  expect(content).toHaveLength(2)
-  expect(content?.[0]).toMatchObject({ type: 'text' })
-  expect(content?.[1]).toMatchObject({ type: 'image_url' })
+  // Tool role is plain string
+  expect(typeof tool?.content).toBe('string')
+  expect(tool?.content).toBe('Here is the image:\n\n(see following user message for image)')
+
+  // Image appears in follow-up user message (pure image_url array, kilocode-style)
+  const imageMessage = messages.find(
+    message => message.role === 'user'
+      && Array.isArray(message.content)
+      && message.content.some((part: any) => part.type === 'image_url'),
+  )
+  expect(imageMessage).toBeDefined()
+  expect(Array.isArray(imageMessage!.content)).toBe(true)
+  expect((imageMessage!.content as any[])).toHaveLength(1)
+  expect((imageMessage!.content as any[])[0]).toMatchObject({ type: 'image_url' })
 })
 
 test('strips Anthropic attribution header block from chat-completions system prompt (#607)', () => {

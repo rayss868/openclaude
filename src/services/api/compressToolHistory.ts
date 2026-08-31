@@ -44,6 +44,11 @@ const STUB_ARGS_MAX_CHARS = 200
 // Inline image payloads can be megabytes long. Older tool history must not
 // retain them merely because they are structured rather than text.
 const OMITTED_INLINE_IMAGE_MARKER = '[Inline image omitted from tool history]'
+// Pasted user images are base64 payloads that a stateless OpenAI-compatible
+// provider counts as text tokens on EVERY resend. They are only useful for
+// the turn they were pasted in, so strip them from all but the most recent
+// user message (see omitOldUserImages).
+const OMITTED_USER_IMAGE_MARKER = '[Image omitted from history]'
 
 type AnyMessage = {
   role?: string
@@ -385,6 +390,67 @@ function shouldCompressBlock(
   return isCompactableTool(toolUse.name)
 }
 
+// A pasted user image is only useful for the turn it was pasted in. A
+// stateless OpenAI-compatible provider re-sends the full history every turn
+// and counts the base64 payload as text tokens each time, so an image left in
+// an old user message keeps draining the context window forever. Keep images
+// in the most recent user message (the current turn) and replace older ones
+// with a small marker.
+// A user message's turn is "complete" once the assistant has replied with a
+// final response (an assistant message containing no tool_use). While the
+// assistant is still in a tool loop, the image must keep riding along so the
+// model can reference it across tool calls in the same turn.
+function hasCompletedTurn(messages: AnyMessage[], fromIndex: number): boolean {
+  for (let i = fromIndex + 1; i < messages.length; i++) {
+    const content = getInner(messages[i]).content
+    if (!Array.isArray(content)) continue
+    const types = (content as Array<{ type?: string }>).map(b => b?.type)
+    if (types.includes('tool_use')) continue
+    // An assistant message with no tool_use at all is a final response.
+    if ((getInner(messages[i]).role ?? messages[i].role) === 'assistant') {
+      return true
+    }
+  }
+  return false
+}
+
+export function omitOldUserImages<T extends AnyMessage>(
+  messages: T[],
+): T[] {
+  let changed = false
+  const out = messages.map((msg, i) => {
+    const inner = getInner(msg)
+    if ((inner.role ?? msg.role) !== 'user') return msg
+    const content = inner.content
+    if (!Array.isArray(content)) return msg
+    if (!content.some(block => isInlineImagePayload(block))) return msg
+    // Keep images while the current turn is still in flight (image was just
+    // pasted, or the assistant is mid tool loop).
+    if (!hasCompletedTurn(messages, i)) return msg
+
+    let omitted = false
+    const newContent = content.map(block => {
+      if (isInlineImagePayload(block)) {
+        omitted = true
+        return { type: 'text', text: OMITTED_USER_IMAGE_MARKER }
+      }
+      return block
+    })
+    if (!omitted) return msg
+    changed = true
+
+    // Every image in this completed user message is being stripped, so its
+    // imagePermissionToolUseIds entries (one per image block) are stale.
+    // Drop them to keep the array aligned with the remaining content.
+    const newMessage = rewriteMessage(msg, newContent)
+    if (msg.imagePermissionToolUseIds) {
+      return { ...newMessage, imagePermissionToolUseIds: [] }
+    }
+    return newMessage
+  })
+  return changed ? out : messages
+}
+
 export function compressToolHistory<T extends AnyMessage>(
   messages: T[],
   model: string,
@@ -392,6 +458,13 @@ export function compressToolHistory<T extends AnyMessage>(
     effectiveContextWindowSize?: number
     textBlockSeparator?: string
     runtimeLimits?: { contextWindow?: number; maxOutputTokens?: number }
+    /** When true, strip inline image payloads from all but the most recent
+     * user message. A pasted image is only useful for the turn it was sent
+     * in — on every subsequent turn a stateless OpenAI-compatible provider
+     * re-sends the full base64 and counts it as text tokens, inflating the
+     * context window. Enable for openaiShim routes; keep disabled for
+     * Anthropic native (where images are counted as proper vision tokens). */
+    omitOldUserImages?: boolean
   } = {},
 ): T[] {
   // Master kill-switch. Returns the original reference so callers skip a
@@ -409,11 +482,15 @@ export function compressToolHistory<T extends AnyMessage>(
   )
   const textBlockSeparator = options.textBlockSeparator ?? '\n\n'
 
-  const toolResults = indexToolResults(messages)
+  // Strip old user-image payloads before tool-result compression so the
+  // early return for `total <= tiers.recent` still drops images.
+  const working = options.omitOldUserImages ? omitOldUserImages(messages) : messages
+
+  const toolResults = indexToolResults(working)
   const total = toolResults.length
   // If every tool-result fits in the recent tier, no boundary crosses; return
   // the same reference for the same copy-elision reason.
-  if (total <= tiers.recent) return messages
+  if (total <= tiers.recent) return working
 
   // O(1) lookup within each carrier message: blockIndex → tool-result position
   // (0 = oldest). Parallel results share a message but receive distinct tiers.
@@ -428,9 +505,9 @@ export function compressToolHistory<T extends AnyMessage>(
     positions.set(blockIndex, pos)
   }
 
-  const toolUsesById = indexToolUses(messages)
+  const toolUsesById = indexToolUses(working)
 
-  return messages.map((msg, i) => {
+  return working.map((msg, i) => {
     const positions = positionsByMessage.get(i)
     if (!positions) return msg
     const firstPos = positions.values().next().value

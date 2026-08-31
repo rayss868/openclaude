@@ -2193,8 +2193,8 @@ test('the OpenAI shim façade exposes the beta.messages namespace', () => {
 // openaiShim test extraction seam 055 end
 
 
-// openaiShim test extraction seam 056 start: preserves image tool results as placeholders in follow-up requests
-test('preserves image tool results as placeholders in follow-up requests', async () => {
+// openaiShim test extraction seam 056 start: extracts image tool results into follow-up user messages for vision-adapter compatibility
+test('extracts image tool results into follow-up user messages for vision-adapter compatibility', async () => {
   let requestBody: Record<string, unknown> | undefined
 
   globalThis.fetch = (async (_input, init) => {
@@ -2272,24 +2272,24 @@ test('preserves image tool results as placeholders in follow-up requests', async
   const toolMessage = (requestBody?.messages as Array<Record<string, unknown>>).find(
     message => message.role === 'tool',
   ) as {
-    content?: Array<{
-      type: string
-      text?: string
-      image_url?: { url: string }
-    }> | string
+    content?: string
   } | undefined
 
-  expect(Array.isArray(toolMessage?.content)).toBe(true)
-  const parts = toolMessage?.content as Array<{
-    type: string
-    text?: string
-    image_url?: { url: string }
-  }>
-  // Issue #1421: image-only tool results now get a placeholder text part
-  // prepended so OpenAI-compatible providers that require a `text` field on
-  // `role: "tool"` messages (e.g. Xiaomi Mimo) don't 400 with "text is not set".
-  expect(parts).toEqual([
-    { type: 'text', text: 'Image attached.' },
+  // Tool role content is now a plain string (OpenAI Chat API requirement)
+  expect(toolMessage?.content).toBe('(see following user message for image)')
+
+  // A follow-up user message carries the extracted image for vision adapters (e.g. 9router)
+  // Pure image_url array (kilocode-legacy format) so 9router's vision adapter can process it.
+  const imageMessage = (requestBody?.messages as Array<Record<string, unknown>>).find(
+    message => message.role === 'user'
+      && Array.isArray(message.content)
+      && (message.content as Array<Record<string, unknown>>).some(
+        (part: Record<string, unknown>) => part.type === 'image_url',
+      ),
+  ) as { content?: Array<{ type: string; image_url?: { url: string } }> } | undefined
+
+  expect(imageMessage).toBeDefined()
+  expect(imageMessage!.content).toEqual([
     {
       type: 'image_url',
       image_url: { url: 'data:image/png;base64,ZmFrZQ==' },
@@ -2367,8 +2367,9 @@ test('adds text part for image-only user messages', async () => {
     }>
   } | undefined
 
+  // Pure image_url array, no synthetic text prefix (kilocode-compatible so
+  // vision adapters like 9router see the image at the top level of content).
   expect(userMessage?.content).toEqual([
-    { type: 'text', text: 'Image attached.' },
     {
       type: 'image_url',
       image_url: { url: 'data:image/png;base64,ZmFrZQ==' },
@@ -2378,8 +2379,8 @@ test('adds text part for image-only user messages', async () => {
 // openaiShim test extraction seam 057 end
 
 
-// openaiShim test extraction seam 058 start: preserves mixed text and image tool results as multipart content
-test('preserves mixed text and image tool results as multipart content', async () => {
+// openaiShim test extraction seam 058 start: extracts mixed text+image tool results as text tool + follow-up user image
+test('extracts mixed text+image tool results as text tool + follow-up user image', async () => {
   let requestBody: Record<string, unknown> | undefined
 
   globalThis.fetch = (async (_input, init) => {
@@ -2458,20 +2459,29 @@ test('preserves mixed text and image tool results as multipart content', async (
   const toolMessage = (requestBody?.messages as Array<Record<string, unknown>>).find(
     message => message.role === 'tool',
   ) as {
-    content?: Array<{
-      type: string
-      text?: string
-      image_url?: { url: string }
-    }>
+    content?: string
   } | undefined
 
-  expect(Array.isArray(toolMessage?.content)).toBe(true)
-  const parts = toolMessage?.content ?? []
-  expect(parts[0]).toEqual({ type: 'text', text: 'Screenshot captured' })
-  expect(parts[1]).toEqual({
-    type: 'image_url',
-    image_url: { url: 'data:image/png;base64,ZmFrZQ==' },
-  })
+  // Tool role is plain string (OpenAI Chat API constraint)
+  expect(typeof toolMessage?.content).toBe('string')
+  expect(toolMessage?.content).toBe('Screenshot captured\n\n(see following user message for image)')
+
+  // Image extracted into follow-up user message
+  const imageMessage = (requestBody?.messages as Array<Record<string, unknown>>).find(
+    message => message.role === 'user'
+      && Array.isArray(message.content)
+      && (message.content as Array<Record<string, unknown>>).some(
+        (part: Record<string, unknown>) => part.type === 'image_url',
+      ),
+  ) as { content?: Array<{ type: string; image_url?: { url: string } }> } | undefined
+
+  expect(imageMessage).toBeDefined()
+  expect(imageMessage!.content).toEqual([
+    {
+      type: 'image_url',
+      image_url: { url: 'data:image/png;base64,ZmFrZQ==' },
+    },
+  ])
 })
 // openaiShim test extraction seam 074 end
 
@@ -5347,8 +5357,8 @@ test('collapses multiple text blocks into a single string for DeepSeek compatibi
 // openaiShim test extraction seam 158 end
 
 
-// openaiShim test extraction seam 159 start: preserves mixed text and image tool results as multipart content
-test('preserves mixed text and image tool results as multipart content', async () => {
+// openaiShim test extraction seam 159 start: extracts mixed text+image tool results as text tool + follow-up user image (compression path)
+test('extracts mixed text+image tool results as text tool + follow-up user image (compression path)', async () => {
   let requestBody: Record<string, unknown> | undefined
 
   globalThis.fetch = (async (_input, init) => {
@@ -5427,11 +5437,23 @@ test('preserves mixed text and image tool results as multipart content', async (
   const messages = requestBody?.messages as Array<Record<string, unknown>>
   const toolMessages = messages.filter(m => m.role === 'tool')
   expect(toolMessages.length).toBe(1)
-  expect(Array.isArray(toolMessages[0].content)).toBe(true)
-  const content = toolMessages[0].content as Array<Record<string, unknown>>
-  expect(content.length).toBe(2)
-  expect(content[0].type).toBe('text')
-  expect(content[1].type).toBe('image_url')
+  // Tool role content is now a plain string
+  expect(typeof toolMessages[0].content).toBe('string')
+  expect(toolMessages[0].content).toBe('Here is the image:\n\n(see following user message for image)')
+
+  // Image appears in follow-up user message
+  const imageMessage = messages.find(
+    m => m.role === 'user'
+      && Array.isArray(m.content)
+      && (m.content as Array<Record<string, unknown>>).some(
+        (part: Record<string, unknown>) => part.type === 'image_url',
+      ),
+  ) as { content?: Array<{ type: string; image_url?: { url: string } }> } | undefined
+  expect(imageMessage).toBeDefined()
+  expect(Array.isArray(imageMessage!.content)).toBe(true)
+  // Pure image_url array (kilocode-legacy format) so vision adapters can process it
+  expect((imageMessage!.content as Array<unknown>)).toHaveLength(1)
+  expect((imageMessage!.content as Array<Record<string, unknown>>)[0].type).toBe('image_url')
 })
 // openaiShim test extraction seam 163 end
 
