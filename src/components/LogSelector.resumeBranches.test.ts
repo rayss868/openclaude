@@ -15,7 +15,7 @@ import {
   acquireSharedMutationLock,
   releaseSharedMutationLock,
 } from '../test/sharedMutationLock.js'
-import type { LogOption, SessionBranchEntry } from '../types/logs.js'
+import type { LogOption, SerializedMessage, SessionBranchEntry } from '../types/logs.js'
 import {
   LogSelector,
   countVisibleResumeTreeRows,
@@ -380,6 +380,88 @@ test('opens session preview before resuming when Enter selects a session', async
   }
 })
 
+test('bounds large session previews without changing the restore log', async () => {
+  await acquireSharedMutationLock(
+    'components/LogSelector.resumeBranches.test.tsx',
+  )
+  let rootRenderer: Awaited<ReturnType<typeof createRoot>> | null = null
+  const sessionId = id(61)
+  const messages: SerializedMessage[] = Array.from({ length: 20 }, (_, index) => ({
+    type: 'user' as const,
+    uuid: id(100 + index),
+    timestamp: ts,
+    cwd: '/tmp',
+    userType: 'external',
+    sessionId,
+    version: 'test',
+    message: {
+      role: 'user' as const,
+      content:
+        index === 0 || index === 19
+          ? `${index === 0 ? 'first' : 'last'}-${'x'.repeat(8_000)}`
+          : `middle-${index}`,
+    },
+  }))
+  const session = log(sessionId, 'Large preview session', 10, {
+    messages,
+    messageCount: messages.length,
+  })
+  const selected: LogOption[] = []
+  const { stdout, stdin, getOutput } = createTestStreams()
+
+  try {
+    rootRenderer = await createRoot({
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      patchConsole: false,
+    })
+
+    rootRenderer.render(
+      React.createElement(
+        AppStateProvider,
+        null,
+        React.createElement(
+          KeybindingSetup,
+          null,
+          React.createElement(LogSelector, {
+            logs: [session],
+            maxHeight: 30,
+            forceWidth: 100,
+            onSelect: selectedLog => selected.push(selectedLog),
+          }),
+        ),
+      ),
+    )
+
+    await waitForFrame(getOutput, frame => frame.includes('Large preview session'))
+    stdin.write('\r')
+
+    const previewFrame = await waitForFrame(
+      getOutput,
+      frame =>
+        frame.includes('Session preview') &&
+        frame.includes('first-') &&
+        frame.includes('last-') &&
+        frame.includes('8 messages omitted') &&
+        frame.includes('[message truncated]'),
+    )
+
+    expect(previewFrame).not.toContain('middle-10')
+    expect(selected).toHaveLength(0)
+
+    stdin.write('\r')
+    await waitForFrame(getOutput, frame => selected.length === 1)
+    expect(selected[0]).toBe(session)
+    expect(selected[0]!.messages).toHaveLength(20)
+    expect(selected[0]!.messages[0]!.message.content).toBe(
+      messages[0]!.message.content,
+    )
+  } finally {
+    rootRenderer?.unmount()
+    stdin.end()
+    releaseSharedMutationLock()
+  }
+})
 test('rendered picker expands branch groups and selects child branch logs', async () => {
   await acquireSharedMutationLock(
     'components/LogSelector.resumeBranches.test.tsx',

@@ -7,6 +7,7 @@ import { getAllBaseTools } from '../tools.js';
 import type { LogOption } from '../types/logs.js';
 import { formatRelativeTimeAgo } from '../utils/format.js';
 import { getSessionIdFromLog, isLiteLog, loadFullLog } from '../utils/sessionStorage.js';
+import { createSessionPreview } from '../utils/sessionPreview.js';
 import { ConfigurableShortcutHint } from './ConfigurableShortcutHint.js';
 import { Byline } from './design-system/Byline.js';
 import { KeyboardShortcutHint } from './design-system/KeyboardShortcutHint.js';
@@ -45,6 +46,7 @@ export function SessionPreview(t0) {
   React.useEffect(t1, t2);
   const isLoading = isLiteLog(log) && fullLog === null;
   const displayLog = fullLog ?? log;
+  const preview = createSessionPreview(displayLog.messages);
   let t3;
   if ($[3] !== displayLog) {
     t3 = getSessionIdFromLog(displayLog) || "" as UUID;
@@ -138,10 +140,10 @@ export function SessionPreview(t0) {
     t11 = $[17];
   }
   let t12;
-  if ($[18] !== conversationId || $[19] !== displayLog.messages) {
-    t12 = <Messages messages={displayLog.messages} tools={tools} commands={t8} verbose={true} toolJSX={null} toolUseConfirmQueue={t9} inProgressToolUseIDs={t10} isMessageSelectorVisible={false} conversationId={conversationId} screen="transcript" streamingToolUses={t11} showAllInTranscript={true} isLoading={false} />;
+  if ($[18] !== conversationId || $[19] !== preview.messages) {
+    t12 = <Messages messages={preview.messages} tools={tools} commands={t8} verbose={true} toolJSX={null} toolUseConfirmQueue={t9} inProgressToolUseIDs={t10} isMessageSelectorVisible={false} conversationId={conversationId} screen="transcript" streamingToolUses={t11} isLoading={false} />;
     $[18] = conversationId;
-    $[19] = displayLog.messages;
+    $[19] = preview.messages;
     $[20] = t12;
   } else {
     t12 = $[20];
@@ -190,6 +192,8 @@ export function SessionPreview(t0) {
       <Box flexDirection="column" marginTop={1}>
         <Text color="brand" bold={true}>Conversation</Text>
         <Box flexDirection="column" marginTop={1}>{t12}</Box>
+        {preview.omittedMessageCount > 0 && <Text dimColor={true}>{`… ${preview.omittedMessageCount} messages omitted …`}</Text>}
+        {preview.truncatedMessageCount > 0 && <Text dimColor={true}>[message truncated]</Text>}
       </Box>
       <Box flexShrink={0} flexDirection="column" borderTopDimColor={true} borderBottom={false} borderLeft={false} borderRight={false} borderStyle="single" paddingTop={1} marginTop={1}>
         {t15}
