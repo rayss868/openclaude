@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.30.1](https://github.com/rayss868/openclaude/compare/v0.30.0...v0.30.1) (2026-09-01)
+
+### Bug Fixes
+
+* **rewind:** preserve the text portion of a user prompt when an image block follows it. Rewind previews now extract all text blocks instead of inspecting only the final content block, so prompts containing images no longer incorrectly appear as `(no prompt)`.
+* **rewind:** keep large-paste references visible when the prompt also contains an image. Paste markers such as `[Pasted text #1 +120 lines]` are retained in the preview and remain available when resubmitting the message.
+* **resume:** show the first meaningful user prompt in session history instead of replacing it with the session's latest prompt metadata. The latest prompt remains only as a fallback for older or truncated session files.
+* **resume:** always open a session preview before resuming from the history picker, including sessions with many messages and sessions using the normal picker path. The preview is no longer dependent on the rename feature flag.
+* **resume:** require a second confirmation before restoring a selected session. The first Enter opens the preview without invoking the resume callback; Enter again resumes the reviewed session, while Escape cancels.
+
+### Tests
+
+* **rewind:** add regression coverage for text-plus-image prompts, large-paste references followed by images, and image-only content.
+* **resume:** add coverage for first-prompt metadata extraction, mandatory preview-before-resume behavior, preview rendering, and selecting nested branch sessions through the picker.
+
+### UI
+
+* **resume:** improve the preview screen with a clear `Session preview` header, explanatory subtitle, `Conversation` section label, and a visually separated action and session metadata footer.
+
 ## [0.29.1](https://github.com/rayss868/openclaude/compare/v0.29.0...v0.29.1) (2026-08-19)
 
 

@@ -5827,14 +5827,11 @@ export async function readLiteMetadata(
   const teamName = extractJsonStringField(head, 'teamName')
   const agentSetting = extractJsonStringField(head, 'agentSetting')
 
-  // Prefer the last-prompt tail entry — captured by extractFirstPrompt at
-  // write time (filtered, authoritative) and shows what the user was most
-  // recently doing. Head scan is the fallback for sessions written before
-  // last-prompt entries existed. Raw string scrapes of head are last resort
-  // and catch array-format content blocks (VS Code <ide_selection> metadata).
+  // Prefer the first meaningful prompt from the session head. The lastPrompt
+  // entry is only a fallback for older or truncated session files.
   const firstPrompt =
-    extractLastJsonStringField(tail, 'lastPrompt') ||
     extractFirstPromptFromChunk(head) ||
+    extractLastJsonStringField(tail, 'lastPrompt') ||
     extractJsonStringFieldPrefix(head, 'content', 200) ||
     extractJsonStringFieldPrefix(head, 'text', 200) ||
     ''

@@ -182,7 +182,20 @@ export function SessionPreview(t0) {
   }
   let t18;
   if ($[30] !== t12 || $[31] !== t17) {
-    t18 = <Box flexDirection="column">{t12}{t17}</Box>;
+    t18 = <Box flexDirection="column" paddingX={1}>
+      <Box flexDirection="column" borderStyle="single" borderColor="promptBorder" paddingX={1} paddingY={1}>
+        <Text color="brand" bold={true}>Session preview</Text>
+        <Text dimColor={true}>Review this conversation before resuming</Text>
+      </Box>
+      <Box flexDirection="column" marginTop={1}>
+        <Text color="brand" bold={true}>Conversation</Text>
+        <Box flexDirection="column" marginTop={1}>{t12}</Box>
+      </Box>
+      <Box flexShrink={0} flexDirection="column" borderTopDimColor={true} borderBottom={false} borderLeft={false} borderRight={false} borderStyle="single" paddingTop={1} marginTop={1}>
+        {t15}
+        {t16}
+      </Box>
+    </Box>;
     $[30] = t12;
     $[31] = t17;
     $[32] = t18;

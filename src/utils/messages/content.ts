@@ -145,3 +145,9 @@ export function getContentText(
   }
   return null
 }
+
+export function getUserMessagePreviewText(
+  content: string | DeepImmutable<Array<ContentBlockParam>>,
+): string {
+  return getContentText(content)?.trim() || '(no prompt)'
+}

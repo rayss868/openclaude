@@ -329,6 +329,7 @@ export {
   extractTextContent,
   getAssistantMessageText,
   getContentText,
+  getUserMessagePreviewText,
   getUserMessageText,
   isEmptyMessageText,
   stripPromptXMLTags,

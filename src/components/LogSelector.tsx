@@ -1323,7 +1323,7 @@ export function LogSelector(t0: LogSelectorProps) {
   if (logs.length === 0) {
     return null;
   }
-  if (viewMode === "preview" && previewLog && isResumeWithRenameEnabled) {
+  if (viewMode === "preview" && previewLog) {
     let t57;
     if ($[160] === Symbol.for("react.memo_cache_sentinel")) {
       t57 = () => {
@@ -1454,7 +1454,11 @@ export function LogSelector(t0: LogSelectorProps) {
   let t70;
   if ($[202] !== agenticSearchState.status || $[203] !== branchFilterEnabled || $[204] !== columns || $[205] !== displayedLogs || $[206] !== expandedGroupSessionIds || $[207] !== flatOptions || $[208] !== focusedLog || $[209] !== focusedNode?.id || $[210] !== handleFlatOptionsSelectFocus || $[211] !== handleRenameSubmit || $[212] !== handleTreeSelectFocus || $[213] !== isAgenticSearchOptionFocused || $[214] !== onCancel || $[215] !== onSelect || $[216] !== renameCursorOffset || $[217] !== renameValue || $[218] !== treeNodes || $[219] !== viewMode || $[220] !== visibleCount) {
     t70 = agenticSearchState.status === "searching" ? null : viewMode === "confirm-delete" ? <Box paddingLeft={2} flexDirection="column"><Text color="red" bold={true}>Hapus session ini? (y/n)</Text></Box> : viewMode === "rename" && focusedLog ? <Box paddingLeft={2} flexDirection="column"><Text bold={true}>Rename session:</Text><Box paddingTop={1}><TextInput value={renameValue} onChange={setRenameValue} onSubmit={handleRenameSubmit} placeholder={getResumeLogDisplayTitle(focusedLog) || "Enter new session name"} columns={columns} cursorOffset={renameCursorOffset} onChangeCursorOffset={setRenameCursorOffset} showCursor={true} /></Box></Box> : isResumeWithRenameEnabled ? <TreeSelect nodes={treeNodes} onSelect={node_0 => {
-      onSelect(node_0.value.log);
+      setPreviewLog(node_0.value.log);
+      setViewMode("preview");
+      logEvent("tengu_session_preview_opened", {
+        messageCount: node_0.value.log.messageCount
+      });
     }} onFocus={handleTreeSelectFocus} onCancel={onCancel} focusNodeId={focusedNode?.id} visibleOptionCount={visibleCount} layout="expanded" isDisabled={viewMode === "search" || isAgenticSearchOptionFocused} hideIndexes={false} isNodeExpanded={nodeId => {
       if (viewMode === "search" || branchFilterEnabled) {
         return true;
@@ -1480,7 +1484,11 @@ export function LogSelector(t0: LogSelectorProps) {
       const itemIndex = parseInt(value_0, 10);
       const log_13 = displayedLogs[itemIndex];
       if (log_13) {
-        onSelect(log_13);
+        setPreviewLog(log_13);
+        setViewMode("preview");
+        logEvent("tengu_session_preview_opened", {
+          messageCount: log_13.messageCount
+        });
       }
     }} visibleOptionCount={visibleCount} onCancel={onCancel} onFocus={handleFlatOptionsSelectFocus} defaultFocusValue={focusedNode?.id.toString()} layout="expanded" isDisabled={viewMode === "search" || isAgenticSearchOptionFocused} onUpFromFirstItem={enterSearchMode} />;
     $[202] = agenticSearchState.status;

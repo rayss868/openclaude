@@ -4,6 +4,7 @@ import {
   extractTextContent,
   getAssistantMessageText,
   getContentText,
+  getUserMessagePreviewText,
   isEmptyMessageText,
   stripPromptXMLTags,
   textForResubmit,
@@ -31,6 +32,24 @@ test('extractTextContent joins only text blocks', () => {
 
 test('getContentText returns null for array content without text', () => {
   expect(getContentText([{ type: 'image' } as never])).toBeNull()
+})
+
+test('Rewind preview keeps text when an image follows it', () => {
+  expect(
+    getUserMessagePreviewText([
+      { type: 'text', text: 'tolong periksa gambar ini' },
+      { type: 'image' } as never,
+    ] as never),
+  ).toBe('tolong periksa gambar ini')
+})
+
+test('Rewind preview keeps a large-paste reference before an image', () => {
+  expect(
+    getUserMessagePreviewText([
+      { type: 'text', text: '[Pasted text #1 +120 lines]' },
+      { type: 'image' } as never,
+    ] as never),
+  ).toBe('[Pasted text #1 +120 lines]')
 })
 
 test('textForResubmit extracts bash-input commands', () => {

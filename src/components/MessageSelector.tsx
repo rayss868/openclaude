@@ -1,5 +1,4 @@
 import { c as _c } from "react-compiler-runtime";
-import type { ContentBlockParam, TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs';
 import { randomUUID, type UUID } from 'crypto';
 import figures from 'figures';
 import * as React from 'react';
@@ -13,13 +12,10 @@ import { Box, Text } from '../ink.js';
 import { useKeybinding, useKeybindings } from '../keybindings/useKeybinding.js';
 import type { Message, PartialCompactDirection, UserMessage } from '../types/message.js';
 import { stripDisplayTags } from '../utils/displayTags.js';
-import { createUserMessage, extractTag, isEmptyMessageText, isSyntheticMessage, isToolUseResultMessage } from '../utils/messages.js';
+import { getUserMessagePreviewText, createUserMessage, extractTag, isEmptyMessageText, isSyntheticMessage, isToolUseResultMessage } from '../utils/messages.js';
 import { selectableUserMessagesFilter, messagesAfterAreOnlySynthetic } from '../utils/messageFilters.js';
 import { type OptionWithDescription, Select } from './CustomSelect/select.js';
 import { Spinner } from './Spinner.js';
-function isTextBlock(block: ContentBlockParam): block is TextBlockParam {
-  return block.type === 'text';
-}
 import * as path from 'path';
 import { useTerminalSize } from 'src/hooks/useTerminalSize.js';
 import type { Output as FileWriteToolOutput } from 'src/tools/FileWriteTool/FileWriteTool.js';
@@ -602,6 +598,7 @@ function UserMessageOption(t0) {
     return t1;
   }
   const content = userMessage.message.content;
+  const previewText = getUserMessagePreviewText(content);
   const lastBlock = typeof content === "string" ? null : content[content.length - 1];
   let T0;
   let T1;
@@ -614,7 +611,8 @@ function UserMessageOption(t0) {
   if ($[3] !== color || $[4] !== columns || $[5] !== content || $[6] !== dimColor || $[7] !== lastBlock || $[8] !== paddingRight) {
     t6 = Symbol.for("react.early_return_sentinel");
     bb0: {
-      const rawMessageText = typeof content === "string" ? content.trim() : lastBlock && isTextBlock(lastBlock) ? lastBlock.text.trim() : "(no prompt)";
+      const rawMessageText = previewText;
+
       const messageText = stripDisplayTags(rawMessageText);
       if (isEmptyMessageText(messageText)) {
         let t7;

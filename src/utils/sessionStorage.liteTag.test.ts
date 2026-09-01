@@ -28,6 +28,15 @@ const TOOL_USE_WITH_TAG_INPUT =
   '{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"mcp__docker__push_image","input":{"image":"myapp","tag":"v1.2.3"}}]}}'
 
 describe('readLiteMetadata tag extraction', () => {
+  test('uses the first user prompt instead of the lastPrompt metadata entry', async () => {
+    const meta = await readMetadata([
+      '{"type":"user","message":{"role":"user","content":"prompt pertama"},"cwd":"/work/app"}',
+      '{"type":"user","message":{"role":"user","content":"prompt terakhir"},"cwd":"/work/app"}',
+      '{"type":"summary","lastPrompt":"prompt terakhir"}',
+    ])
+    expect(meta.firstPrompt).toBe('prompt pertama')
+  })
+
   test('reads the session tag, not a tag parameter from a later tool call', async () => {
     // The tail scan is a raw substring search, so an unscoped lookup returned
     // the *last* "tag":"..." in the window — the tool's value — which surfaced

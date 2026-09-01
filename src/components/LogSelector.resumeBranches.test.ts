@@ -312,6 +312,73 @@ test('counts expanded branch rows before requesting more logs', () => {
     }),
   ).toBe(false)
 })
+test('opens session preview before resuming when Enter selects a session', async () => {
+  await acquireSharedMutationLock(
+    'components/LogSelector.resumeBranches.test.tsx',
+  )
+  let rootRenderer: Awaited<ReturnType<typeof createRoot>> | null = null
+  const sessionId = id(60)
+  const session = log(sessionId, 'Preview before resume', 10)
+  const selected: LogOption[] = []
+  const { stdout, stdin, getOutput } = createTestStreams()
+
+  try {
+    rootRenderer = await createRoot({
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      patchConsole: false,
+    })
+
+    rootRenderer.render(
+      React.createElement(
+        AppStateProvider,
+        null,
+        React.createElement(
+          KeybindingSetup,
+          null,
+          React.createElement(LogSelector, {
+            logs: [session],
+            maxHeight: 30,
+            forceWidth: 100,
+            onSelect: selectedLog => {
+              selected.push(selectedLog)
+            },
+          }),
+        ),
+      ),
+    )
+
+    await waitForFrame(
+      getOutput,
+      frame => frame.includes('Preview before resume'),
+    )
+
+    stdin.write('\r')
+    await waitForFrame(
+      getOutput,
+      frame =>
+        frame.includes('Session preview') &&
+        frame.includes('Conversation') &&
+        frame.includes('1 messages') &&
+        frame.includes('Enter') &&
+        !frame.includes('Resume Session'),
+    )
+    expect(selected).toHaveLength(0)
+
+    stdin.write('\r')
+    const startedAt = Date.now()
+    while (Date.now() - startedAt < 2500 && selected.length === 0) {
+      await Bun.sleep(10)
+    }
+    expect(selected.map(selectedLog => selectedLog.sessionId)).toEqual([
+      sessionId,
+    ])
+  } finally {
+    rootRenderer?.unmount()
+    stdin.end()
+    releaseSharedMutationLock()
+  }
+})
 
 test('rendered picker expands branch groups and selects child branch logs', async () => {
   await acquireSharedMutationLock(
@@ -408,7 +475,20 @@ test('rendered picker expands branch groups and selects child branch logs', asyn
         frame.includes('Branch implementation session'),
     )
 
-    stdin.write('2')
+    stdin.write('\x1B[B')
+    await Bun.sleep(50)
+    stdin.write('\r')
+
+    await waitForFrame(
+      getOutput,
+      frame =>
+        frame.includes('1 messages') &&
+        frame.includes('Enter') &&
+        !frame.includes('Resume Session'),
+    )
+    expect(selected).toHaveLength(0)
+
+    stdin.write('\r')
 
     const startedAt = Date.now()
     while (Date.now() - startedAt < 2500 && selected.length === 0) {
