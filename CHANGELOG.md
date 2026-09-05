@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.30.2](https://github.com/rayss868/openclaude/compare/v0.30.1...v0.30.2) (2026-09-05)
+
+### Features
+
+* **zai:** add GLM-5.3-Flash Coding Plan support ([#2185](https://github.com/anthropics/claude-code/pull/2185))
+* **skills:** enforce registry revocations.json on install ([#2187](https://github.com/anthropics/claude-code/pull/2187))
+
+### Bug Fixes
+
+* **ctx:** let explicit overrides beat discovered context windows ([#2082](https://github.com/anthropics/claude-code/pull/2082))
+* **bash:** repair inline scripts (`node -e` / `python -c`) containing `!` or backticks by rewriting them to temp files, avoiding shell-escaping syntax errors with non-Claude models
+
 ## [0.30.1](https://github.com/rayss868/openclaude/compare/v0.30.0...v0.30.1) (2026-09-01)
 
 ### Bug Fixes
