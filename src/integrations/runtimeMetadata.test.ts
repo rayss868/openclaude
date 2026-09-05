@@ -11,12 +11,16 @@ import {
   resolveModelRuntimeLimits,
   resolveOpenAIShimRuntimeContext,
 } from '../integrations/runtimeMetadata'
-import { setCachedModels } from './discoveryCache'
+import { clearDiscoveryCache, setCachedModels } from './discoveryCache'
+import {
+  getClaudeConfigHomeDirOverrideForTesting,
+  setClaudeConfigHomeDirForTesting,
+} from '../utils/envUtils.js'
 import {
   getDiscoveryCacheKey,
   getRouteDiscoveryHeaders,
 } from './discoveryService'
-import { setClaudeConfigHomeDirForTesting } from '../utils/envUtils.js'
+import { resolveActiveRouteIdFromEnv } from './routeMetadata.js'
 import glmBrand from './brands/glm.js'
 import glmModels from './models/glm.js'
 import zaiVendor from './vendors/zai.js'
@@ -25,6 +29,53 @@ const originalConfigDir = process.env.CLAUDE_CONFIG_DIR
 const originalOpenClaudeConfigDir = process.env.OPENCLAUDE_CONFIG_DIR
 
 describe('Z.AI GLM-5.3 descriptor contract', () => {
+  it('wires the verified GLM-5.3-Flash descriptor and direct catalog contract', () => {
+    const model = glmModels.find(candidate => candidate.id === 'glm-5.3-flash')
+    expect(model).toMatchObject({
+      id: 'glm-5.3-flash',
+      label: 'GLM 5.3 Flash',
+      vendorId: 'zai',
+      brandId: 'glm',
+      classification: ['chat', 'reasoning', 'vision', 'coding'],
+      defaultModel: 'glm-5.3-flash',
+      contextWindow: 1_000_000,
+      maxOutputTokens: 131_072,
+      runtimeMetadataScope: 'catalog',
+      capabilities: {
+        supportsVision: true,
+        supportsStreaming: true,
+        supportsFunctionCalling: true,
+        supportsJsonMode: true,
+        supportsReasoning: true,
+        supportsPreciseTokenCount: false,
+      },
+    })
+
+    expect(glmBrand.modelIds?.[0]).toBe('glm-5.3-flash')
+    expect(glmBrand.modelIds?.[1]).toBe('glm-5.3')
+
+    const catalogEntries = zaiVendor.catalog?.models ?? []
+    const flashEntries = catalogEntries.filter(entry => entry.id === 'glm-5.3-flash')
+    expect(flashEntries).toHaveLength(1)
+    expect(catalogEntries[0]).toMatchObject({
+      id: 'glm-5.3-flash',
+      apiName: 'glm-5.3-flash',
+      label: 'GLM-5.3-Flash',
+      modelDescriptorId: 'glm-5.3-flash',
+      reasoning: {
+        mode: 'levels',
+        levels: ['low', 'high', 'xhigh'],
+        wireFormat: 'zai_compatible',
+      },
+      transportOverrides: {
+        openaiShim: { enableToolStreaming: true },
+      },
+    })
+    expect(catalogEntries[1]?.id).toBe('glm-5.3')
+    expect(zaiVendor.catalog?.source).toBe('static')
+    expect(zaiVendor.defaultModel).toBe('glm-5.2')
+  })
+
   it('wires the verified shared model, brand, and direct catalog entry without changing the default', () => {
     const model = glmModels.find(candidate => candidate.id === 'glm-5.3')
     expect(model).toMatchObject({
@@ -46,9 +97,9 @@ describe('Z.AI GLM-5.3 descriptor contract', () => {
         supportsPreciseTokenCount: false,
       },
     })
-    expect(glmBrand.modelIds?.[0]).toBe('glm-5.3')
+    expect(glmBrand.modelIds).toContain('glm-5.3')
 
-    const catalogEntry = zaiVendor.catalog?.models?.[0]
+    const catalogEntry = zaiVendor.catalog?.models?.find(entry => entry.id === 'glm-5.3')
     expect(catalogEntry).toMatchObject({
       id: 'glm-5.3',
       apiName: 'glm-5.3',
@@ -67,8 +118,13 @@ describe('Z.AI GLM-5.3 descriptor contract', () => {
   })
 })
 
+// The discovery cache resolves its path through getClaudeConfigHomeDir(), which
+// deliberately ignores CLAUDE_CONFIG_DIR (OpenClaude config is independent of
+// Claude Code config). Use the explicit test override so these fixtures land in
+// the temp dir instead of the developer's real ~/.openclaude.
 async function withTempConfigDir<T>(fn: () => Promise<T>): Promise<T> {
   await acquireSharedMutationLock('integrations/runtimeMetadata.test.ts')
+  const previousOverride = getClaudeConfigHomeDirOverrideForTesting()
   let tempDir: string | null = null
   try {
     tempDir = mkdtempSync(join(tmpdir(), 'openclaude-runtime-metadata-test-'))
@@ -78,6 +134,10 @@ async function withTempConfigDir<T>(fn: () => Promise<T>): Promise<T> {
     return await fn()
   } finally {
     try {
+      // Drops the module-level sync snapshot so a later suite cannot read this
+      // suite's fixture back out of memory after the temp dir is gone.
+      await clearDiscoveryCache()
+      setClaudeConfigHomeDirForTesting(previousOverride)
       if (originalConfigDir === undefined) {
         delete process.env.CLAUDE_CONFIG_DIR
       } else {
@@ -91,7 +151,6 @@ async function withTempConfigDir<T>(fn: () => Promise<T>): Promise<T> {
       if (tempDir) {
         rmSync(tempDir, { recursive: true, force: true })
       }
-      setClaudeConfigHomeDirForTesting(undefined)
     } finally {
       releaseSharedMutationLock()
     }
@@ -174,6 +233,66 @@ describe('resolveModelRuntimeLimits', () => {
     })
   })
   it.each([
+    'glm-5.3-flash',
+    'glm-5.3-flash?reasoning=low',
+    'glm-5.3-flash?reasoning=high',
+    'glm-5.3-flash?reasoning=xhigh',
+    'glm-5.3-flash?thinking=disabled',
+  ])('uses verified Z.AI GLM-5.3-Flash runtime limits for %s', model => {
+    const limits = resolveModelRuntimeLimits({
+      model,
+      processEnv: {
+        CLAUDE_CODE_USE_OPENAI: '1',
+        OPENAI_BASE_URL: 'https://api.z.ai/api/coding/paas/v4',
+      },
+    })
+
+    expect(limits.contextWindow).toBe(1_000_000)
+    expect(limits.maxOutputTokens).toBe(131_072)
+  })
+
+  it('does not apply Coding Plan Flash limits on the same-host general Z.AI endpoint', () => {
+    const processEnv = {
+      CLAUDE_CODE_USE_OPENAI: '1',
+      OPENAI_BASE_URL: 'https://api.z.ai/api/paas/v4',
+    }
+
+    expect(resolveActiveRouteIdFromEnv(processEnv)).toBe('custom')
+    expect(resolveModelRuntimeLimits({
+      model: 'glm-5.3-flash',
+      activeProfileProvider: 'zai',
+      processEnv,
+    })).toEqual({
+      contextWindow: undefined,
+      maxOutputTokens: undefined,
+    })
+  })
+
+  it.each([' ', 'undefined', 'null'])(
+    'falls back from invalid OPENAI_BASE_URL %j to OPENAI_API_BASE for route limits',
+    invalidPrimary => {
+      const processEnv = {
+        CLAUDE_CODE_USE_OPENAI: '1',
+        OPENAI_BASE_URL: invalidPrimary,
+        OPENAI_API_BASE: 'https://api.z.ai/api/coding/paas/v4',
+      }
+
+      expect(resolveActiveRouteIdFromEnv(processEnv, {
+        activeProfileProvider: 'zai',
+        activeProfileBaseUrl: 'https://api.z.ai/api/coding/paas/v4',
+      })).toBe('zai')
+      expect(resolveModelRuntimeLimits({
+        model: 'glm-5.3-flash',
+        activeProfileProvider: 'zai',
+        processEnv,
+      })).toEqual({
+        contextWindow: 1_000_000,
+        maxOutputTokens: 131_072,
+      })
+    },
+  )
+
+  it.each([
     'glm-5.3',
     'glm-5.3?reasoning=low',
     'glm-5.3?reasoning=xhigh',
@@ -204,22 +323,43 @@ describe('resolveModelRuntimeLimits', () => {
   })
 
   it.each([
-    ['NVIDIA NIM', 'https://integrate.api.nvidia.com/v1', { NVIDIA_NIM: '1' }],
-    ['OpenRouter', 'https://openrouter.ai/api/v1', { CLAUDE_CODE_USE_OPENAI: '1' }],
-    ['custom endpoint', 'https://proxy.example.test/v1', { CLAUDE_CODE_USE_OPENAI: '1' }],
-  ] as const)('does not leak direct Z.AI GLM-5.3 limits onto %s', (_name, baseUrl, routeEnv) => {
+    ['NVIDIA NIM', 'https://integrate.api.nvidia.com/v1', { CLAUDE_CODE_USE_OPENAI: '1', NVIDIA_NIM: '1' }, 'nvidia-nim'],
+    ['OpenRouter', 'https://openrouter.ai/api/v1', { CLAUDE_CODE_USE_OPENAI: '1' }, 'openrouter'],
+    ['custom endpoint', 'https://proxy.example.test/v1', { CLAUDE_CODE_USE_OPENAI: '1' }, 'custom'],
+  ] as const)('does not leak direct Z.AI GLM-5.3-Flash limits onto %s', (_name, baseUrl, routeEnv, expectedRoute) => {
+    const processEnv = {
+      ...routeEnv,
+      OPENAI_BASE_URL: baseUrl,
+    }
+    expect(resolveActiveRouteIdFromEnv(processEnv)).toBe(expectedRoute)
     expect(resolveModelRuntimeLimits({
-      model: 'glm-5.3',
-      processEnv: {
-        ...routeEnv,
-        OPENAI_BASE_URL: baseUrl,
-      },
+      model: 'glm-5.3-flash',
+      processEnv,
     })).toEqual({
       contextWindow: undefined,
       maxOutputTokens: undefined,
     })
   })
-  it('uses the applied provider profile route before generic custom base URL fallback', () => {
+
+  it.each([
+    ['NVIDIA NIM', 'https://integrate.api.nvidia.com/v1', { CLAUDE_CODE_USE_OPENAI: '1', NVIDIA_NIM: '1' }, 'nvidia-nim'],
+    ['OpenRouter', 'https://openrouter.ai/api/v1', { CLAUDE_CODE_USE_OPENAI: '1' }, 'openrouter'],
+    ['custom endpoint', 'https://proxy.example.test/v1', { CLAUDE_CODE_USE_OPENAI: '1' }, 'custom'],
+  ] as const)('does not leak direct Z.AI GLM-5.3 limits onto %s', (_name, baseUrl, routeEnv, expectedRoute) => {
+    const processEnv = {
+      ...routeEnv,
+      OPENAI_BASE_URL: baseUrl,
+    }
+    expect(resolveActiveRouteIdFromEnv(processEnv)).toBe(expectedRoute)
+    expect(resolveModelRuntimeLimits({
+      model: 'glm-5.3',
+      processEnv,
+    })).toEqual({
+      contextWindow: undefined,
+      maxOutputTokens: undefined,
+    })
+  })
+  it('uses generic limits when an explicit custom URL overrides the applied profile route', () => {
     expect(
       resolveModelRuntimeLimits({
         model: 'kimi-k2.6',
@@ -230,7 +370,7 @@ describe('resolveModelRuntimeLimits', () => {
           OPENAI_BASE_URL: 'https://proxy.example.test/v1',
         },
       }),
-    ).toEqual({ contextWindow: 262_144, maxOutputTokens: 65_536 })
+    ).toEqual({ contextWindow: 262_144, maxOutputTokens: 32_768 })
   })
 
   it('preserves composite provider paths before generic last-segment fallbacks', () => {
@@ -296,6 +436,123 @@ describe('resolveModelRuntimeLimits', () => {
           },
         }).contextWindow,
       ).toBe(2_000_000)
+    })
+  })
+
+  it.each([128_000, 200_000])(
+    'keeps a gateway-advertised %i window for a globally larger known model',
+    async advertised => {
+      // User-reported path: OmniRoute + GPT-5.6 Sol ("gpt sol"), whose gateway
+      // advertised a smaller window than the known descriptor. An advertised
+      // `context_length` is indistinguishable from a real per-deployment cap, so
+      // discovery stays authoritative — budgeting past the endpoint's real limit
+      // would trade an early compact for a mid-session API failure. 128k is
+      // covered explicitly because it is the value gateways most often report as
+      // a flat default.
+      await withTempConfigDir(async () => {
+        const baseUrl = 'http://localhost:20128/v1'
+        await setCachedModels(
+          getDiscoveryCacheKey('custom', {
+            baseUrl,
+          }),
+          {
+            models: [
+              {
+                id: 'gpt-5.6-sol',
+                apiName: 'gpt-5.6-sol',
+                label: 'gpt-5.6-sol',
+                contextWindow: advertised,
+              },
+            ],
+          },
+        )
+
+        expect(
+          resolveModelRuntimeLimits({
+            model: 'gpt-5.6-sol',
+            processEnv: {
+              CLAUDE_CODE_USE_OPENAI: '1',
+              OPENAI_BASE_URL: baseUrl,
+            },
+          }).contextWindow,
+        ).toBe(advertised)
+      })
+    },
+  )
+
+  it('lets an exact env override beat a wrong discovery-cache context window', async () => {
+    await withTempConfigDir(async () => {
+      const baseUrl = 'http://localhost:20128/v1'
+      await setCachedModels(
+        getDiscoveryCacheKey('custom', {
+          baseUrl,
+        }),
+        {
+          models: [
+            {
+              id: 'my-codex-combo',
+              apiName: 'my-codex-combo',
+              label: 'my-codex-combo',
+              contextWindow: 128_000,
+            },
+          ],
+        },
+      )
+
+      expect(
+        resolveModelRuntimeLimits({
+          model: 'my-codex-combo',
+          processEnv: {
+            CLAUDE_CODE_USE_OPENAI: '1',
+            OPENAI_BASE_URL: baseUrl,
+            CLAUDE_CODE_OPENAI_CONTEXT_WINDOWS: JSON.stringify({
+              'my-codex-combo': 1_000_000,
+            }),
+          },
+        }).contextWindow,
+      ).toBe(1_000_000)
+    })
+  })
+
+  it('lets env prefix overrides beat discovery for both context and max-output limits', async () => {
+    // CodeRabbit on #2082: exact-key and settings.modelLimits vs discovery are
+    // covered, but not CLAUDE_CODE_OPENAI_* prefix keys. A prefix pin is the
+    // documented way to cover a family of gateway model ids without listing
+    // each one, and must sit above the discovery cache for both limits.
+    await withTempConfigDir(async () => {
+      const baseUrl = 'http://localhost:20128/v1'
+      await setCachedModels(
+        getDiscoveryCacheKey('custom', {
+          baseUrl,
+        }),
+        {
+          models: [
+            {
+              id: 'my-codex-combo-v2',
+              apiName: 'my-codex-combo-v2',
+              label: 'my-codex-combo-v2',
+              contextWindow: 128_000,
+              maxOutputTokens: 8_192,
+            },
+          ],
+        },
+      )
+
+      expect(
+        resolveModelRuntimeLimits({
+          model: 'my-codex-combo-v2',
+          processEnv: {
+            CLAUDE_CODE_USE_OPENAI: '1',
+            OPENAI_BASE_URL: baseUrl,
+            CLAUDE_CODE_OPENAI_CONTEXT_WINDOWS: JSON.stringify({
+              'my-codex-combo': 1_000_000,
+            }),
+            CLAUDE_CODE_OPENAI_MAX_OUTPUT_TOKENS: JSON.stringify({
+              'my-codex-combo': 32_768,
+            }),
+          },
+        }),
+      ).toEqual({ contextWindow: 1_000_000, maxOutputTokens: 32_768 })
     })
   })
 })
@@ -435,6 +692,42 @@ describe('resolveOpenAIShimRuntimeContext - Z.A.I GLM-5.3', () => {
     expect(result.openaiShimConfig.maxTokensField).toBe('max_tokens')
     expect(result.openaiShimConfig.removeBodyFields).toContain('store')
     expect(result.openaiShimConfig.enableToolStreaming).toBe(true)
+  })
+})
+
+describe('resolveOpenAIShimRuntimeContext - Z.A.I GLM-5.3-Flash', () => {
+  it.each([
+    'glm-5.3-flash',
+    'glm-5.3-flash?reasoning=xhigh',
+    'glm-5.3-flash?thinking=disabled',
+  ])('uses the explicit direct-route GLM-5.3-Flash contract for %s', model => {
+    const result = resolveOpenAIShimRuntimeContext({
+      model,
+      baseUrl: 'https://api.z.ai/api/coding/paas/v4',
+      processEnv: {},
+    })
+
+    expect(result.routeId).toBe('zai')
+    expect(result.catalogEntry?.id).toBe('glm-5.3-flash')
+    expect(result.openaiShimConfig.thinkingRequestFormat).toBe('zai-compatible')
+    expect(result.openaiShimConfig.preserveReasoningContent).toBe(true)
+    expect(result.openaiShimConfig.requireReasoningContentOnAssistantMessages).toBe(true)
+    expect(result.openaiShimConfig.maxTokensField).toBe('max_tokens')
+    expect(result.openaiShimConfig.removeBodyFields).toContain('store')
+    expect(result.openaiShimConfig.enableToolStreaming).toBe(true)
+  })
+
+  it('does not apply the Coding Plan catalog entry on the same-host general endpoint', () => {
+    const result = resolveOpenAIShimRuntimeContext({
+      model: 'glm-5.3-flash',
+      baseUrl: 'https://api.z.ai/api/paas/v4',
+      activeProfileProvider: 'zai',
+      processEnv: { CLAUDE_CODE_USE_OPENAI: '1' },
+    })
+
+    expect(result.routeId).toBe('custom')
+    expect(result.catalogEntry).toBeNull()
+    expect(result.openaiShimConfig.enableToolStreaming).toBe(false)
   })
 })
 
@@ -960,6 +1253,32 @@ describe('resolveOpenAIShimRuntimeContext - xAI catalog metadata', () => {
 })
 
 describe('resolveOpenAIShimRuntimeContext - provider override route preference', () => {
+  it('uses the resolved request route for provider-override runtime limits', () => {
+    const processEnv = {
+      ANTHROPIC_BASE_URL: 'https://api.anthropic.com',
+      ANTHROPIC_MODEL: 'claude-sonnet-4-6',
+    }
+
+    expect(resolveModelRuntimeLimits({
+      model: 'glm-5.3-flash',
+      baseUrl: 'https://api.z.ai/api/coding/paas/v4',
+      resolvedRouteId: 'zai',
+      processEnv,
+    })).toEqual({
+      contextWindow: 1_000_000,
+      maxOutputTokens: 131_072,
+    })
+    expect(resolveModelRuntimeLimits({
+      model: 'glm-5.3-flash',
+      baseUrl: 'https://custom.example.test/v1',
+      resolvedRouteId: null,
+      processEnv,
+    })).toEqual({
+      contextWindow: undefined,
+      maxOutputTokens: undefined,
+    })
+  })
+
   it('does not inherit ambient route config when the preferred base URL is unrecognized', () => {
     const result = resolveOpenAIShimRuntimeContext({
       model: 'gpt-4o',

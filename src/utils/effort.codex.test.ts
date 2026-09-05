@@ -158,6 +158,8 @@ async function importFreshEffortModule(options: {
       effort.modelSupportsEffort(model, reasoningContext),
     modelSupportsWireEffort: (model: string) =>
       effort.modelSupportsWireEffort(model, reasoningContext),
+    modelSupportsXHighEffort: (model: string) =>
+      effort.modelSupportsXHighEffort(model, reasoningContext),
     getAvailableEffortLevels: (model: string) =>
       effort.getAvailableEffortLevels(model, reasoningContext),
     modelUsesOpenAIEffort: (model: string) =>
@@ -1516,7 +1518,10 @@ test('compat Z.AI routes expose only verified levels and clamp stale values', as
   expect(resolveAppliedEffort('GLM-5.1', 'xhigh')).toBe('high')
 })
 
-test('direct Z.AI GLM-5.3 resolves effort from explicit catalog metadata', async () => {
+test.each([
+  'glm-5.3-flash',
+  'glm-5.3',
+] as const)('direct Z.AI %s resolves effort from explicit catalog metadata', async model => {
   const {
     getAvailableEffortLevels,
     resolveAppliedEffort,
@@ -1527,7 +1532,7 @@ test('direct Z.AI GLM-5.3 resolves effort from explicit catalog metadata', async
     routeId: 'zai',
   })
 
-  expect(resolveModelReasoningControl('glm-5.3')).toMatchObject({
+  expect(resolveModelReasoningControl(model)).toMatchObject({
     supportsReasoning: true,
     controllable: true,
     source: 'metadata',
@@ -1536,9 +1541,9 @@ test('direct Z.AI GLM-5.3 resolves effort from explicit catalog metadata', async
     defaultLevel: undefined,
     wireFormat: 'zai_compatible',
   })
-  expect(getAvailableEffortLevels('glm-5.3')).toEqual(['low', 'high', 'xhigh'])
-  expect(resolveAppliedEffort('glm-5.3', 'low')).toBe('low')
-  expect(resolveAppliedEffort('glm-5.3', 'xhigh')).toBe('xhigh')
+  expect(getAvailableEffortLevels(model)).toEqual(['low', 'high', 'xhigh'])
+  expect(resolveAppliedEffort(model, 'low')).toBe('low')
+  expect(resolveAppliedEffort(model, 'xhigh')).toBe('xhigh')
 })
 
 test('provider override support context ignores ambient catalog metadata', async () => {

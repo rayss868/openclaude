@@ -81,6 +81,17 @@ export function normalizeComparableBaseUrl(
   }
 }
 
+const ZAI_CODING_PLAN_BASE_URL = 'https://api.z.ai/api/coding/paas/v4'
+
+export function isCanonicalZaiCodingPlanBaseUrl(
+  value: string | undefined,
+): boolean {
+  return (
+    normalizeComparableBaseUrl(value) ===
+    normalizeComparableBaseUrl(ZAI_CODING_PLAN_BASE_URL)
+  )
+}
+
 function normalizeHost(
   baseUrl?: string,
 ): string | null {
@@ -1332,6 +1343,9 @@ function profileRouteHonorsBaseUrlBoundary(
   if (routeId === 'llmtr') {
     return isCanonicalLlmtrInferenceBaseUrl(baseUrl)
   }
+  if (routeId === 'zai') {
+    return !baseUrl || isCanonicalZaiCodingPlanBaseUrl(baseUrl)
+  }
   return true
 }
 
@@ -1361,12 +1375,13 @@ export function resolveActiveRouteIdFromEnv(
   // A Bearer token explicitly selects the custom Anthropic proxy contract,
   // even if the host also belongs to a known OpenAI-compatible route. Keep
   // native x-api-key configurations on those known routes for compatibility.
-  const knownAnthropicRoute = resolveRouteIdFromBaseUrl(
-    processEnv.ANTHROPIC_BASE_URL,
-  )
+  const anthropicBaseUrl = hasNonEmptyEnvValue(processEnv.ANTHROPIC_BASE_URL)
+    ? processEnv.ANTHROPIC_BASE_URL
+    : undefined
+  const knownAnthropicRoute = resolveRouteIdFromBaseUrl(anthropicBaseUrl)
   if (
     !isEnvTruthy(processEnv.CLAUDE_CODE_USE_OPENAI) &&
-    hasNonEmptyEnvValue(processEnv.ANTHROPIC_BASE_URL) &&
+    anthropicBaseUrl &&
     hasNonEmptyEnvValue(processEnv.ANTHROPIC_MODEL) &&
     (hasNonEmptyEnvValue(processEnv.ANTHROPIC_AUTH_TOKEN) ||
       hasNonEmptyEnvValue(processEnv.ANTHROPIC_API_KEY)) &&
@@ -1382,15 +1397,19 @@ export function resolveActiveRouteIdFromEnv(
   if (envOnlyRouteId) return envOnlyRouteId
 
   if (isEnvTruthy(processEnv.CLAUDE_CODE_USE_OPENAI)) {
-    const baseUrl =
-      processEnv.OPENAI_BASE_URL ?? processEnv.OPENAI_API_BASE
+    const baseUrl = hasNonEmptyEnvValue(processEnv.OPENAI_BASE_URL)
+      ? processEnv.OPENAI_BASE_URL
+      : hasNonEmptyEnvValue(processEnv.OPENAI_API_BASE)
+        ? processEnv.OPENAI_API_BASE
+        : undefined
+    const hasExplicitBaseUrl = baseUrl !== undefined
     const matchedRoute = resolveRouteIdFromBaseUrl(baseUrl)
 
     if (matchedRoute) {
       return matchedRoute
     }
 
-    if (options?.activeProfileProvider) {
+    if (!hasExplicitBaseUrl && options?.activeProfileProvider) {
       const route = resolveProfileRoute(options.activeProfileProvider)
       if (
         route.routeId !== 'unknown-fallback' &&
@@ -1425,7 +1444,7 @@ export function resolveActiveRouteIdFromEnv(
     return 'custom'
   }
 
-  if (options?.activeProfileProvider) {
+  if (!anthropicBaseUrl && options?.activeProfileProvider) {
     const route = resolveProfileRoute(options.activeProfileProvider)
     if (
       route.routeId !== 'unknown-fallback' &&
