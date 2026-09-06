@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { mkdtemp, rm, writeFile } from 'fs/promises'
+import { tmpdir } from 'os'
+import { join } from 'path'
 
 import {
   acquireSharedMutationLock,
@@ -53,6 +56,8 @@ function createToolUseContext(
     getAppState: () => ({
       toolPermissionContext: getEmptyToolPermissionContext(),
     }),
+    readFileState: new Map(),
+    nestedMemoryAttachmentTriggers: new Set(),
   } as unknown as ToolUseContext
 }
 
@@ -122,5 +127,52 @@ describe('FileReadTool.validateInput — vision gate (issue #1421)', () => {
     )
 
     expect(result).toMatchObject({ result: true })
+  })
+})
+
+describe('FileReadTool.call — vision payload', () => {
+  test('returns image content in newMessages for the next model turn', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'openclaude-vision-test-'))
+    const imagePath = join(directory, 'fixture.png')
+    const image = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      'base64',
+    )
+
+    try {
+      await writeFile(imagePath, image)
+      const result = await FileReadTool.call(
+        { file_path: imagePath },
+        createToolUseContext('claude-opus-4-8'),
+      )
+
+      if (result.data.type !== 'image') {
+        throw new Error('Expected image tool result')
+      }
+
+      expect(result.data.file.type).toBe('image/png')
+      expect(result.data.file.base64).toBeTruthy()
+      expect(result.newMessages).toHaveLength(1)
+      expect(result.newMessages?.[0].message.content).toMatch(
+        /Image saved to temporary location:/,
+      )
+
+      const toolResult = FileReadTool.mapToolResultToToolResultBlockParam(
+        result.data,
+        'toolu_image_test',
+      )
+      expect(toolResult.content).toEqual([
+        {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: 'image/png',
+            data: result.data.file.base64,
+          },
+        },
+      ])
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 })

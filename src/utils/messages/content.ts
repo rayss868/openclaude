@@ -108,7 +108,20 @@ export function textForResubmit(
   msg: UserMessage,
 ): { text: string; mode: 'bash' | 'prompt' } | null {
   const content = getUserMessageText(msg)
-  if (content === null) return null
+  if (content === null) {
+    if (Array.isArray(msg.message.content)) {
+      const imageCount = msg.message.content.filter(block => block.type === 'image').length
+      if (imageCount > 0) {
+        return {
+          text: Array.from({ length: imageCount }, (_, index) =>
+            `[Image #${msg.imagePasteIds?.[index] ?? index + 1}]`,
+          ).join(' '),
+          mode: 'prompt',
+        }
+      }
+    }
+    return null
+  }
   const bash = extractTag(content, 'bash-input')
   if (bash) return { text: bash, mode: 'bash' }
   const cmd = extractTag(content, COMMAND_NAME_TAG)

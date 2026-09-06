@@ -52,6 +52,26 @@ test('Rewind preview keeps a large-paste reference before an image', () => {
   ).toBe('[Pasted text #1 +120 lines]')
 })
 
+test('textForResubmit preserves an image-only prompt for rewind', () => {
+  const message = {
+    type: 'user',
+    message: {
+      role: 'user',
+      content: [
+        {
+          type: 'image',
+          source: { type: 'base64', media_type: 'image/png', data: 'ZmFrZQ==' },
+        },
+      ],
+    },
+  } as never
+
+  expect(textForResubmit(message)).toEqual({
+    text: '[Image #1]',
+    mode: 'prompt',
+  })
+})
+
 test('textForResubmit extracts bash-input commands', () => {
   const message = userMessage('<bash-input>git status</bash-input>')
 

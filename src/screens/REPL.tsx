@@ -3090,7 +3090,7 @@ export function REPL({
             includeSnipped: true
           }), newMessage]);
         } else {
-          setMessages(() => [newMessage]);
+          setMessages(old => [...old, newMessage]);
         }
         // Bump conversationId so Messages.tsx row keys change and
         // stale memoized rows remount with post-compact content.

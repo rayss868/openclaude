@@ -68,6 +68,17 @@ test('preserves printable Unicode CSI-u input with explicit modifier 0', () => {
   expect(event.key.super).toBe(false)
 })
 
+test('parses CSI-u Shift+Enter (13;2u) as return with shift, not plain enter', () => {
+  const shiftEnter = parseInputEvent('\x1b[13;2u')
+  const plainEnter = parseInputEvent('\r')
+
+  expect(shiftEnter.keypress.name).toBe('return')
+  expect(shiftEnter.key.shift).toBe(true)
+
+  expect(plainEnter.keypress.name).toBe('return')
+  expect(plainEnter.key.shift).toBe(false)
+})
+
 test('preserves Vietnamese UTF-8 input split across stdin chunks', () => {
   const events = parseInputEventsFromByteChunks('tiếng Việt')
 

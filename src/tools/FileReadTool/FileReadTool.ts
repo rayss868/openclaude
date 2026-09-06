@@ -1018,16 +1018,8 @@ async function callInner(
     context.nestedMemoryAttachmentTriggers?.add(fullFilePath)
 
     return {
-      data: {
-        type: 'text',
-        file: {
-          filePath: file_path,
-          content: metadataText,
-          numLines: 1,
-          startLine: 1,
-          totalLines: 1,
-        },
-      },
+      data: await readImageWithTokenBudget(resolvedFilePath, maxTokens),
+      newMessages: [createUserMessage({ content: metadataText, isMeta: true })],
     }
   }
 

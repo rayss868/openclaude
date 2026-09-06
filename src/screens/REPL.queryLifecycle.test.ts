@@ -32,7 +32,24 @@ function getOnQueryImplBody(): string {
   return source.slice(start, end)
 }
 
+function getCompactBoundaryHandlerBody(): string {
+  const start = source.indexOf('if (isCompactBoundaryMessage(newMessage))')
+  expect(start).toBeGreaterThan(-1)
+  const end = source.indexOf('} else if (newMessage.type ===', start)
+  expect(end).toBeGreaterThan(start)
+  return source.slice(start, end)
+}
+
 describe('REPL query lifecycle timeout logging', () => {
+  test('keeps pre-compaction messages available for rewind after a compact boundary', () => {
+    const body = getCompactBoundaryHandlerBody()
+
+    expect(body).toMatch(
+      /else\s*\{\s*setMessages\(old => \[\.\.\.old, newMessage\]\)/,
+    )
+    expect(body).not.toContain('setMessages(() => [newMessage])')
+  })
+
   test('constructs QueryGuard with resolved hard max config', () => {
     expect(source).toContain(
       "import { getQueryGuardOptionsFromEnv } from '../utils/queryGuardConfig.js'",

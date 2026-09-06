@@ -361,6 +361,9 @@ async function addToPromptHistory(
       : command
 
   const storedPastedContents: Record<number, StoredPastedContent> = {}
+  const pasteCacheDisabled = isEnvTruthy(
+    process.env.CLAUDE_CODE_DISABLE_PASTE_CACHE,
+  )
   if (entry.pastedContents) {
     for (const [id, content] of Object.entries(entry.pastedContents)) {
       // Filter out images (they're stored separately in image-cache)
@@ -368,8 +371,12 @@ async function addToPromptHistory(
         continue
       }
 
-      // For small text content, store inline
-      if (content.content.length <= MAX_PASTED_CONTENT_LENGTH) {
+      // Store inline when the paste cache is disabled so resumed sessions can
+      // still restore large pastes (otherwise the hash reference would dangle)
+      if (
+        content.content.length <= MAX_PASTED_CONTENT_LENGTH ||
+        pasteCacheDisabled
+      ) {
         storedPastedContents[Number(id)] = {
           id: content.id,
           type: content.type,

@@ -323,6 +323,13 @@ export function getSimplePrompt(): string {
           "When using `find -regex` with alternation, put the longest alternative first. Example: use `'.*\\.\\(tsx\\|ts\\)'` not `'.*\\.\\(ts\\|tsx\\)'` — the second form silently skips `.tsx` files.",
         ]
       : []),
+    'Inline scripts (node -e / python -c):',
+    [
+      'NEVER use `node -e` or `python -c` with inline code that contains the `!` character. Bash interprets `!` as history expansion BEFORE passing the string to the interpreter, causing syntax errors. Examples of breaking code: `!!`, `!==`, `!!value`.',
+      'For short one-liners without `!`, inline is fine.',
+      'For complex or multi-line scripts, ALWAYS write the code to a temporary file first using the Write tool, then execute the file (e.g. `node "$TMPDIR/script.mjs"` or `python "$TMPDIR/script.py"`).',
+      'If you must use inline with `!`, prefix with `set +H` to disable history expansion, or use the temp-file approach above.',
+    ],
   ]
 
   return [
