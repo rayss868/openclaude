@@ -1,8 +1,9 @@
 import { expect, test } from 'bun:test'
 import { z } from 'zod/v4'
 import { getEmptyToolPermissionContext, type Tool, type Tools } from '../Tool.js'
+import { FileWriteTool } from '../tools/FileWriteTool/FileWriteTool.js'
 import { SkillTool } from '../tools/SkillTool/SkillTool.js'
-import { toolToAPISchema } from './api.js'
+import { normalizeToolInput, toolToAPISchema } from './api.js'
 
 test('toolToAPISchema preserves provider-specific schema keywords in input_schema', async () => {
   const schema = await toolToAPISchema(
@@ -102,4 +103,43 @@ test('toolToAPISchema removes extra required keys not in properties (MCP schema 
 
   const inputSchema = (schema as { input_schema: { required?: string[] } }).input_schema
   expect(inputSchema.required).toEqual(['name'])
+})
+
+test('normalizeToolInput strips chunk metadata for replace/start FileWrite writes', () => {
+  const replaceInput = normalizeToolInput(FileWriteTool, {
+    file_path: 'a.md',
+    content: 'hello',
+    write_mode: 'replace',
+    write_id: 'some-write-id',
+    chunk_index: 3,
+  } as never)
+  expect(replaceInput).toEqual({ file_path: 'a.md', content: 'hello', write_mode: 'replace' })
+  expect(FileWriteTool.inputSchema.safeParse(replaceInput).success).toBe(true)
+
+  const startInput = normalizeToolInput(FileWriteTool, {
+    file_path: 'a.md',
+    content: 'hello',
+    write_mode: 'start',
+    chunk_index: 0,
+  } as never)
+  expect(startInput).toEqual({ file_path: 'a.md', content: 'hello', write_mode: 'start' })
+  expect(FileWriteTool.inputSchema.safeParse(startInput).success).toBe(true)
+})
+
+test('normalizeToolInput keeps chunk metadata intact for append/finish FileWrite writes', () => {
+  const appendInput = normalizeToolInput(FileWriteTool, {
+    file_path: 'a.md',
+    content: 'more',
+    write_mode: 'append',
+    write_id: 'w-1',
+    chunk_index: 5,
+  } as never)
+  expect(appendInput).toEqual({
+    file_path: 'a.md',
+    content: 'more',
+    write_mode: 'append',
+    write_id: 'w-1',
+    chunk_index: 5,
+  })
+  expect(FileWriteTool.inputSchema.safeParse(appendInput).success).toBe(true)
 })

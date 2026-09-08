@@ -136,12 +136,9 @@ export function usePasteHandler({
         ) => {
           pastePendingRef.current = false
           setPasteState(({ chunks }) => {
-            // Join chunks and filter out orphaned focus sequences
-            // These can appear when focus events split during paste
-            const pastedText = chunks
-              .join('')
-              .replace(/\[I$/, '')
-              .replace(/\[O$/, '')
+            // Join chunks verbatim — pasted text must reach the provider
+            // unmodified, even if it happens to end with `[I` or `[O`
+            const pastedText = chunks.join('')
 
             // Check if the pasted text contains image file paths
             // When dragging multiple images, they may come as:

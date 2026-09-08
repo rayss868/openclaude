@@ -262,7 +262,7 @@ export function LogSelector(t0: LogSelectorProps) {
     t3 = $[0];
   }
   const isResumeWithRenameEnabled = t3;
-  const isDeepSearchEnabled = false;
+  const isDeepSearchEnabled = true;
   const [themeName] = useTheme();
   let t4;
   if ($[1] !== themeName) {
@@ -378,7 +378,7 @@ export function LogSelector(t0: LogSelectorProps) {
   let t16;
   if ($[14] !== deferredSearchQuery) {
     t15 = () => {
-      if (!deferredSearchQuery) {
+      if (!deferredSearchQuery || !isDeepSearchEnabled) {
         setDebouncedDeepSearchQuery("");
         return;
       }
@@ -533,11 +533,11 @@ export function LogSelector(t0: LogSelectorProps) {
   let t24;
   if ($[42] !== debouncedDeepSearchQuery || $[43] !== deferredSearchQuery) {
     t23 = () => {
-      if (false && deferredSearchQuery && deferredSearchQuery !== debouncedDeepSearchQuery) {
+      if (deferredSearchQuery && deferredSearchQuery !== debouncedDeepSearchQuery) {
         setIsSearching(true);
       }
     };
-    t24 = [deferredSearchQuery, debouncedDeepSearchQuery, false];
+    t24 = [deferredSearchQuery, debouncedDeepSearchQuery];
     $[42] = debouncedDeepSearchQuery;
     $[43] = deferredSearchQuery;
     $[44] = t23;
@@ -551,17 +551,23 @@ export function LogSelector(t0: LogSelectorProps) {
   let t26;
   if ($[46] !== debouncedDeepSearchQuery) {
     t25 = () => {
-      if (true || !debouncedDeepSearchQuery || true) {
+      if (!debouncedDeepSearchQuery) {
         setDeepSearchResults(null);
         setIsSearching(false);
         return;
       }
-      const timeoutId_0 = setTimeout(_temp5, 0, null, debouncedDeepSearchQuery, setDeepSearchResults, setIsSearching);
+      const fuseData = Array.from(searchableTextByLog.entries()).map(([log, text]) => ({ log, searchableText: text }));
+      const fuseIdx = new Fuse(fuseData, {
+        keys: ["searchableText"],
+        threshold: FUSE_THRESHOLD,
+        includeScore: true,
+      });
+      const timeoutId_0 = setTimeout(_temp5, 0, fuseIdx, debouncedDeepSearchQuery, setDeepSearchResults, setIsSearching);
       return () => {
         clearTimeout(timeoutId_0);
       };
     };
-    t26 = [debouncedDeepSearchQuery, null, false];
+    t26 = [debouncedDeepSearchQuery, searchableTextByLog];
     $[46] = debouncedDeepSearchQuery;
     $[47] = t25;
     $[48] = t26;

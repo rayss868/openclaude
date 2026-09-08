@@ -16,6 +16,7 @@ import { TaskCompleteTool } from '../../tools/TaskCompleteTool/TaskCompleteTool.
 import { BASH_TOOL_NAME } from '../../tools/BashTool/toolName.js'
 import { FILE_EDIT_TOOL_NAME } from '../../tools/FileEditTool/constants.js'
 import { FILE_WRITE_TOOL_NAME } from '../../tools/FileWriteTool/constants.js'
+import { FileWriteTool } from '../../tools/FileWriteTool/FileWriteTool.js'
 import { NOTEBOOK_EDIT_TOOL_NAME } from '../../tools/NotebookEditTool/constants.js'
 import { AbortError } from '../../utils/errors.js'
 import { CANCEL_MESSAGE, createAssistantMessage } from '../../utils/messages.js'
@@ -950,5 +951,44 @@ describe('normalizeToolInputForValidation', () => {
         },
       ],
     })
+  })
+
+  test('FileWrite strips chunk metadata for replace/start writes', () => {
+    const replaceInput = normalizeToolInputForValidation(FileWriteTool, {
+      file_path: 'a.md',
+      content: 'hello',
+      write_mode: 'replace',
+      write_id: 'some-write-id',
+      chunk_index: 3,
+    })
+    expect(replaceInput).toEqual({ file_path: 'a.md', content: 'hello', write_mode: 'replace' })
+    expect(FileWriteTool.inputSchema.safeParse(replaceInput).success).toBe(true)
+
+    const startInput = normalizeToolInputForValidation(FileWriteTool, {
+      file_path: 'a.md',
+      content: 'hello',
+      write_mode: 'start',
+      chunk_index: 0,
+    })
+    expect(startInput).toEqual({ file_path: 'a.md', content: 'hello', write_mode: 'start' })
+    expect(FileWriteTool.inputSchema.safeParse(startInput).success).toBe(true)
+  })
+
+  test('FileWrite keeps chunk metadata intact for append/finish writes', () => {
+    const appendInput = normalizeToolInputForValidation(FileWriteTool, {
+      file_path: 'a.md',
+      content: 'more',
+      write_mode: 'append',
+      write_id: 'w-1',
+      chunk_index: 5,
+    })
+    expect(appendInput).toEqual({
+      file_path: 'a.md',
+      content: 'more',
+      write_mode: 'append',
+      write_id: 'w-1',
+      chunk_index: 5,
+    })
+    expect(FileWriteTool.inputSchema.safeParse(appendInput).success).toBe(true)
   })
 })

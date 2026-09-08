@@ -716,6 +716,17 @@ export function normalizeToolInput<T extends Tool>(
       } as z.infer<T['inputSchema']>
     }
     case FileWriteTool.name: {
+      // Some OpenAI-compatible LLMs (e.g. gpt-5.6-luna) attach chunked-write
+      // metadata (write_id/chunk_index) even for a plain "replace"/"start" write,
+      // which the schema rejects — cascading into a "Error writing file"
+      // toolFailureLoop. Those fields are meaningless outside append, so drop
+      // them before zod validation.
+      const rawInput = input as Record<string, unknown>
+      if (rawInput.write_mode === 'replace' || rawInput.write_mode === 'start') {
+        const { write_id, chunk_index, ...rest } = rawInput
+        input = rest as z.infer<T['inputSchema']>
+      }
+
       // Validated upstream, won't throw
       const parsedInput = FileWriteTool.inputSchema.parse(input)
 

@@ -15,6 +15,7 @@ import {
 } from '../../skills/loadSkillsDir.js'
 import type { ToolUseContext } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
+import { getUserContext } from '../../context.js'
 import { getCwd } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { countLinesChanged, getPatchForDisplay } from '../../utils/diff.js'
@@ -34,6 +35,7 @@ import {
 } from '../../utils/gitDiff.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { logError } from '../../utils/log.js'
+import { resetGetMemoryFilesCache } from '../../utils/claudemd.js'
 import { expandPath } from '../../utils/path.js'
 import {
   checkWritePermissionForTool,
@@ -118,7 +120,15 @@ export const inputSchema = lazySchema(() =>
         if (value.write_id !== undefined || value.chunk_index !== undefined) {
           ctx.addIssue({
             code: 'custom',
-            message: `write_id and chunk_index are only valid for append mode`,
+            message:
+              `write_id and chunk_index are only valid for append mode. ` +
+              `To fix: for write_mode "replace" or "start", omit write_id and ` +
+              `chunk_index entirely — send only file_path, write_mode, and ` +
+              `content. Chunked writes are only needed for content larger than ` +
+              `${MAX_FILE_WRITE_CHUNK_CHARS} characters; in that case use ` +
+              `write_mode "start" (no write_id/chunk_index), then repeated ` +
+              `"append" calls with write_id and chunk_index 0, 1, 2, ..., then ` +
+              `"finish".`,
           })
         }
       } else {
@@ -284,6 +294,11 @@ async function runFinalizedWriteEffects({
 
   if (filePath.endsWith(`${sep}AGENTS.md`) || filePath.endsWith(`${sep}CLAUDE.md`)) {
     logEvent('tengu_write_claudemd', {})
+    // Invalidate the memoized instruction-file discovery and the cached user
+    // context so freshly written AGENTS.md/CLAUDE.md content is picked up on
+    // the next turn without requiring /clear or a session restart.
+    resetGetMemoryFilesCache('session_start')
+    getUserContext.cache?.clear?.()
   }
 
   if (compactOnly) {

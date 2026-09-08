@@ -13,11 +13,13 @@ import {
 } from '../../skills/loadSkillsDir.js'
 import type { ToolUseContext } from '../../Tool.js'
 import { buildTool, type ToolDef } from '../../Tool.js'
+import { getUserContext } from '../../context.js'
 import { getCwd } from '../../utils/cwd.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { countLinesChanged } from '../../utils/diff.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { isENOENT } from '../../utils/errors.js'
+import { resetGetMemoryFilesCache } from '../../utils/claudemd.js'
 import {
   FILE_NOT_FOUND_CWD_NOTE,
   findSimilarFile,
@@ -530,6 +532,11 @@ export const FileEditTool = buildTool({
       absoluteFilePath.endsWith(`${sep}CLAUDE.md`)
     ) {
       logEvent('tengu_write_claudemd', {})
+      // Invalidate the memoized instruction-file discovery and the cached user
+      // context so freshly edited AGENTS.md/CLAUDE.md content is picked up on
+      // the next turn without requiring /clear or a session restart.
+      resetGetMemoryFilesCache('session_start')
+      getUserContext.cache?.clear?.()
     }
     countLinesChanged(patch)
 

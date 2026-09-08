@@ -77,11 +77,39 @@ test('finish rejects content and replace rejects chunk metadata', () => {
       content: 'unexpected',
     }).success,
   ).toBe(false)
-  expect(
-    inputSchema().safeParse({
-      file_path: filePath,
-      content: 'replace',
-      write_id: 'write-1',
-    }).success,
-  ).toBe(false)
+
+  // replace mode rejects chunk metadata at the schema level; the stripping
+  // happens earlier in normalizeToolInputForValidation
+  const result = inputSchema().safeParse({
+    file_path: filePath,
+    content: 'new content',
+    write_id: 'write-1',
+  })
+  expect(result.success).toBe(false)
+})
+
+test('replace with chunk metadata is rejected by the schema', () => {
+  const result = inputSchema().safeParse({
+    file_path: filePath,
+    content: 'new content',
+    chunk_index: 0,
+  })
+
+  expect(result.success).toBe(false)
+  if (!result.success) {
+    const message = result.error.issues.map(i => i.message).join(' ')
+    expect(message).toContain('only valid for append mode')
+  }
+})
+
+test('start mode rejects chunk metadata at the schema level', () => {
+  const result = inputSchema().safeParse({
+    file_path: filePath,
+    write_mode: 'start',
+    content: 'first chunk',
+    write_id: 'some-id',
+    chunk_index: 0,
+  })
+
+  expect(result.success).toBe(false)
 })

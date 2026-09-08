@@ -779,6 +779,20 @@ export function normalizeToolInputForValidation(
     return {}
   }
 
+  if (tool.name === FILE_WRITE_TOOL_NAME) {
+    // Some OpenAI-compatible LLMs (e.g. gpt-5.6-luna) attach chunked-write
+    // metadata (write_id/chunk_index) even for a plain "replace"/"start" write,
+    // which the schema rejects — cascading into a "Error writing file"
+    // toolFailureLoop. Those fields are meaningless outside append, so drop
+    // them before zod validation.
+    const writeMode = input.write_mode
+    if (writeMode === 'replace' || writeMode === 'start') {
+      const { write_id, chunk_index, ...rest } = input
+      return rest
+    }
+    return input
+  }
+
   if (tool.name !== ASK_USER_QUESTION_TOOL_NAME) {
     return input
   }
