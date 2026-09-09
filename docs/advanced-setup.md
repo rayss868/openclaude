@@ -273,6 +273,8 @@ openclaude
 
 OpenCode Go is a $10/mo subscription for 13 open models (GLM, Kimi, DeepSeek,
 MiMo, MiniMax, Qwen). Uses the same `OPENCODE_API_KEY` as OpenCode Zen.
+OpenClaude automatically sends the session and product identity headers that
+OpenCode Go requires for prompt caching and traffic attribution.
 
 ### Gitlawb Opengateway
 
@@ -491,6 +493,12 @@ Model env vars are provider-scoped: first-party Anthropic sessions read
 `ANTHROPIC_MODEL`, OpenAI-compatible sessions read `OPENAI_MODEL`, Gemini reads
 `GEMINI_MODEL`, and Mistral reads `MISTRAL_MODEL`. For manual Bedrock, Vertex,
 or Foundry launches, select the model with `--model`.
+
+An OpenAI-compatible provider profile's maximum context length applies to every
+model in its configured list and the supported saved `/model` selection restored
+for that profile. Query options such as `?reasoning=high` or `?thinking=disabled`
+remain in the selected model, but context-limit keys use the model name before
+`?`. For example, `gpt-5.4?reasoning=high` uses the `gpt-5.4` context limit.
 
 ### Per-model limit overrides (`settings.json`)
 
