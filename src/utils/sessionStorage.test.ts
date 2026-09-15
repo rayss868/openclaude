@@ -21,6 +21,7 @@ import {
   recordGoalState,
   recordTranscript,
   flushSessionStorage,
+  readLogFileTextForSearch,
   resetProjectForTesting,
   resetSessionFilePointer,
   setSessionFileForTesting,
@@ -36,7 +37,7 @@ import {
   switchSession,
 } from '../bootstrap/state.js'
 import type { GoalState } from '../services/goal/types.js'
-import type { SessionBranchEntry } from '../types/logs.js'
+import type { LogOption, SessionBranchEntry } from '../types/logs.js'
 import {
   getClaudeConfigHomeDir,
   setClaudeConfigHomeDirForTesting,
@@ -898,4 +899,124 @@ test('recurring heartbeat progress types are ephemeral', () => {
   expect(isEphemeralToolProgress('waiting_for_task')).toBe(true)
   expect(isEphemeralToolProgress('agent_progress')).toBe(false)
   expect(isEphemeralToolProgress(undefined)).toBe(false)
+})
+
+test('readLogFileTextForSearch finds content in head and tail of a lite log file', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'openclaude-session-storage-'))
+  tempDirs.push(dir)
+  const filePath = join(dir, 'session.jsonl')
+  await writeFile(
+    filePath,
+    `${JSON.stringify(user(id(90), null, 'deploy the rate limiter now'))}\n` +
+      `${JSON.stringify(assistant(id(91), id(90), 'I will add the limiter.'))}\n` +
+      `${JSON.stringify({
+        ...assistant(id(92), id(91), 'beta keyword in the middle here'),
+        sessionId,
+      })}\n` +
+      `${JSON.stringify(user(id(93), id(92), 'final tail message anchor'))}\n`,
+  )
+
+  const log: LogOption = {
+    date: ts,
+    messages: [],
+    fullPath: filePath,
+    value: 0,
+    created: new Date(ts),
+    modified: new Date(ts),
+    firstPrompt: 'some title',
+    messageCount: 0,
+    isSidechain: false,
+    sessionId,
+  }
+
+  expect(await readLogFileTextForSearch(log)).toContain(
+    'deploy the rate limiter now',
+  )
+  expect(await readLogFileTextForSearch(log)).toContain(
+    'final tail message anchor',
+  )
+  expect(await readLogFileTextForSearch(log)).toContain('beta keyword')
+})
+
+test('readLogFileTextForSearch returns empty string for missing file', async () => {
+  const log: LogOption = {
+    date: ts,
+    messages: [],
+    fullPath: join(tmpdir(), 'openclaude-does-not-exist.jsonl'),
+    value: 0,
+    created: new Date(ts),
+    modified: new Date(ts),
+    firstPrompt: '',
+    messageCount: 0,
+    isSidechain: false,
+  }
+  expect(await readLogFileTextForSearch(log)).toBe('')
+})
+
+test('readLogFileTextForSearch samples middle windows of a large file', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'openclaude-session-storage-'))
+  tempDirs.push(dir)
+  const filePath = join(dir, 'large-session.jsonl')
+
+  // Build a file well beyond head+tail windows (16KB + 32KB) with many
+  // realistic-sized lines, so the keyword in the middle can only be found
+  // by the evenly spaced middle sampling windows.
+  const lines: string[] = []
+  for (let i = 0; i < 400; i++) {
+    lines.push(
+      JSON.stringify({
+        type: 'assistant',
+        content: `conversation filler message number ${i} discussing progress`,
+      }),
+    )
+  }
+  const middleAnchor = 'unique-middle-anchor-keyword'
+  lines.push(JSON.stringify({ type: 'user', content: middleAnchor }))
+  for (let i = 0; i < 400; i++) {
+    lines.push(
+      JSON.stringify({
+        type: 'assistant',
+        content: `later conversation filler number ${i} wrapping things up`,
+      }),
+    )
+  }
+  await writeFile(filePath, lines.join('\n'))
+
+  const log: LogOption = {
+    date: ts,
+    messages: [],
+    fullPath: filePath,
+    value: 0,
+    created: new Date(ts),
+    modified: new Date(ts),
+    firstPrompt: '',
+    messageCount: 0,
+    isSidechain: false,
+    sessionId,
+  }
+
+  const text = await readLogFileTextForSearch(log)
+  expect(text).toContain('unique-middle-anchor-keyword')
+})
+
+test('readLogFileTextForSearch respects abort signal', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'openclaude-session-storage-'))
+  tempDirs.push(dir)
+  const filePath = join(dir, 'session.jsonl')
+  await writeFile(filePath, `${JSON.stringify(user(id(94), null, 'hello'))}\n`)
+
+  const controller = new AbortController()
+  controller.abort()
+  const log: LogOption = {
+    date: ts,
+    messages: [],
+    fullPath: filePath,
+    value: 0,
+    created: new Date(ts),
+    modified: new Date(ts),
+    firstPrompt: '',
+    messageCount: 0,
+    isSidechain: false,
+  }
+  expect(await readLogFileTextForSearch(log, controller.signal)).toBe('')
 })

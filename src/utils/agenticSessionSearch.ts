@@ -3,7 +3,7 @@ import { count } from './array.js'
 import { logForDebugging } from './debug.js'
 import { getLogDisplayTitle, logError } from './log.js'
 import { getSmallFastModel } from './model/model.js'
-import { isLiteLog, loadFullLog } from './sessionStorage.js'
+import { isLiteLog, loadFullLog, readLogFileTextForSearch } from './sessionStorage.js'
 import { sideQuery } from './sideQuery.js'
 import { jsonParse } from './slowOperations.js'
 
@@ -109,8 +109,13 @@ function extractTranscript(messages: SerializedMessage[]): string {
 
 /**
  * Checks if a log contains the query term in any searchable field.
+ * For lite logs (messages not loaded), consults the session file directly.
  */
-function logContainsQuery(log: LogOption, queryLower: string): boolean {
+async function logContainsQuery(
+  log: LogOption,
+  queryLower: string,
+  signal?: AbortSignal,
+): Promise<boolean> {
   // Check title
   const title = getLogDisplayTitle(log).toLowerCase()
   if (title.includes(queryLower)) return true
@@ -136,6 +141,13 @@ function logContainsQuery(log: LogOption, queryLower: string): boolean {
     if (transcript.includes(queryLower)) return true
   }
 
+  // Lite logs have no messages in memory — read the file directly so
+  // deep search can find content inside the conversation.
+  if (isLiteLog(log)) {
+    const fileText = await readLogFileTextForSearch(log, signal)
+    if (fileText.toLowerCase().includes(queryLower)) return true
+  }
+
   return false
 }
 
@@ -154,9 +166,14 @@ export async function agenticSessionSearch(
 
   const queryLower = query.toLowerCase()
 
-  // Pre-filter: find sessions that contain the query term
-  // This ensures we search relevant sessions, not just recent ones
-  const matchingLogs = logs.filter(log => logContainsQuery(log, queryLower))
+  // Fast pre-filter: find sessions that contain the query term. This
+  // ensures we search relevant sessions, not just recent ones. Lite logs
+  // are checked against their file content directly (head + tail) so
+  // conversation text is searchable without loading full transcripts.
+  const matchFlags = await Promise.all(
+    logs.map(async log => logContainsQuery(log, queryLower, signal)),
+  )
+  const matchingLogs = logs.filter((_, i) => matchFlags[i])
 
   // Take up to MAX_SESSIONS_TO_SEARCH matching logs
   // If fewer matches, fill remaining slots with recent non-matching logs for context
@@ -164,9 +181,7 @@ export async function agenticSessionSearch(
   if (matchingLogs.length >= MAX_SESSIONS_TO_SEARCH) {
     logsToSearch = matchingLogs.slice(0, MAX_SESSIONS_TO_SEARCH)
   } else {
-    const nonMatchingLogs = logs.filter(
-      log => !logContainsQuery(log, queryLower),
-    )
+    const nonMatchingLogs = logs.filter((_, i) => !matchFlags[i])
     const remainingSlots = MAX_SESSIONS_TO_SEARCH - matchingLogs.length
     logsToSearch = [
       ...matchingLogs,
@@ -180,8 +195,18 @@ export async function agenticSessionSearch(
       `matching: ${matchingLogs.length}, with messages: ${count(logsToSearch, l => l.messages?.length > 0)}`,
   )
 
-  // Load full logs for lite logs to get transcript content
-  const logsWithTranscriptsPromises = logsToSearch.map(async log => {
+  // Deep search over file content: substring matches are already exact,
+  // so return them directly without an LLM round-trip.
+  if (matchingLogs.length > 0) {
+    logForDebugging(
+      `Deep search: returning ${matchingLogs.length} substring matches directly`,
+    )
+    return matchingLogs
+  }
+
+  // Load full transcripts for the LLM ranking pass. Only reached when no
+  // substring match was found — the model then ranks semantically.
+  const loadedPromises = logsToSearch.map(async log => {
     if (isLiteLog(log)) {
       try {
         return await loadFullLog(log)
@@ -193,14 +218,14 @@ export async function agenticSessionSearch(
     }
     return log
   })
-  const logsWithTranscripts = await Promise.all(logsWithTranscriptsPromises)
+  const loadedLogs = await Promise.all(loadedPromises)
 
   logForDebugging(
-    `Agentic search: loaded ${count(logsWithTranscripts, l => l.messages?.length > 0)}/${logsToSearch.length} logs with transcripts`,
+    `Agentic search: loaded ${count(loadedLogs, l => l.messages?.length > 0)}/${logsToSearch.length} logs with transcripts`,
   )
 
   // Build session list for the prompt with all searchable metadata
-  const sessionList = logsWithTranscripts
+  const sessionList = loadedLogs
     .map((log, index) => {
       const parts: string[] = [`${index}:`]
 
@@ -289,10 +314,10 @@ Find the sessions that are most relevant to this query.`
     const result: AgenticSearchResult = jsonParse(jsonMatch[0])
     const relevantIndices = result.relevant_indices || []
 
-    // Map indices back to logs (indices are relative to logsWithTranscripts)
+    // Map indices back to logs (indices are relative to loadedLogs)
     const relevantLogs = relevantIndices
-      .filter(index => index >= 0 && index < logsWithTranscripts.length)
-      .map(index => logsWithTranscripts[index]!)
+      .filter(index => index >= 0 && index < loadedLogs.length)
+      .map(index => loadedLogs[index]!)
 
     logForDebugging(
       `Agentic search found ${relevantLogs.length} relevant sessions`,

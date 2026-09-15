@@ -1094,6 +1094,8 @@ export const getMemoryFiles = memoize(
       }
     }
 
+    captureMemoryFileSnapshot(result)
+
     return result
   },
 )
@@ -1151,6 +1153,90 @@ export function resetGetMemoryFilesCache(
   nextEagerLoadReason = reason
   shouldFireHook = true
   clearMemoryFileCaches()
+}
+
+// Snapshot of memory-file mtimes for mid-session change detection. Null means
+// "no snapshot yet" (first load). Populated whenever getMemoryFiles() builds
+// its result, and compared by haveMemoryFilesChanged() so getUserContext can
+// invalidate its memoized cache when AGENTS.md/CLAUDE.md/rules are edited
+// outside the CLI (external editor) mid-session.
+let memoryFileMtimeSnapshot: Map<string, number> | null = null
+
+// Set when a getMemoryFiles() reload observes on-disk changes vs the previous
+// baseline (even if nothing calls getUserContext in between). Consumed by
+// haveMemoryFilesChanged() so the very next context build is invalidated —
+// this covers reloads triggered by /memory or other direct getMemoryFiles()
+// callers that bypass getUserContext.
+let memoryFilesDirty = false
+
+/**
+ * Records the current mtimeMs of every loaded memory file. Call after a
+ * successful getMemoryFiles() pass so subsequent change detection starts
+ * from a known baseline. Marks the loaded set dirty when it differs from the
+ * previous baseline.
+ */
+export function captureMemoryFileSnapshot(files: MemoryFileInfo[]): void {
+  const fs = getFsImplementation()
+  const snapshot = new Map<string, number>()
+  for (const file of files) {
+    if (file.content.trim().length === 0) continue
+    try {
+      snapshot.set(
+        normalizePathForComparison(file.path),
+        fs.statSync(file.path).mtimeMs,
+      )
+    } catch {
+      // File vanished between read and stat; leave it out of the baseline.
+    }
+  }
+  if (memoryFileMtimeSnapshot !== null) {
+    let dirty = snapshot.size !== memoryFileMtimeSnapshot.size
+    if (!dirty) {
+      for (const [path, mtime] of snapshot) {
+        if (memoryFileMtimeSnapshot.get(path) !== mtime) {
+          dirty = true
+          break
+        }
+      }
+    }
+    if (dirty) memoryFilesDirty = true
+  }
+  memoryFileMtimeSnapshot = snapshot
+}
+
+/**
+ * Returns true when any memory file captured by captureMemoryFileSnapshot()
+ * has been modified, deleted, or become unreadable since the baseline, or
+ * when a reload observed changes (memoryFilesDirty).
+ * Used to invalidate the memoized user context when instructions change
+ * mid-session.
+ */
+export function haveMemoryFilesChanged(): boolean {
+  if (memoryFilesDirty) {
+    memoryFilesDirty = false
+    return true
+  }
+  if (memoryFileMtimeSnapshot === null) return false
+  const fs = getFsImplementation()
+  for (const [path, mtime] of memoryFileMtimeSnapshot) {
+    try {
+      if (fs.statSync(path).mtimeMs !== mtime) return true
+    } catch {
+      // File no longer exists — treat as changed so the cache is rebuilt.
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * Drops the mtime baseline. Used when caches are cleared for reasons that
+ * don't reload memory files (e.g. /clear), so the next getMemoryFiles() pass
+ * establishes a fresh baseline instead of comparing against a stale one.
+ */
+export function clearMemoryFileSnapshot(): void {
+  memoryFileMtimeSnapshot = null
+  memoryFilesDirty = false
 }
 
 export function getLargeMemoryFiles(files: MemoryFileInfo[]): MemoryFileInfo[] {

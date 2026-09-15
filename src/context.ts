@@ -6,9 +6,12 @@ import {
 } from './bootstrap/state.js'
 import { getLocalISODate } from './constants/common.js'
 import {
+  clearMemoryFileCaches,
+  clearMemoryFileSnapshot,
   filterInjectedMemoryFiles,
   getClaudeMds,
   getMemoryFiles,
+  haveMemoryFilesChanged,
 } from './utils/claudemd.js'
 import { logForDiagnosticsNoPII } from './utils/diagLogs.js'
 import { isBareMode, isEnvTruthy } from './utils/envUtils.js'
@@ -260,40 +263,76 @@ export const getSystemContext = memoize(
 )
 
 /**
+ * Detects mid-session edits to memory files (AGENTS.md, CLAUDE.md,
+ * .openclaude/rules/*.md) made outside the CLI, e.g. an external editor.
+ *
+ * getMemoryFiles() is memoized for the whole session, so without this check
+ * the system prompt keeps stale instructions until a cache-resetting event
+ * (compact, /clear, worktree switch) occurs. We compare mtimes captured when
+ * memory files were last loaded; on any change we clear the context caches so
+ * the next call rebuilds from the current on-disk content.
+ */
+function invalidateContextCachesIfMemoryFilesChanged(): void {
+  if (!haveMemoryFilesChanged()) return
+  clearMemoryFileCaches()
+  clearMemoryFileSnapshot()
+  getUserContext.cache.clear?.()
+  getSystemContext.cache.clear?.()
+  getRepoMapContext.cache.clear?.()
+}
+
+async function loadUserContext(): Promise<{
+  [k: string]: string
+}> {
+  const startTime = Date.now()
+  logForDiagnosticsNoPII('info', 'user_context_started')
+
+  // CLAUDE_CODE_DISABLE_CLAUDE_MDS: hard off, always.
+  // --bare: skip auto-discovery (cwd walk), BUT honor explicit --add-dir.
+  // --bare means "skip what I didn't ask for", not "ignore what I asked for".
+  const shouldDisableClaudeMd =
+    isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_CLAUDE_MDS) ||
+    (isBareMode() && getAdditionalDirectoriesForClaudeMd().length === 0)
+  // Await the async I/O (readFile/readdir directory walk) so the event
+  // loop yields naturally at the first fs.readFile.
+  const claudeMd = shouldDisableClaudeMd
+    ? null
+    : getClaudeMds(filterInjectedMemoryFiles(await getMemoryFiles()))
+  // Cache for the auto-mode classifier (yoloClassifier.ts reads this
+  // instead of importing claudemd.ts directly, which would create a
+  // cycle through permissions/filesystem → permissions → yoloClassifier).
+  setCachedClaudeMdContent(claudeMd || null)
+
+  logForDiagnosticsNoPII('info', 'user_context_completed', {
+    duration_ms: Date.now() - startTime,
+    claudemd_length: claudeMd?.length ?? 0,
+    claudemd_disabled: Boolean(shouldDisableClaudeMd),
+  })
+
+  return {
+    ...(claudeMd && { claudeMd }),
+    currentDate: `Today's date is ${getLocalISODate()}.`,
+  }
+}
+
+// The memoized loader. Its `.cache` is exposed on getUserContext so existing
+// callers (clear, compact, setSystemPromptInjection) keep working.
+// memoize keeps the same MapCache instance for the function's lifetime
+// (MapCache.set returns `this`), so snapshoting `.cache` here stays valid.
+const loadUserContextMemoized = memoize(loadUserContext)
+
+/**
  * This context is prepended to each conversation, and cached for the duration of the conversation.
  */
-export const getUserContext = memoize(
-  async (): Promise<{
-    [k: string]: string
-  }> => {
-    const startTime = Date.now()
-    logForDiagnosticsNoPII('info', 'user_context_started')
-
-    // CLAUDE_CODE_DISABLE_CLAUDE_MDS: hard off, always.
-    // --bare: skip auto-discovery (cwd walk), BUT honor explicit --add-dir.
-    // --bare means "skip what I didn't ask for", not "ignore what I asked for".
-    const shouldDisableClaudeMd =
-      isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_CLAUDE_MDS) ||
-      (isBareMode() && getAdditionalDirectoriesForClaudeMd().length === 0)
-    // Await the async I/O (readFile/readdir directory walk) so the event
-    // loop yields naturally at the first fs.readFile.
-    const claudeMd = shouldDisableClaudeMd
-      ? null
-      : getClaudeMds(filterInjectedMemoryFiles(await getMemoryFiles()))
-    // Cache for the auto-mode classifier (yoloClassifier.ts reads this
-    // instead of importing claudemd.ts directly, which would create a
-    // cycle through permissions/filesystem → permissions → yoloClassifier).
-    setCachedClaudeMdContent(claudeMd || null)
-
-    logForDiagnosticsNoPII('info', 'user_context_completed', {
-      duration_ms: Date.now() - startTime,
-      claudemd_length: claudeMd?.length ?? 0,
-      claudemd_disabled: Boolean(shouldDisableClaudeMd),
-    })
-
-    return {
-      ...(claudeMd && { claudeMd }),
-      currentDate: `Today's date is ${getLocalISODate()}.`,
-    }
+export const getUserContext: {
+  (): Promise<{ [k: string]: string }>
+  cache: { clear?: () => void }
+} = Object.assign(
+  function getUserContext(): Promise<{ [k: string]: string }> {
+    // Rebuild the memoized result when a memory file changed on disk
+    // mid-session (e.g. AGENTS.md edited in an external editor).
+    invalidateContextCachesIfMemoryFilesChanged()
+    return loadUserContextMemoized()
   },
+  { cache: loadUserContextMemoized.cache },
 )

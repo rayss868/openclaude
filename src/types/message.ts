@@ -101,6 +101,12 @@ export interface UserMessage<C = string | ContentBlockParam[]> {
   isVirtual?: boolean
   isCompactSummary?: boolean
   /**
+   * Set on a synthetic user message that carries archived pre-compact prompts
+   * so rewind keeps working after compaction. Its text is a structured list
+   * (see archivedRewinds.ts); it is never shown, sent to the API, or summarized.
+   */
+  isArchivedRewindsIndex?: boolean
+  /**
    * Set when a context-collapse summary placeholder is converted to (or merged
    * into) a user message. Keeps the `<collapsed>` summary non-snippable: the
    * snip-tag sweep skips these, and merges that absorb a summary inherit the

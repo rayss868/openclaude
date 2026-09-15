@@ -282,7 +282,7 @@ export function LogSelector(t0: LogSelectorProps) {
     t5 = $[4];
   }
   const highlightColor = t5;
-  const isAgenticSearchEnabled = false;
+  const isAgenticSearchEnabled = true;
   const [currentBranch, setCurrentBranch] = React.useState<string | null>(null);
   const [branchFilterEnabled, setBranchFilterEnabled] = React.useState(false);
   const [showAllWorktrees, setShowAllWorktrees] = React.useState(false);
@@ -1160,7 +1160,7 @@ export function LogSelector(t0: LogSelectorProps) {
             exitSearchMode();
           } else {
             if (key.return || key.downArrow) {
-              if (searchQuery.trim() && onAgenticSearch && false && agenticSearchState.status !== "results") {
+              if (searchQuery.trim() && onAgenticSearch && agenticSearchState.status !== "results") {
                 setIsAgenticSearchOptionFocused(true);
               }
             }
@@ -1654,7 +1654,11 @@ function buildSearchableText(log: LogOption): string {
   const searchableMessages = log.messages.length <= DEEP_SEARCH_MAX_MESSAGES ? log.messages : [...log.messages.slice(0, DEEP_SEARCH_CROP_SIZE), ...log.messages.slice(-DEEP_SEARCH_CROP_SIZE)];
   const messageText = searchableMessages.map(extractSearchableText).filter(Boolean).join(' ');
   const metadata = [getResumeLogDisplayTitle(log), log.customTitle, log.sessionBranch?.branchName, log.summary, log.firstPrompt, log.gitBranch, log.tag, log.prNumber ? `PR #${log.prNumber}` : undefined, log.prRepository].filter(Boolean).join(' ');
-  const fullText = `${metadata} ${messageText}`.trim();
+  // Lite logs carry no in-memory transcript; searchableText is sampled from
+  // the session file at enrich time so deep search matches the conversation
+  // body, not just metadata.
+  const fileText = log.searchableText ?? '';
+  const fullText = `${metadata} ${messageText} ${fileText}`.trim();
   return fullText.length > DEEP_SEARCH_MAX_TEXT_LENGTH ? fullText.slice(0, DEEP_SEARCH_MAX_TEXT_LENGTH) : fullText;
 }
 export function groupLogsByResumeBranch(filteredLogs: LogOption[]): ResumeLogGroup[] {

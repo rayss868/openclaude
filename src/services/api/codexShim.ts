@@ -995,6 +995,7 @@ async function* codexStreamToAnthropicWithReadOptions(
     { index: number; toolUseId: string; emittedArgs: string }
   >()
   let activeTextBlockIndex: number | null = null
+  let activeThinkingBlockIndex: number | null = null
   const thinkFilter = createThinkTagFilter()
   let nextContentBlockIndex = 0
   let sawToolUse = false
@@ -1031,8 +1032,32 @@ async function* codexStreamToAnthropicWithReadOptions(
     activeTextBlockIndex = null
   }
 
+  const closeActiveThinkingBlock = async function* () {
+    if (activeThinkingBlockIndex === null) return
+    throwIfStreamAborted(signal)
+    yield {
+      type: 'content_block_stop',
+      index: activeThinkingBlockIndex,
+    }
+    activeThinkingBlockIndex = null
+  }
+
+  const startThinkingBlockIfNeeded = async function* () {
+    if (activeThinkingBlockIndex !== null) return
+    activeThinkingBlockIndex = nextContentBlockIndex++
+    throwIfStreamAborted(signal)
+    yield {
+      type: 'content_block_start',
+      index: activeThinkingBlockIndex,
+      content_block: { type: 'thinking', thinking: '' },
+    }
+  }
+
   const startTextBlockIfNeeded = async function* () {
     if (activeTextBlockIndex !== null) return
+    // Reasoning precedes output text; close the thinking block on the
+    // transition so both blocks are never open at the same index space.
+    yield* closeActiveThinkingBlock()
     activeTextBlockIndex = nextContentBlockIndex++
     throwIfStreamAborted(signal)
     yield {
@@ -1072,6 +1097,7 @@ async function* codexStreamToAnthropicWithReadOptions(
       if (event.event === 'response.output_item.added') {
         const item = payload.item
         if (item?.type === 'function_call') {
+          yield* closeActiveThinkingBlock()
           yield* closeActiveTextBlock()
           throwIfStreamAborted(signal)
           const blockIndex = nextContentBlockIndex++
@@ -1136,6 +1162,41 @@ async function* codexStreamToAnthropicWithReadOptions(
             }
           }
         }
+        continue
+      }
+
+      if (
+        event.event === 'response.reasoning_text.delta' ||
+        event.event === 'response.reasoning_summary_text.delta'
+      ) {
+        // Forward reasoning deltas as an Anthropic `thinking` block so the
+        // UI shows live progress (token counter moves, stall detection
+        // suppressed) instead of appearing frozen while a high-effort model
+        // thinks for minutes.
+        const reasoning =
+          typeof payload.text === 'string'
+            ? payload.text
+            : typeof payload.summary_text === 'string'
+              ? payload.summary_text
+              : ''
+        if (reasoning) {
+          yield* startThinkingBlockIfNeeded()
+          if (activeThinkingBlockIndex !== null) {
+            throwIfStreamAborted(signal)
+            yield {
+              type: 'content_block_delta',
+              index: activeThinkingBlockIndex,
+              delta: { type: 'thinking_delta', thinking: reasoning },
+            }
+          }
+        }
+        continue
+      }
+
+      if (
+        event.event === 'response.reasoning_text.done' ||
+        event.event === 'response.reasoning_summary_text.done'
+      ) {
         continue
       }
 
@@ -1216,6 +1277,7 @@ async function* codexStreamToAnthropicWithReadOptions(
             toolBlocksByItemId.delete(String(item.id))
           }
         } else if (item?.type === 'message') {
+          yield* closeActiveThinkingBlock()
           yield* closeActiveTextBlock()
         }
         continue
@@ -1248,6 +1310,7 @@ async function* codexStreamToAnthropicWithReadOptions(
     }
 
     throwIfStreamAborted(signal)
+    yield* closeActiveThinkingBlock()
     yield* closeActiveTextBlock()
     for (const toolBlock of toolBlocksByItemId.values()) {
       throwIfStreamAborted(signal)

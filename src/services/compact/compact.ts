@@ -35,6 +35,10 @@ import type {
   UserMessage,
 } from '../../types/message.js'
 import {
+  collectArchivedRewinds,
+  createArchivedRewindsMessage,
+} from './archivedRewinds.js'
+import {
   createAttachmentMessage,
   generateFileAttachment,
   getAgentListingDeltaAttachment,
@@ -326,6 +330,11 @@ export interface CompactionResult {
   postCompactTokenCount?: number
   truePostCompactTokenCount?: number
   compactionUsage?: ReturnType<typeof getTokenUsage>
+  /**
+   * Transcript-only carrier for prompts folded into this compaction, so rewind
+   * keeps them after the transcript is replaced (see archivedRewinds.ts).
+   */
+  archivedRewindsMessage?: UserMessage
 }
 
 /**
@@ -344,12 +353,13 @@ export type RecompactionInfo = {
 /**
  * Build the base post-compact messages array from a CompactionResult.
  * This ensures consistent ordering across all compaction paths.
- * Order: boundaryMarker, summaryMessages, messagesToKeep, attachments, hookResults
+ * Order: boundaryMarker, summaryMessages, archivedRewindsMessage, messagesToKeep, attachments, hookResults
  */
 export function buildPostCompactMessages(result: CompactionResult): Message[] {
   return [
     result.boundaryMarker,
     ...result.summaryMessages,
+    ...(result.archivedRewindsMessage ? [result.archivedRewindsMessage] : []),
     ...(result.messagesToKeep ?? []),
     ...result.attachments,
     ...result.hookResults,
@@ -842,9 +852,17 @@ export async function compactConversation(
       .filter(Boolean)
       .join('\n')
 
+    const archivedRewindsMessage = createArchivedRewindsMessage(
+      collectArchivedRewinds(
+        toSummarize,
+        summaryMessages[0]?.uuid ?? boundaryMarker.uuid,
+      ),
+    )
+
     return {
       boundaryMarker,
       summaryMessages,
+      archivedRewindsMessage,
       attachments: postCompactFileAttachments,
       hookResults: hookMessages,
       messagesToKeep,
@@ -1199,6 +1217,9 @@ export async function partialCompactConversation(
       direction === 'up_to'
         ? (summaryMessages.at(-1)?.uuid ?? boundaryMarker.uuid)
         : boundaryMarker.uuid
+    const archivedRewindsMessage = createArchivedRewindsMessage(
+      collectArchivedRewinds(messagesToSummarize, anchorUuid),
+    )
     return {
       boundaryMarker: annotateBoundaryWithPreservedSegment(
         boundaryMarker,
@@ -1206,6 +1227,7 @@ export async function partialCompactConversation(
         messagesToKeep,
       ),
       summaryMessages,
+      archivedRewindsMessage,
       messagesToKeep,
       attachments: postCompactFileAttachments,
       hookResults: hookMessages,

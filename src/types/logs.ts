@@ -48,6 +48,8 @@ export type LogOption = {
   created: Date
   modified: Date
   firstPrompt: string
+  lastPrompt?: string // Latest activity prompt (for display, e.g. /resume row titles)
+  searchableText?: string // File-derived transcript text for deep search (lite logs)
   messageCount: number
   fileSize?: number // File size in bytes (for display)
   isSidechain: boolean

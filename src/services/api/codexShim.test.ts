@@ -1309,6 +1309,72 @@ describe('Codex request translation', () => {
     expect(textDeltas.join('')).toBe('Hey! How can I help you today?')
   })
 
+  test('forwards reasoning deltas as Anthropic thinking blocks', async () => {
+    const responseText = [
+      'event: response.reasoning_summary_text.delta',
+      'data: {"type":"response.reasoning_summary_text.delta","summary_text":"Plan the approach","sequence_number":0}',
+      '',
+      'event: response.reasoning_text.delta',
+      'data: {"type":"response.reasoning_text.delta","text":"Let me think step by step.","sequence_number":1}',
+      '',
+      'event: response.reasoning_text.done',
+      'data: {"type":"response.reasoning_text.done","text":"Let me think step by step.","sequence_number":2}',
+      '',
+      'event: response.output_item.added',
+      'data: {"type":"response.output_item.added","item":{"id":"msg_1","type":"message","status":"in_progress","content":[],"role":"assistant"},"output_index":0,"sequence_number":3}',
+      '',
+      'event: response.content_part.added',
+      'data: {"type":"response.content_part.added","content_index":0,"item_id":"msg_1","output_index":0,"part":{"type":"output_text","text":""},"sequence_number":4}',
+      '',
+      'event: response.output_text.delta',
+      'data: {"type":"response.output_text.delta","content_index":0,"delta":"Here is the plan.","item_id":"msg_1","output_index":0,"sequence_number":5}',
+      '',
+      'event: response.output_item.done',
+      'data: {"type":"response.output_item.done","item":{"id":"msg_1","type":"message","status":"completed","content":[{"type":"output_text","text":"Here is the plan."}],"role":"assistant"},"output_index":0,"sequence_number":6}',
+      '',
+      'event: response.completed',
+      'data: {"type":"response.completed","response":{"id":"resp_1","status":"completed","model":"gpt-5.4","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Here is the plan."}]}],"usage":{"input_tokens":2,"output_tokens":1}},"sequence_number":7}',
+      '',
+    ].join('\n')
+
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(responseText))
+        controller.close()
+      },
+    })
+
+    const blocks: Array<{ index?: number; type?: string; thinking?: string }> = []
+    for await (const event of codexStreamToAnthropic(
+      new Response(stream),
+      'gpt-5.4',
+    )) {
+      if (event.type === 'content_block_start') {
+        blocks.push({
+          index: event.index,
+          type: (event.content_block as { type?: string })?.type,
+        })
+      }
+      const delta = (event as { delta?: { type?: string; thinking?: string } })
+        .delta
+      if (delta?.type === 'thinking_delta') {
+        blocks.push({ thinking: delta.thinking })
+      }
+      if (event.type === 'content_block_stop') {
+        blocks.push({ index: event.index, type: 'stop' })
+      }
+    }
+
+    expect(blocks).toEqual([
+      { index: 0, type: 'thinking' },
+      { thinking: 'Plan the approach' },
+      { thinking: 'Let me think step by step.' },
+      { index: 0, type: 'stop' },
+      { index: 1, type: 'text' },
+      { index: 1, type: 'stop' },
+    ])
+  })
+
   test('preserves prose without tags (no phrase-based false positive)', async () => {
     // Regression test: older phrase-based sanitizer would incorrectly strip text
     // starting with "I should" or "The user". The tag-based approach leaves it alone.

@@ -56,7 +56,7 @@ import { useLogMessages } from '../hooks/useLogMessages.js';
 import { useReplBridge } from '../hooks/useReplBridge.js';
 import { type Command, type CommandResultDisplay, type ResumeEntrypoint, getCommandName, isCommandEnabled } from '../commands.js';
 import type { PromptInputMode, QueuedCommand, VimMode } from '../types/textInputTypes.js';
-import { MessageSelector } from '../components/MessageSelector.js';
+import { MessageSelector, type ArchivedRewindOption } from '../components/MessageSelector.js';
 import { selectableUserMessagesFilter, messagesAfterAreOnlySynthetic } from '../utils/messageFilters.js';
 import { useIdeLogging } from '../hooks/useIdeLogging.js';
 import { PermissionRequest, type ToolUseConfirm } from '../components/permissions/PermissionRequest.js';
@@ -4399,6 +4399,37 @@ export function REPL({
   }, [rewindConversationTo, setInputValue, setInputMode]);
   restoreMessageSyncRef.current = restoreMessageSync;
 
+  // Rewind to an archived (pre-compact) prompt. The transcript is truncated at
+  // the compact summary the prompt was folded into, then the prompt text is
+  // re-populated in the input for resubmission.
+  const handleRestoreArchivedMessage = useCallback(async (message: ArchivedRewindOption) => {
+    const summaryUuid = message.archivedRewind?.summaryUuid;
+    const prev = messagesRef.current;
+    let target: UserMessage | undefined;
+    if (summaryUuid) {
+      const anchorIndex = prev.findIndex(m => m.uuid === summaryUuid);
+      if (anchorIndex !== -1) {
+        const anchor = prev[anchorIndex];
+        target = anchor.type === 'user'
+          ? anchor
+          : prev.slice(anchorIndex + 1).find((m): m is UserMessage => m.type === 'user');
+      }
+    }
+    if (!target) {
+      target = prev.find((m): m is UserMessage => m.type === 'user' && !!m.isCompactSummary);
+    }
+    if (!target) {
+      setMessages(prevMsgs => [...prevMsgs, createSystemMessage('That message is no longer in the active context (compacted). Choose a more recent message.', 'warning')]);
+      return;
+    }
+    rewindConversationTo(target, { preserveInterruptionCorrectionReminder: true });
+    const r = textForResubmit(message);
+    if (r) {
+      setInputValue(r.text);
+      setInputMode(r.mode);
+    }
+  }, [rewindConversationTo, setInputValue, setInputMode, setMessages]);
+
   // MessageSelector path: defer via setImmediate so the "Interrupted" message
   // renders to static output before rewind — otherwise it remains vestigial
   // at the top of the screen.
@@ -5536,7 +5567,7 @@ export function REPL({
           {cursor &&
             // inputValue is REPL state; typed text survives the round-trip.
             <MessageActionsBar cursor={cursor} />}
-          {focusedInputDialog === 'message-selector' && <MessageSelector messages={messages} preselectedMessage={messageSelectorPreselect} onPreRestore={onCancel} onRestoreCode={async (message: UserMessage) => {
+          {focusedInputDialog === 'message-selector' && <MessageSelector messages={messages} preselectedMessage={messageSelectorPreselect} onPreRestore={onCancel} onRestoreArchivedMessage={handleRestoreArchivedMessage} onRestoreCode={async (message: UserMessage) => {
             await fileHistoryRewind((updater: (prev: FileHistoryState) => FileHistoryState) => {
               setAppState(prev => ({
                 ...prev,
@@ -5577,7 +5608,7 @@ export function REPL({
             }, feedback, direction);
             const kept = result.messagesToKeep ?? [];
             const ordered = direction === 'up_to' ? [...result.summaryMessages, ...kept] : [...kept, ...result.summaryMessages];
-            const postCompact = [result.boundaryMarker, ...ordered, ...result.attachments, ...result.hookResults];
+            const postCompact = [result.boundaryMarker, ...ordered, ...(result.archivedRewindsMessage ? [result.archivedRewindsMessage] : []), ...result.attachments, ...result.hookResults];
             // Fullscreen 'from' keeps scrollback; 'up_to' must not
             // (old[0] unchanged + grown array means incremental
             // useLogMessages path, so boundary never persisted).

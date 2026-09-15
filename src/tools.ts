@@ -117,6 +117,9 @@ const SnipTool = feature('HISTORY_SNIP')
 const ListPeersTool = feature('UDS_INBOX')
   ? require('./tools/ListPeersTool/ListPeersTool.js').ListPeersTool
   : null
+const DiscoverSkillsTool = feature('EXPERIMENTAL_SKILL_SEARCH')
+  ? require('./tools/DiscoverSkillsTool/index.js').DiscoverSkillsTool
+  : null
 const WorkflowTool = feature('WORKFLOW_SCRIPTS')
   ? (() => {
       require('./tools/WorkflowTool/bundled/index.js').initBundledWorkflows()
@@ -217,6 +220,7 @@ export function getAllBaseTools(): Tools {
     // Cache getter results to avoid double-invocation of lazy require()
     ...(() => { const smt = getSendMessageTool(); return smt ? [smt] : [] })(),
     ...(ListPeersTool ? [ListPeersTool] : []),
+    ...(DiscoverSkillsTool ? [DiscoverSkillsTool] : []),
     ...(isAgentSwarmsEnabled()
       ? (() => { const tct = getTeamCreateTool(); const tdt = getTeamDeleteTool(); return [tct, tdt].filter(Boolean) })()
       : []),

@@ -1,5 +1,18 @@
 import { useRef } from 'react'
 
+// Pure stall computation, separated from the hook so it can be unit-tested
+// without a React renderer.
+export function computeStallState(
+  timeSinceLastToken: number,
+): { isStalled: boolean; intensity: number } {
+  // Start showing red after 3 seconds of no new tokens (only when no tools are active)
+  const isStalled = timeSinceLastToken > 3000
+  const intensity = isStalled
+    ? Math.min((timeSinceLastToken - 3000) / 2000, 1) // Fade over 2 seconds
+    : 0
+  return { isStalled, intensity }
+}
+
 // Hook to handle the transition to red when tokens stop flowing.
 // Driven by the parent's animation clock time instead of independent intervals,
 // so it slows down when the terminal is blurred.
@@ -39,10 +52,11 @@ export function useStalledAnimation(
 
   // Calculate stalled intensity based on time since last token
   // Start showing red after 3 seconds of no new tokens (only when no tools are active)
-  const isStalled = timeSinceLastToken > 3000 && !hasActiveTools
-  const intensity = isStalled
-    ? Math.min((timeSinceLastToken - 3000) / 2000, 1) // Fade over 2 seconds
-    : 0
+  const { isStalled: rawStalled, intensity: rawIntensity } = computeStallState(
+    timeSinceLastToken,
+  )
+  const isStalled = rawStalled && !hasActiveTools
+  const intensity = rawStalled && !hasActiveTools ? rawIntensity : 0
 
   // Smooth intensity transition driven by animation frame ticks
   if (!reducedMotion && (intensity > 0 || stalledIntensityRef.current > 0)) {

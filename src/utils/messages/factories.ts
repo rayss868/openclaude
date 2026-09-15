@@ -199,6 +199,7 @@ export function createUserMessage({
   isVisibleInTranscriptOnly,
   isVirtual,
   isCompactSummary,
+  isArchivedRewindsIndex,
   isCollapseSummary,
   summarizeMetadata,
   toolUseResult,
@@ -217,6 +218,7 @@ export function createUserMessage({
   isVisibleInTranscriptOnly?: boolean
   isVirtual?: boolean
   isCompactSummary?: boolean
+  isArchivedRewindsIndex?: boolean
   isCollapseSummary?: boolean
   toolUseResult?: unknown // Matches tool's `Output` type
   imagePermissionToolUseIds?: Array<string | null>
@@ -256,6 +258,7 @@ export function createUserMessage({
     isVisibleInTranscriptOnly,
     isVirtual,
     isCompactSummary,
+    isArchivedRewindsIndex,
     isCollapseSummary,
     summarizeMetadata,
     uuid: (uuid as UUID | undefined) || randomUUID(),

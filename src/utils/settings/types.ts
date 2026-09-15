@@ -1042,6 +1042,12 @@ modelPricing: ModelPricingSchema.optional()
         .describe(
           'When true, fast mode is enabled. When absent or false, fast mode is off.',
         ),
+      skillSearch: z
+        .boolean()
+        .optional()
+        .describe(
+          'Enable skill search discovery — automatically finds relevant skills before tasks and exposes the DiscoverSkills tool. Default: false (off).',
+        ),
       fastModePerSessionOptIn: z
         .boolean()
         .optional()

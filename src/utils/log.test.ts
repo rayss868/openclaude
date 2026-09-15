@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
-import { sanitizeError } from './log.js'
+import type { LogOption } from '../types/logs.js'
+import { getLogDisplayTitle, sanitizeError } from './log.js'
 
 // Test sanitizeError directly (an exported wrapper around the inline
 // redaction logic in logError). Direct unit testing avoids races on
@@ -106,5 +107,32 @@ describe('sanitizeError', () => {
     expect(obj["meta"]).not.toBe(circular)
     // Should have been replaced with a safe placeholder
     expect(obj["meta"] as string).toBe("[REDACTED]")
+  })
+})
+
+describe('getLogDisplayTitle', () => {
+  const baseLog = (overrides: Partial<LogOption> = {}): LogOption => ({
+    date: '0',
+    messages: [],
+    value: 0,
+    created: new Date(0),
+    modified: new Date(0),
+    firstPrompt: 'first prompt title',
+    messageCount: 0,
+    isSidechain: false,
+    ...overrides,
+  })
+
+  test('prefers lastPrompt over firstPrompt for display', () => {
+    const log = baseLog({
+      firstPrompt: 'first prompt title',
+      lastPrompt: 'latest activity title',
+    })
+    expect(getLogDisplayTitle(log)).toBe('latest activity title')
+  })
+
+  test('falls back to firstPrompt when lastPrompt is absent', () => {
+    const log = baseLog({ lastPrompt: undefined })
+    expect(getLogDisplayTitle(log)).toBe('first prompt title')
   })
 })

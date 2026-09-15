@@ -25,3 +25,19 @@ plan/
 .tmp
 .tmp-*
 temp_reference/
+
+# config/defaults/CLAUDE.md ships to users on install (src/entrypoints/init.ts);
+# keep it tracked even though the CLAUDE.md pattern above matches it.
+!config/defaults/CLAUDE.md
+
+# Local debug/probe scratch output.
+/.codebase-memory/
+/.zcode/
+/latest
+/ask_*.txt
+/ask_*.log
+/probe*.json
+/probe*.txt
+/build_out.log
+/te_test.log
+/test_*.log

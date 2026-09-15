@@ -101,7 +101,7 @@ export function isEligibleBridgeMessage(m: Message): boolean {
  * implausible (an interrupt implies a prior prompt already flowed through).
  */
 export function extractTitleText(m: Message): string | undefined {
-  if (m.type !== 'user' || m.isMeta || m.toolUseResult || m.isCompactSummary)
+  if (m.type !== 'user' || m.isMeta || m.toolUseResult || m.isCompactSummary || m.isArchivedRewindsIndex)
     return undefined
   if (m.origin && m.origin.kind !== 'human') return undefined
   const content = m.message.content

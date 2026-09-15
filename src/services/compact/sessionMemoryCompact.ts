@@ -38,6 +38,10 @@ import {
   type CompactionResult,
   createPlanAttachmentIfNeeded,
 } from './compact.js'
+import {
+  collectArchivedRewinds,
+  createArchivedRewindsMessage,
+} from './archivedRewinds.js'
 import { estimateMessageTokens } from './microCompact.js'
 import { getCompactUserSummaryMessage } from './prompt.js'
 
@@ -484,6 +488,16 @@ function createCompactionResultFromSessionMemory(
   const planAttachment = createPlanAttachmentIfNeeded(agentId)
   const attachments = planAttachment ? [planAttachment] : []
 
+  // Everything not preserved verbatim is being folded into the summary — keep
+  // those prompts as rewind points (carrying over any earlier archive entries).
+  const keptUuids = new Set(messagesToKeep.map(message => message.uuid))
+  const archivedRewindsMessage = createArchivedRewindsMessage(
+    collectArchivedRewinds(
+      messages.filter(message => !keptUuids.has(message.uuid)),
+      summaryMessages[summaryMessages.length - 1]!.uuid,
+    ),
+  )
+
   return {
     boundaryMarker: annotateBoundaryWithPreservedSegment(
       boundaryMarker,
@@ -491,6 +505,7 @@ function createCompactionResultFromSessionMemory(
       messagesToKeep,
     ),
     summaryMessages,
+    archivedRewindsMessage,
     attachments,
     hookResults,
     messagesToKeep,

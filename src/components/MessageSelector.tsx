@@ -14,6 +14,7 @@ import type { Message, PartialCompactDirection, UserMessage } from '../types/mes
 import { stripDisplayTags } from '../utils/displayTags.js';
 import { getUserMessagePreviewText, createUserMessage, extractTag, isEmptyMessageText, isSyntheticMessage, isToolUseResultMessage } from '../utils/messages.js';
 import { selectableUserMessagesFilter, messagesAfterAreOnlySynthetic } from '../utils/messageFilters.js';
+import { parseArchivedRewinds, type ArchivedRewind } from '../services/compact/archivedRewinds.js';
 import { type OptionWithDescription, Select } from './CustomSelect/select.js';
 import { Spinner } from './Spinner.js';
 import * as path from 'path';
@@ -37,6 +38,11 @@ type RestoreOption = 'both' | 'conversation' | 'code' | 'summarize' | 'summarize
 function isSummarizeOption(option: RestoreOption | null): option is 'summarize' | 'summarize_up_to' {
   return option === 'summarize' || option === 'summarize_up_to';
 }
+/** Pseudo-message standing in for a pre-compact prompt kept in the rewind list. */
+export type ArchivedRewindOption = UserMessage & { archivedRewind?: ArchivedRewind };
+function getArchivedRewind(message: UserMessage): ArchivedRewind | undefined {
+  return 'archivedRewind' in message ? (message as ArchivedRewindOption).archivedRewind : undefined;
+}
 type Props = {
   messages: Message[];
   onPreRestore: () => void;
@@ -44,6 +50,8 @@ type Props = {
   onRestoreCode: (message: UserMessage) => Promise<void>;
   onSummarize: (message: UserMessage, feedback?: string, direction?: PartialCompactDirection) => Promise<void>;
   onClose: () => void;
+  /** Restore conversation to an archived (pre-compact) prompt. */
+  onRestoreArchivedMessage?: (message: ArchivedRewindOption) => Promise<void> | void;
   /** Skip pick-list, land on confirm. Caller ran skip-check first. Esc closes fully (no back-to-list). */
   preselectedMessage?: UserMessage;
 };
@@ -55,6 +63,7 @@ export function MessageSelector({
   onRestoreCode,
   onSummarize,
   onClose,
+  onRestoreArchivedMessage,
   preselectedMessage
 }: Props): React.ReactNode {
   const fileHistory = useAppState(s => s.fileHistory);
@@ -63,12 +72,29 @@ export function MessageSelector({
 
   // Add current prompt as a virtual message
   const currentUUID = useMemo(randomUUID, []);
-  const messageOptions = useMemo(() => [...messages.filter(selectableUserMessagesFilter), {
-    ...createUserMessage({
-      content: ''
-    }),
-    uuid: currentUUID
-  } as UserMessage], [messages, currentUUID]);
+  const messageOptions = useMemo(() => {
+    const liveOptions = messages.filter(selectableUserMessagesFilter);
+    const liveIds = new Set<string>(liveOptions.map(m => m.uuid));
+    const archivedOptions: ArchivedRewindOption[] = [];
+    for (const message of messages) {
+      for (const entry of parseArchivedRewinds(message)) {
+        // Skip entries that are still live (stream mode keeps scrollback) or
+        // already present from an earlier archive carrier.
+        if (liveIds.has(entry.uuid) || archivedOptions.some(o => o.uuid === entry.uuid)) continue;
+        const pseudo = createUserMessage({ content: entry.text }) as ArchivedRewindOption;
+        pseudo.uuid = entry.uuid as UUID;
+        pseudo.timestamp = entry.ts as UUID;
+        pseudo.archivedRewind = entry;
+        archivedOptions.push(pseudo);
+      }
+    }
+    return [...liveOptions, ...archivedOptions, {
+      ...createUserMessage({
+        content: ''
+      }),
+      uuid: currentUUID
+    } as UserMessage].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  }, [messages, currentUUID]);
   const [selectedIndex, setSelectedIndex] = useState(messageOptions.length - 1);
 
   // Orient the selected message as the middle of the visible options
@@ -95,7 +121,7 @@ export function MessageSelector({
   const [summarizeUpToFeedback, setSummarizeUpToFeedback] = useState('');
 
   // Generate options with summarize as input type for inline context
-  function getRestoreOptions(canRestoreCode: boolean): OptionWithDescription<RestoreOption>[] {
+  function getRestoreOptions(canRestoreCode: boolean, isArchived = false): OptionWithDescription<RestoreOption>[] {
     const baseOptions: OptionWithDescription<RestoreOption>[] = canRestoreCode ? [{
       value: 'both',
       label: 'Restore code and conversation'
@@ -117,12 +143,14 @@ export function MessageSelector({
       showLabelWithValue: true,
       labelValueSeparator: ': '
     };
-    baseOptions.push({
-      value: 'summarize',
-      label: 'Summarize from here',
-      ...summarizeInputProps,
-      onChange: setSummarizeFromFeedback
-    });
+    if (!isArchived) {
+      baseOptions.push({
+        value: 'summarize',
+        label: 'Summarize from here',
+        ...summarizeInputProps,
+        onChange: setSummarizeFromFeedback
+      });
+    }
     baseOptions.push({
       value: 'nevermind',
       label: 'Never mind'
@@ -140,7 +168,11 @@ export function MessageSelector({
     onPreRestore();
     setIsRestoring(true);
     try {
-      await onRestoreMessage(message);
+      if (getArchivedRewind(message)) {
+        await onRestoreArchivedMessage?.(message as ArchivedRewindOption);
+      } else {
+        await onRestoreMessage(message);
+      }
       setIsRestoring(false);
       onClose();
     } catch (error_0) {
@@ -150,6 +182,7 @@ export function MessageSelector({
     }
   }
   async function handleSelect(message_0: UserMessage) {
+    const isArchived = getArchivedRewind(message_0) !== undefined;
     const index = messages.indexOf(message_0);
     const indexFromEnd = messages.length - 1 - index;
     logEvent('tengu_message_selector_selected', {
@@ -158,6 +191,18 @@ export function MessageSelector({
       is_current_prompt: false
     });
 
+    // Archived pseudo-messages are not part of the transcript; restore them
+    // via their fileHistory snapshots and the rewind-to-anchor handler.
+    if (isArchived) {
+      if (!isFileHistoryEnabled) {
+        await restoreConversationDirectly(message_0);
+        return;
+      }
+      const diffStats = await fileHistoryGetDiffStats(fileHistory, message_0.uuid);
+      setMessageToRestore(message_0);
+      setDiffStatsForRestore(diffStats);
+      return;
+    }
     // Do nothing if the message is not found
     if (!messages.includes(message_0)) {
       onClose();
@@ -220,7 +265,11 @@ export function MessageSelector({
     }
     if (option === 'conversation' || option === 'both') {
       try {
-        await onRestoreMessage(messageToRestore);
+        if (getArchivedRewind(messageToRestore)) {
+          await onRestoreArchivedMessage?.(messageToRestore as ArchivedRewindOption);
+        } else {
+          await onRestoreMessage(messageToRestore);
+        }
       } catch (error_3) {
         conversationError = error_3 as Error;
         logError(conversationError);
@@ -290,7 +339,9 @@ export function MessageSelector({
         if (userMessage.uuid !== currentUUID) {
           const canRestore = fileHistoryCanRestore(fileHistory, userMessage.uuid);
           const nextUserMessage = messageOptions.at(itemIndex + 1);
-          const diffStats_0 = canRestore ? computeDiffStatsBetweenMessages(messages, userMessage.uuid, nextUserMessage?.uuid !== currentUUID ? nextUserMessage?.uuid : undefined) : undefined;
+          // Archived prompts are absent from the transcript, so compute diff
+          // stats from the fileHistory snapshot keyed by the original uuid.
+          const diffStats_0 = canRestore ? (getArchivedRewind(userMessage) ? await fileHistoryGetDiffStats(fileHistory, userMessage.uuid) : computeDiffStatsBetweenMessages(messages, userMessage.uuid, nextUserMessage?.uuid !== currentUUID ? nextUserMessage?.uuid : undefined)) : undefined;
           if (diffStats_0 !== undefined) {
             setFileHistoryMetadata(prev_1 => ({
               ...prev_1,
@@ -338,7 +389,7 @@ export function MessageSelector({
             {isRestoring && isSummarizeOption(restoringOption) ? <Box flexDirection="row" gap={1}>
                 <Spinner />
                 <Text>Summarizing…</Text>
-              </Box> : <Select isDisabled={isRestoring} options={getRestoreOptions(!!canRestoreCode_0)} defaultFocusValue={canRestoreCode_0 ? 'both' : 'conversation'} onFocus={value => setSelectedRestoreOption(value as RestoreOption)} onChange={value_0 => onSelectRestoreOption(value_0 as RestoreOption)} onCancel={() => preselectedMessage ? onClose() : setMessageToRestore(undefined)} />}
+              </Box> : <Select isDisabled={isRestoring} options={getRestoreOptions(!!canRestoreCode_0, getArchivedRewind(messageToRestore) !== undefined)} defaultFocusValue={canRestoreCode_0 ? 'both' : 'conversation'} onFocus={value => setSelectedRestoreOption(value as RestoreOption)} onChange={value_0 => onSelectRestoreOption(value_0 as RestoreOption)} onCancel={() => preselectedMessage ? onClose() : setMessageToRestore(undefined)} />}
             {canRestoreCode_0 && <Box marginBottom={1}>
                 <Text dimColor>
                   {figures.warning} Rewinding does not affect files edited
@@ -367,7 +418,8 @@ export function MessageSelector({
                           </Text> : <Text>{'  '}</Text>}
                       </Box>
                       <Box flexDirection="column">
-                        <Box flexShrink={1} height={1} overflow="hidden">
+                        <Box flexShrink={1} height={1} overflow="hidden" flexDirection="row">
+                          {getArchivedRewind(msg) ? <Text dimColor={!isSelected} color="inactive">[compacted] </Text> : null}
                           <UserMessageOption userMessage={msg} color={isSelected ? 'suggestion' : undefined} isCurrent={isCurrent} paddingRight={10} />
                         </Box>
                         {isFileHistoryEnabled && metadataLoaded && <Box height={1} flexDirection="row">

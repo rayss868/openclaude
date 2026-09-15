@@ -8,5 +8,6 @@
   },
   "fastMode": false,
   "fastModePerSessionOptIn": false,
+  "skillSearch": false,
   "modelLimits": {}
 }

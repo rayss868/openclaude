@@ -2444,6 +2444,8 @@ export function getFirstMeaningfulUserMessageTextContent<T extends Message>(
     if (msg.type !== 'user' || msg.isMeta) continue
     // Skip compact summary messages - they should not be treated as the first prompt
     if ('isCompactSummary' in msg && msg.isCompactSummary) continue
+    // Skip archived-rewind carriers — their text is a structured payload, not a prompt
+    if ('isArchivedRewindsIndex' in msg && msg.isArchivedRewindsIndex) continue
 
     const content = msg.message?.content
     if (!content) continue
@@ -3904,6 +3906,171 @@ export function isLiteLog(log: LogOption): boolean {
   return log.messages.length === 0 && log.sessionId !== undefined
 }
 
+const SEARCH_HEAD_BYTES = 16 * 1024
+const SEARCH_TAIL_BYTES = 32 * 1024
+const SEARCH_MID_WINDOW_BYTES = 32 * 1024
+const SEARCH_MAX_TOTAL_READ_BYTES = 256 * 1024
+const SEARCH_MAX_CHAR_COUNT = 40_000
+
+/**
+ * Reads a session file directly (sampled windows — head, evenly spaced
+ * middle windows, tail — no full parse) and returns the accumulated text
+ * content of its messages for substring search. Lite logs have
+ * `messages: []`, so deep search must consult the file itself. Returns an
+ * empty string on any error or when the log is already full (the caller
+ * then uses the in-memory transcript instead).
+ */
+export async function readLogFileTextForSearch(
+  log: LogOption,
+  signal?: AbortSignal,
+): Promise<string> {
+  const sessionFile = log.fullPath
+  if (!sessionFile) {
+    return ''
+  }
+
+  let raw = ''
+  try {
+    const st = await stat(sessionFile)
+    if (st.size === 0) {
+      return ''
+    }
+
+    const handle = await fsOpen(sessionFile, 'r')
+    try {
+      const windows: Array<{ offset: number; length: number }> = []
+      const headLen = Math.min(SEARCH_HEAD_BYTES, st.size)
+      windows.push({ offset: 0, length: headLen })
+
+      // Sample evenly spaced middle windows so words in the middle of a
+      // long conversation are still searchable (head/tail alone can miss
+      // the bulk of a session body).
+      const midCount = Math.min(
+        4,
+        Math.floor((SEARCH_MAX_TOTAL_READ_BYTES - headLen - SEARCH_TAIL_BYTES) / SEARCH_MID_WINDOW_BYTES),
+      )
+      for (let i = 1; i <= midCount; i++) {
+        const center = (st.size * i) / (midCount + 1)
+        const offset = Math.max(0, Math.floor(center - SEARCH_MID_WINDOW_BYTES / 2))
+        windows.push({
+          offset,
+          length: Math.min(SEARCH_MID_WINDOW_BYTES, st.size - offset),
+        })
+      }
+
+      const tailLen = Math.min(SEARCH_TAIL_BYTES, st.size)
+      windows.push({ offset: Math.max(0, st.size - SEARCH_TAIL_BYTES), length: tailLen })
+
+      const chunks: string[] = []
+      for (const { offset, length } of windows) {
+        if (signal?.aborted) {
+          return ''
+        }
+        const buf = Buffer.alloc(length)
+        const read = await handle.read(buf, 0, buf.length, offset)
+        if (read.bytesRead > 0) {
+          chunks.push(read.buffer.subarray(0, read.bytesRead).toString('utf8'))
+        }
+        if (chunks.reduce((n, c) => n + c.length, 0) >= SEARCH_MAX_TOTAL_READ_BYTES) {
+          break
+        }
+      }
+      raw = chunks.join('\nWINDOW_SEPARATOR\n')
+    } finally {
+      await handle.close()
+    }
+  } catch {
+    return ''
+  }
+
+  // Process each sampled window with its own character budget instead of a
+  // single global cap: a global cap is spent entirely on the head window on
+  // long sessions, starving the middle/tail windows where the searched
+  // words may live.
+  const windows = raw.split('\nWINDOW_SEPARATOR\n')
+  const windowCount = Math.max(1, windows.length)
+  const budgetPerWindow = Math.max(
+    2000,
+    Math.floor(SEARCH_MAX_CHAR_COUNT / windowCount),
+  )
+
+  const textChunks: string[] = []
+  const maxLinesPerWindow = 120
+  for (const windowText of windows) {
+    if (signal?.aborted) {
+      return ''
+    }
+    let consumed = 0
+    let lines = 0
+    for (const line of windowText.split('\n')) {
+      if (++lines > maxLinesPerWindow) {
+        break
+      }
+      if (!line.trim() || !line.startsWith('{')) {
+        continue
+      }
+      // Pull out readable text fields without a full JSONL parse. The
+      // regexes intentionally skip heavy nested structures like tool inputs.
+      const content = extractSearchableField(line, 'content')
+      if (content) {
+        textChunks.push(content)
+        consumed += content.length
+        if (consumed >= budgetPerWindow) {
+          break
+        }
+      }
+      const text = extractSearchableField(line, 'text')
+      if (text) {
+        textChunks.push(text)
+        consumed += text.length
+        if (consumed >= budgetPerWindow) {
+          break
+        }
+      }
+      const summary = extractSearchableField(line, 'summary')
+      if (summary) {
+        textChunks.push(summary)
+      }
+    }
+  }
+
+  return textChunks.join(' ').replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * Extracts a short top-level string field from a JSONL entry without
+ * parsing the whole object. Returns '' when absent or when the field is
+ * not a plain string (e.g. tool_use input objects).
+ */
+function extractSearchableField(line: string, field: string): string {
+  const needle = `"${field}":`
+  const idx = line.indexOf(needle)
+  if (idx < 0) {
+    return ''
+  }
+  const rest = line.slice(idx + needle.length).trimStart()
+  if (!rest.startsWith('"')) {
+    return ''
+  }
+  // Parse the JSON string literal that begins at `rest`.
+  let i = 1
+  let out = ''
+  while (i < rest.length) {
+    const ch = rest[i]
+    if (ch === '\\') {
+      out += rest[i + 1] === 'n' ? ' ' : rest[i + 1] ?? ''
+      i += 2
+      continue
+    }
+    if (ch === '"') {
+      break
+    }
+    out += ch
+    i++
+  }
+  return out
+}
+
 /**
  * Loads full messages for a lite log by reading its JSONL file.
  * Returns a new LogOption with populated messages array.
@@ -5035,7 +5202,9 @@ export async function loadAllProjectsMessageLogsProgressive(
   // Deduplicate — same session can appear in multiple project dirs
   const sorted = deduplicateLogsBySessionId(rawLogs)
 
-  const { logs, nextIndex } = await enrichLogs(sorted, 0, initialEnrichCount)
+  const { logs, nextIndex } = await enrichLogs(sorted, 0, initialEnrichCount, {
+    includeSearchableText: true,
+  })
 
   // enrichLogs returns fresh unshared objects — safe to mutate in place
   logs.forEach((log, i) => {
@@ -5094,6 +5263,7 @@ export async function loadSameRepoMessageLogsProgressive(
     allStatLogs,
     0,
     initialEnrichCount,
+    { includeSearchableText: true },
   )
 
   // enrichLogs returns fresh unshared objects — safe to mutate in place
@@ -5574,6 +5744,7 @@ const INITIAL_ENRICH_COUNT = 50
 
 type LiteMetadata = {
   firstPrompt: string
+  lastPrompt?: string
   gitBranch?: string
   isSidechain: boolean
   projectPath?: string
@@ -5831,9 +6002,17 @@ export async function readLiteMetadata(
   // entry is only a fallback for older or truncated session files.
   const firstPrompt =
     extractFirstPromptFromChunk(head) ||
-    extractLastJsonStringField(tail, 'lastPrompt') ||
     extractJsonStringFieldPrefix(head, 'content', 200) ||
     extractJsonStringFieldPrefix(head, 'text', 200) ||
+    ''
+
+  // Latest activity for display (e.g. /resume row titles). Distinct from
+  // firstPrompt — the re-appended last-prompt entry (or the last user content
+  // in the tail window) reflects where the session ended, not where it began.
+  const lastPrompt =
+    extractLastJsonStringField(tail, 'lastPrompt') ||
+    extractLastJsonStringField(tail, 'content') ||
+    extractLastJsonStringField(tail, 'text') ||
     ''
 
   // Extract tail metadata via string search (last occurrence wins).
@@ -5879,6 +6058,7 @@ export async function readLiteMetadata(
 
   return {
     firstPrompt,
+    lastPrompt,
     gitBranch,
     isSidechain,
     projectPath,
@@ -6105,6 +6285,7 @@ export async function getSessionFilesLite(
 async function enrichLog(
   log: LogOption,
   readBuf: Buffer,
+  includeSearchableText?: boolean,
 ): Promise<LogOption | null> {
   if (!log.isLite || !log.fullPath) return log
 
@@ -6115,10 +6296,24 @@ async function enrichLog(
     log.sessionId,
   )
 
+  // For lite logs, optionally sample the session file so deep search
+  // (Fuse / agentic) can match words inside the conversation body, not
+  // just metadata. Off by default to keep non-search paths (e.g.
+  // searchSessionsByCustomTitle) free of extra I/O; enabled by progressive
+  // resume loaders that feed the LogSelector. Files larger than ~1 MB are
+  // skipped to keep the initial /resume load responsive; agentic search
+  // reads them on demand via readLogFileTextForSearch.
+  const searchableText =
+    includeSearchableText && (log.fileSize ?? 0) <= 1024 * 1024
+      ? await readLogFileTextForSearch(log)
+      : undefined
+
   const enriched: LogOption = {
     ...log,
     isLite: false,
     firstPrompt: meta.firstPrompt,
+    lastPrompt: meta.lastPrompt,
+    searchableText,
     gitBranch: meta.gitBranch,
     isSidechain: meta.isSidechain,
     teamName: meta.teamName,
@@ -6166,6 +6361,7 @@ export async function enrichLogs(
   allLogs: LogOption[],
   startIndex: number,
   count: number,
+  options?: { includeSearchableText?: boolean },
 ): Promise<{ logs: LogOption[]; nextIndex: number }> {
   const result: LogOption[] = []
   const readBuf = Buffer.alloc(LITE_READ_BUF_SIZE)
@@ -6175,7 +6371,11 @@ export async function enrichLogs(
     const log = allLogs[i]!
     i++
 
-    const enriched = await enrichLog(log, readBuf)
+    const enriched = await enrichLog(
+      log,
+      readBuf,
+      options?.includeSearchableText,
+    )
     if (enriched) {
       result.push(enriched)
     }

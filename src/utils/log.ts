@@ -43,11 +43,18 @@ export function getLogDisplayTitle(
   const strippedFirstPrompt = log.firstPrompt
     ? stripDisplayTagsAllowEmpty(log.firstPrompt)
     : ''
+  // Prefer the latest activity (last user prompt) over the first prompt so
+  // /resume-style titles reflect where the session ended, not where it began.
+  const strippedLastPrompt = log.lastPrompt
+    ? stripDisplayTagsAllowEmpty(log.lastPrompt)
+    : ''
+  const useLastPrompt = strippedLastPrompt && !isAutonomousPrompt
   const useFirstPrompt = strippedFirstPrompt && !isAutonomousPrompt
   const title =
     log.agentName ||
     log.customTitle ||
     log.summary ||
+    (useLastPrompt ? strippedLastPrompt : undefined) ||
     (useFirstPrompt ? strippedFirstPrompt : undefined) ||
     defaultTitle ||
     // For autonomous sessions without other context, show a meaningful label

@@ -159,10 +159,13 @@ export function SpinnerAnimationRow({
   // hasActiveTools both track leader state. When viewing an active teammate
   // while leader is idle, they'd otherwise flag a false stall after 3s.
   // Treating leaderIsIdle like hasActiveTools resets the stall timer.
+  // Also suppress while actively thinking (thinkingStatus === 'thinking'):
+  // reasoning models can run for minutes without emitting a visible token or
+  // invoking a tool, so flagging that as a stalled/red stream is a false alarm.
   const {
     isStalled,
     stalledIntensity
-  } = useStalledAnimation(time, currentResponseLength, hasActiveTools || leaderIsIdle, reducedMotion);
+  } = useStalledAnimation(time, currentResponseLength, thinkingStatus === 'thinking' || hasActiveTools || leaderIsIdle, reducedMotion);
   const frame = reducedMotion ? 0 : Math.floor(time / 120);
   const glimmerSpeed = mode === 'requesting' ? 50 : 200;
   // message is stable within a turn; stringWidth is expensive enough (Bun native

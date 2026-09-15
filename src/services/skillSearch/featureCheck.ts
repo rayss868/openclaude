@@ -1,7 +1,13 @@
-// Stub — skillSearch not included in source snapshot (feature-gated).
-// All call sites are behind feature('EXPERIMENTAL_SKILL_SEARCH').
+import { feature } from 'bun:bundle'
+import { getInitialSettings } from '../../utils/settings/settings.js'
 
-/** Runtime gate for experimental skill search. Always false here. */
+/**
+ * Runtime gate for experimental skill search. Requires BOTH the build-time
+ * EXPERIMENTAL_SKILL_SEARCH flag (scripts/build.ts) AND the user-level
+ * `skillSearch: true` in settings.json to be active. The feature is OFF
+ * by default — users must explicitly opt in via settings.
+ */
 export function isSkillSearchEnabled(): boolean {
-  return false
+  if (!feature('EXPERIMENTAL_SKILL_SEARCH')) return false
+  return getInitialSettings().skillSearch === true
 }
