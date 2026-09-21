@@ -6007,12 +6007,14 @@ export async function readLiteMetadata(
     ''
 
   // Latest activity for display (e.g. /resume row titles). Distinct from
-  // firstPrompt — the re-appended last-prompt entry (or the last user content
+  // firstPrompt — the re-appended last-prompt entry (or the last user prompt
   // in the tail window) reflects where the session ended, not where it began.
+  // The tail extractor is user-scoped: a raw `content`/`text` substring scan
+  // also matches system entries (cache metrics, hook summaries, turn
+  // durations), which surfaced as bogus /resume titles.
   const lastPrompt =
     extractLastJsonStringField(tail, 'lastPrompt') ||
-    extractLastJsonStringField(tail, 'content') ||
-    extractLastJsonStringField(tail, 'text') ||
+    extractLastPromptFromChunk(tail) ||
     ''
 
   // Extract tail metadata via string search (last occurrence wins).
@@ -6173,6 +6175,86 @@ function extractFirstPromptFromChunk(chunk: string): string {
   if ((feature('PROACTIVE') || feature('KAIROS')) && hasTickMessages)
     return 'Proactive session'
   return ''
+}
+
+/**
+ * Scans a tail chunk for the last meaningful user prompt.
+ *
+ * Mirrors extractFirstPromptFromChunk but keeps the final candidate instead of
+ * returning on the first. The tail window also holds system entries — cache
+ * metrics, hook summaries, turn durations — that carry a `content` field, so a
+ * raw `content`/`text` substring scan would surface those as a title.
+ */
+function extractLastPromptFromChunk(chunk: string): string {
+  let start = 0
+  let lastPrompt = ''
+  while (start < chunk.length) {
+    const newlineIdx = chunk.indexOf('\n', start)
+    const line =
+      newlineIdx >= 0 ? chunk.slice(start, newlineIdx) : chunk.slice(start)
+    start = newlineIdx >= 0 ? newlineIdx + 1 : chunk.length
+
+    if (!line.includes('"type":"user"') && !line.includes('"type": "user"')) {
+      continue
+    }
+    if (line.includes('"tool_result"')) continue
+    if (line.includes('"isMeta":true') || line.includes('"isMeta": true'))
+      continue
+
+    try {
+      const entry = jsonParse(line) as Record<string, unknown>
+      if (entry.type !== 'user') continue
+
+      const message = entry.message as Record<string, unknown> | undefined
+      if (!message) continue
+
+      const content = message.content
+      const texts: string[] = []
+      if (typeof content === 'string') {
+        texts.push(content)
+      } else if (Array.isArray(content)) {
+        for (const block of content) {
+          const b = block as Record<string, unknown>
+          if (b.type === 'text' && typeof b.text === 'string') {
+            texts.push(b.text as string)
+          }
+        }
+      }
+
+      for (const text of texts) {
+        if (!text) continue
+
+        let result = text.replace(/\n/g, ' ').trim()
+
+        // Command-only messages carry no user intent. Skipping them keeps the
+        // lastPrompt honest — the caller falls back to firstPrompt rather than
+        // echoing the literal "/model".
+        const commandNameTag = extractTag(result, COMMAND_NAME_TAG)
+        if (commandNameTag) {
+          const name = commandNameTag.replace(/^\//, '')
+          const commandArgs = extractTag(result, 'command-args')?.trim() || ''
+          if (getBuiltInCommandNames().has(name) || !commandArgs) continue
+          lastPrompt = `${commandNameTag} ${commandArgs}`
+          continue
+        }
+
+        const bashInput = extractTag(result, 'bash-input')
+        if (bashInput) {
+          lastPrompt = `! ${bashInput}`
+          continue
+        }
+
+        if (SKIP_FIRST_PROMPT_PATTERN.test(result)) continue
+        if (result.length > 200) {
+          result = result.slice(0, 200).trim() + '…'
+        }
+        lastPrompt = result
+      }
+    } catch {
+      continue
+    }
+  }
+  return lastPrompt
 }
 
 /**

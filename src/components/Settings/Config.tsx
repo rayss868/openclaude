@@ -547,6 +547,38 @@ export function Config({
       });
     }
   }] : []),
+  ...(feature('EXPERIMENTAL_SKILL_SEARCH') ? [{
+    id: 'skillSearch',
+    label: 'Skill search discovery',
+    searchText: 'skill search discover skills',
+    value: settingsData?.skillSearch === true,
+    type: 'boolean' as const,
+    onChange(enabled_ss: boolean) {
+      updateSettingsForSource('userSettings', {
+        skillSearch: enabled_ss ? true : undefined,
+      });
+      setSettingsData(prev_ss => ({
+        ...prev_ss,
+        skillSearch: enabled_ss,
+      }));
+    },
+  }] : []),
+  {
+    id: 'autoMemoryEnabled',
+    label: 'Auto-memory',
+    searchText: 'auto memory remember project context',
+    value: settingsData?.autoMemoryEnabled !== false,
+    type: 'boolean' as const,
+    onChange(enabled_am: boolean) {
+      updateSettingsForSource('userSettings', {
+        autoMemoryEnabled: enabled_am ? undefined : false,
+      });
+      setSettingsData(prev_am => ({
+        ...prev_am,
+        autoMemoryEnabled: enabled_am,
+      }));
+    },
+  },
   ...(isFileCheckpointingAvailable ? [{
     id: 'fileCheckpointingEnabled',
     label: 'Rewind code (checkpoints)',

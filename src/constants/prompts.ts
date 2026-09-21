@@ -371,7 +371,8 @@ function getSessionSpecificGuidanceSection(
       : null,
     DISCOVER_SKILLS_TOOL_NAME !== null &&
     hasSkills &&
-    enabledTools.has(DISCOVER_SKILLS_TOOL_NAME)
+    enabledTools.has(DISCOVER_SKILLS_TOOL_NAME) &&
+    skillSearchFeatureCheck?.isSkillSearchEnabled()
       ? getDiscoverSkillsGuidance()
       : null,
     hasAgentTool &&
@@ -750,7 +751,6 @@ export async function enhanceSystemPromptWithEnvDetails(
   // AgentTool.tsx:768 builds the prompt before assembleToolPool:830 so it
   // omits this param — `?? true` preserves guidance there.
   const discoverSkillsGuidance =
-    feature('EXPERIMENTAL_SKILL_SEARCH') &&
     skillSearchFeatureCheck?.isSkillSearchEnabled() &&
     DISCOVER_SKILLS_TOOL_NAME !== null &&
     (enabledToolNames?.has(DISCOVER_SKILLS_TOOL_NAME) ?? true)

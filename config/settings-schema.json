@@ -855,7 +855,7 @@
                     "const": "hostPattern"
                   },
                   "hostPattern": {
-                    "description": "Regex pattern to match the host/domain extracted from any marketplace source type. For github sources, matches against \"github.com\". For git sources (SSH or HTTPS), extracts the hostname from the URL. Use in strictKnownMarketplaces to allow all marketplaces from a specific host (e.g., \"^github\\.mycompany\\.com$\").",
+                    "description": "Regex pattern to match the host/domain extracted from any marketplace source type. For github sources, matches against \"github.com\". For git sources (SSH or HTTPS), extracts the hostname from the URL. Use in strictKnownMarketplaces to allow all marketplaces from a specific host (e.g., \"^github\\.mycompany\\.com$\"). The pattern must match the ENTIRE host: it is anchored before use, so \"github\\.mycompany\\.com\" cannot be satisfied by a lookalike host such as \"github.mycompany.com.evil.example\". Use an explicit wildcard (e.g. \".*\\.mycompany\\.com\") to allow subdomains.",
                     "type": "string"
                   }
                 },
@@ -1300,7 +1300,7 @@
                 "const": "hostPattern"
               },
               "hostPattern": {
-                "description": "Regex pattern to match the host/domain extracted from any marketplace source type. For github sources, matches against \"github.com\". For git sources (SSH or HTTPS), extracts the hostname from the URL. Use in strictKnownMarketplaces to allow all marketplaces from a specific host (e.g., \"^github\\.mycompany\\.com$\").",
+                "description": "Regex pattern to match the host/domain extracted from any marketplace source type. For github sources, matches against \"github.com\". For git sources (SSH or HTTPS), extracts the hostname from the URL. Use in strictKnownMarketplaces to allow all marketplaces from a specific host (e.g., \"^github\\.mycompany\\.com$\"). The pattern must match the ENTIRE host: it is anchored before use, so \"github\\.mycompany\\.com\" cannot be satisfied by a lookalike host such as \"github.mycompany.com.evil.example\". Use an explicit wildcard (e.g. \".*\\.mycompany\\.com\") to allow subdomains.",
                 "type": "string"
               }
             },
@@ -1731,7 +1731,7 @@
                 "const": "hostPattern"
               },
               "hostPattern": {
-                "description": "Regex pattern to match the host/domain extracted from any marketplace source type. For github sources, matches against \"github.com\". For git sources (SSH or HTTPS), extracts the hostname from the URL. Use in strictKnownMarketplaces to allow all marketplaces from a specific host (e.g., \"^github\\.mycompany\\.com$\").",
+                "description": "Regex pattern to match the host/domain extracted from any marketplace source type. For github sources, matches against \"github.com\". For git sources (SSH or HTTPS), extracts the hostname from the URL. Use in strictKnownMarketplaces to allow all marketplaces from a specific host (e.g., \"^github\\.mycompany\\.com$\"). The pattern must match the ENTIRE host: it is anchored before use, so \"github\\.mycompany\\.com\" cannot be satisfied by a lookalike host such as \"github.mycompany.com.evil.example\". Use an explicit wildcard (e.g. \".*\\.mycompany\\.com\") to allow subdomains.",
                 "type": "string"
               }
             },
@@ -2357,6 +2357,58 @@
         "additionalProperties": false
       }
     },
+    "modelPricing": {
+      "description": "Exact-model pricing overrides. Token fields are USD per 1,000,000 tokens; webSearchRequests is USD per request and defaults to $0.01 when omitted. All four token fields are required. Keys are exact, case-sensitive resolved model ids. Shared project settings are ignored for personal USD accounting.",
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "inputTokens": {
+            "description": "Input-token price in USD per 1,000,000 tokens.",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "outputTokens": {
+            "description": "Output-token price in USD per 1,000,000 tokens.",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "promptCacheReadTokens": {
+            "description": "Prompt-cache read price in USD per 1,000,000 tokens.",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "promptCacheWriteTokens": {
+            "description": "Prompt-cache write price in USD per 1,000,000 tokens.",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "webSearchRequests": {
+            "description": "Web-search price in USD per request. Defaults to $0.01 when omitted.",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "inputTokens",
+          "outputTokens",
+          "promptCacheReadTokens",
+          "promptCacheWriteTokens"
+        ],
+        "additionalProperties": false
+      },
+      "maxProperties": 256
+    },
     "apiRetry": {
       "description": "Network retry policy. Use this to tune how OpenClaude handles rate limits (429), capacity issues (529) and transient errors — including unlimited retrying with a fixed delay to ride out a persistent rate limit.",
       "type": "object",
@@ -2386,6 +2438,10 @@
     },
     "fastMode": {
       "description": "When true, fast mode is enabled. When absent or false, fast mode is off.",
+      "type": "boolean"
+    },
+    "skillSearch": {
+      "description": "Enable skill search discovery — automatically finds relevant skills before tasks and exposes the DiscoverSkills tool. Default: false (off).",
       "type": "boolean"
     },
     "fastModePerSessionOptIn": {

@@ -94,6 +94,9 @@ import {
 const skillPrefetch = feature('EXPERIMENTAL_SKILL_SEARCH')
   ? (require('./services/skillSearch/prefetch.js') as typeof import('./services/skillSearch/prefetch.js'))
   : null
+const { isSkillSearchEnabled } = feature('EXPERIMENTAL_SKILL_SEARCH')
+  ? (require('./services/skillSearch/featureCheck.js') as typeof import('./services/skillSearch/featureCheck.js'))
+  : { isSkillSearchEnabled: () => false }
 const jobClassifier = feature('TEMPLATES')
   ? (require('./jobs/classifier.js') as typeof import('./jobs/classifier.js'))
   : null
@@ -886,11 +889,12 @@ async function* queryLoop(
     // nothing in prod). Turn-0 user-input discovery still blocks in
     // userInputAttachments — that's the one signal where there's no prior
     // work to hide under.
-    const pendingSkillPrefetch = skillPrefetch?.startSkillDiscoveryPrefetch(
+    const pendingSkillPrefetch = isSkillSearchEnabled()
+      ? skillPrefetch?.startSkillDiscoveryPrefetch(
       null,
       messages,
       toolUseContext,
-    )
+    ) : null
 
     yield { type: 'stream_request_start' }
 

@@ -73,3 +73,35 @@ describe('readLiteMetadata tag extraction', () => {
     expect(meta.tag).toBe('frontend')
   })
 })
+
+describe('readLiteMetadata lastPrompt extraction', () => {
+  test('ignores a trailing system informational entry', async () => {
+    // Session files end each turn with a system entry carrying cache metrics in
+    // a `content` field. The old raw substring fallback picked that up and the
+    // cache line became the /resume row title.
+    const meta = await readMetadata([
+      '{"type":"user","message":{"role":"user","content":"prompt pertama"},"cwd":"/work/app"}',
+      '{"type":"user","message":{"role":"user","content":"prompt terakhir"},"cwd":"/work/app"}',
+      '{"type":"system","subtype":"informational","content":"[Cache: 63k read \u2022 hit 97%]","isMeta":false}',
+    ])
+    expect(meta.lastPrompt).toBe('prompt terakhir')
+  })
+
+  test('prefers the re-appended last-prompt entry over the tail scan', async () => {
+    const meta = await readMetadata([
+      '{"type":"user","message":{"role":"user","content":"prompt awal"},"cwd":"/work/app"}',
+      '{"type":"last-prompt","lastPrompt":"aktivitas terakhir","sessionId":"S1"}',
+    ])
+    expect(meta.lastPrompt).toBe('aktivitas terakhir')
+  })
+
+  test('does not surface a built-in slash command as lastPrompt', async () => {
+    // A session that only ran /model should fall back to firstPrompt, not echo
+    // the literal command as the latest activity.
+    const meta = await readMetadata([
+      '{"type":"user","message":{"role":"user","content":"<command-name>/model</command-name>\\n<command-message>model</command-message>\\n<command-args></command-args>"},"cwd":"/work/app"}',
+      '{"type":"user","message":{"role":"user","content":"<local-command-stdout>Set model to GPT</local-command-stdout>"},"cwd":"/work/app"}',
+    ])
+    expect(meta.lastPrompt).toBe('')
+  })
+})
