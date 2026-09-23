@@ -58,6 +58,7 @@ import {
   type ProviderOverride,
 } from './authRouting.js'
 import { hasUsableOpenAICredential } from './credentialPool.js'
+import { getApiTimeoutMs } from './openaiShim/transport.js'
 import { AnthropicVertex } from './vertexClient.js'
 import { importOptionalRuntimeModule } from '../../utils/optionalRuntimeModule.js'
 
@@ -665,7 +666,7 @@ export async function getAnthropicClient({
   const ARGS = {
     defaultHeaders,
     maxRetries,
-    timeout: parseInt(process.env.API_TIMEOUT_MS || String(600 * 1000), 10),
+    timeout: getApiTimeoutMs(),
     dangerouslyAllowBrowser: true,
     fetchOptions: getProxyFetchOptions({
       forAnthropicAPI: true,
@@ -688,7 +689,7 @@ export async function getAnthropicClient({
     return createOpenAIShimClient({
       defaultHeaders: safeHeaders,
       maxRetries,
-      timeout: parseInt(process.env.API_TIMEOUT_MS || String(600 * 1000), 10),
+      timeout: getApiTimeoutMs(),
       providerOverride,
       reasoningEffort: shimReasoningEffort,
     }) as unknown as Anthropic
@@ -729,7 +730,7 @@ export async function getAnthropicClient({
     return createOpenAIShimClient({
       defaultHeaders,
       maxRetries,
-      timeout: parseInt(process.env.API_TIMEOUT_MS || String(600 * 1000), 10),
+      timeout: getApiTimeoutMs(),
       reasoningEffort: shimReasoningEffort,
     }) as unknown as Anthropic
   }

@@ -410,6 +410,44 @@ missing. Install only what you need:
 When installing OpenClaude from source (`bun install`), all of these are
 already present as dev dependencies, so source/dev builds need no extra steps.
 
+## Node.js heap size
+
+The installed CLI relaunches Node with `--max-old-space-size=8192` unless a heap
+limit is already present in `NODE_OPTIONS` or `process.execArgv`. That fixed cap
+is too large for small containers and too small for high-RAM workstations.
+
+To size the V8 old-space heap as a percentage of available memory (cgroup or OS
+constraint when Node reports a real byte cap, otherwise total system RAM), pass
+the percentage through the OpenClaude launcher. OpenClaude converts
+`--max-old-space-size-percentage` and
+`OPENCLAUDE_NODE_MAX_OLD_SPACE_SIZE_PERCENTAGE` to an explicit
+`--max-old-space-size` in megabytes so the same command works on every supported
+Node version, including `22.0.0`:
+
+```bash
+openclaude --max-old-space-size-percentage=50
+openclaude --max-old-space-size-percentage=75
+```
+
+Heap size precedence, earlier wins:
+
+1. `--max-memory=<MB>` (explicit megabyte override)
+2. `--max-old-space-size-percentage`
+3. `OPENCLAUDE_NODE_MAX_OLD_SPACE_SIZE_PERCENTAGE`
+4. `OPENCLAUDE_NODE_MAX_OLD_SPACE_SIZE_MB`
+5. Default `8192`
+
+Putting the native flag in `NODE_OPTIONS` or
+`node --max-old-space-size-percentage=…` only works on Node versions that accept
+that option; Node 22.0.0 rejects it before OpenClaude starts. When a supporting
+Node already applied that native flag, OpenClaude leaves it in place and does
+not append `8192`. Launcher-only flags (`--max-old-space-size-percentage`,
+`--max-memory=`) are still stripped so Commander can start. That native-flag
+short-circuit also skips OpenClaude’s numbered precedence, including
+`--max-memory`. If a valid percentage is requested but available memory cannot
+be measured, OpenClaude prints one warning on stderr and uses `8192` instead
+of an unrelated megabyte environment value.
+
 ## Environment Variables
 
 ### Custom (Anthropic-compatible) APIs
@@ -462,8 +500,12 @@ host. Without this variable the behavior is unchanged.
 | `OPENAI_MODEL` | OpenAI-compatible only | Model name such as `gpt-4o`, `deepseek-v4-flash`, or `llama3.3:70b` |
 | `OPENAI_BASE_URL` | No | API endpoint, defaulting to `https://api.openai.com/v1` |
 | `OPENAI_API_BASE` | No | Compatibility alias for `OPENAI_BASE_URL` |
-| `API_TIMEOUT_MS` | No | Time-to-response-headers deadline for generic OpenAI-compatible requests, direct GitHub Copilot Responses, and Copilot chat-to-Responses fallback requests, in milliseconds (default: `600000`, or 10 minutes). The value must be a safe positive integer; invalid, zero, negative, or fractional values use the default, and values above `2147483647` are capped. The deadline is disarmed after headers arrive, so it does not limit response streaming. Export this runtime setting from your shell or launcher; the provider env-file loader ignores runtime/debug settings, so a value configured only there leaves the default in effect. First-party Codex OAuth Responses and the Anthropic SDK retain their existing timeout handling. |
+| `API_TIMEOUT_MS` | No | Request timeout in milliseconds, shared by the OpenAI-compatible and native Anthropic paths (default: `600000`, or 10 minutes). The value must be a safe positive integer; invalid, empty, zero, negative, or fractional values fall back to the applicable default, and values above `2147483647` are capped. For generic OpenAI-compatible requests, direct GitHub Copilot Responses, and Copilot chat-to-Responses fallback requests it is a time-to-response-headers deadline that is disarmed once headers arrive, so it does not limit response streaming. For native Anthropic clients it sets the Anthropic SDK request timeout, and for the non-streaming fallback it overrides that path's own default (`120000` on remote sessions, `300000` otherwise) under the same validation and clamping. Export this runtime setting from your shell or launcher; the provider env-file loader ignores runtime/debug settings, so a value configured only there leaves the default in effect. First-party Codex OAuth Responses retain their existing timeout handling. |
 | `OPENCLAUDE_OLLAMA_NUM_CTX` | Ollama only | Request-level Ollama context window. Defaults to `32768`; set a larger value for longer same-session history if your model and hardware can handle it. |
+| `OLLAMA_BASE_URL` | Ollama only | Optional Ollama server base URL used for model discovery and the signed-in local Web Search proxy. The Ollama provider profile normally supplies the equivalent `OPENAI_BASE_URL`. |
+| `OLLAMA_API_KEY` | Ollama Web Search only | Enables hosted Ollama search at `https://ollama.com/api/web_search` and acts as a fallback when the configured local Ollama search endpoint is unavailable. |
+| `OPENCLAUDE_NODE_MAX_OLD_SPACE_SIZE_MB` | No | Explicit V8 old-space heap cap in megabytes for the Node launcher. Used only when `--max-memory`, `--max-old-space-size-percentage`, and `OPENCLAUDE_NODE_MAX_OLD_SPACE_SIZE_PERCENTAGE` are all unset. Default `8192`. |
+| `OPENCLAUDE_NODE_MAX_OLD_SPACE_SIZE_PERCENTAGE` | No | Size the V8 old-space heap as a percentage (greater than 0, up to 100) of constrained/container memory when Node reports it, otherwise total system RAM. Converted to `--max-old-space-size` so Node 22.0.0 can start. Precedence, earlier wins: `--max-memory` → `--max-old-space-size-percentage` → this variable → `OPENCLAUDE_NODE_MAX_OLD_SPACE_SIZE_MB` → default `8192`. |
 | `CLAUDE_CODE_OPENAI_CONTEXT_WINDOWS` | No | JSON map of OpenAI-compatible model names to context windows, such as `{"custom-model":1000000}`. Use this when a custom provider does not expose context metadata from `/v1/models`. |
 | `CLAUDE_CODE_OPENAI_MAX_OUTPUT_TOKENS` | No | JSON map of OpenAI-compatible model names to max output tokens, such as `{"custom-model":32768}`. Use this when a custom provider does not expose output-limit metadata from `/v1/models`. |
 | `OPENCODE_API_KEY` | OpenCode Zen / Go | Shared API key for OpenCode Zen (pay-as-you-go) and OpenCode Go (subscription); get yours from https://opencode.ai |
@@ -483,6 +525,7 @@ host. Without this variable the behavior is unchanged.
 | `OPENCLAUDE_MAX_RETRIES` | No | Maximum retry attempts for retryable API failures, capped at 100 (default: 10). Set to `0` to disable retries after the initial request. If unset, deprecated `CLAUDE_CODE_MAX_RETRIES` is still honored for compatibility. |
 | `OPENCLAUDE_MAX_TURNS` | No | Per-prompt **local** interactive REPL turn cap for the in-process query loop. Defaults to `50`. Set a larger positive integer for long autonomous local interactive sessions (for example models that take many small tool steps). CLI `--max-turns 0` explicitly disables this cap and prints a cautionary warning. Precedence for a valid override: CLI `--max-turns` → this env var → legacy `CLAUDE_CODE_MAX_TURNS` (only when this var is unset/empty) → `/config` → Max turns (interactive) → `50`. If this env var is set but invalid (zero, negative, non-integer), the default `50` is used and lower layers are not consulted — same pattern as `OPENCLAUDE_MAX_RETRIES`. Does not apply to remote-backed interactive sessions (`connect` / `ssh` / `--remote`). |
 | `OPENCLAUDE_RETRY_DELAY_MS` | No | Base retry delay in milliseconds for APIs that do not send `Retry-After`; exponential backoff starts from this value, capped at 60000 (default: 500) |
+| `OPENCLAUDE_QUERY_IDLE_TIMEOUT_MS` | No | Foreground QueryGuard inactivity timeout in milliseconds. Defaults to 300000 (5 minutes) and can also be changed interactively through `/config` → Query idle timeout; this environment variable takes precedence over the saved preference. The saved preference applies to the next foreground query. Use a larger positive integer to allow longer gaps between observable query activity. This does not change provider transport stream watchdogs, lease expiry, or human-interaction suspension. The hard maximum below still wins, so raise `OPENCLAUDE_QUERY_HARD_MAX_MS` too when the desired idle interval exceeds it. Invalid, zero, negative, fractional, or timer-overflow environment values are ignored with a warning and use the default rather than the saved preference. |
 | `OPENCLAUDE_QUERY_HARD_MAX_MS` | No | Foreground query hard maximum in milliseconds. Defaults to 1800000 (30 minutes). Use a larger positive integer for long autonomous sessions; invalid, zero, negative, fractional, or timer-overflow values are ignored with a warning. |
 | `OPENCLAUDE_INTERRUPT_TRACE` | No | Set to `1` or `true` to retain a bounded, privacy-safe interruption lifecycle trace in memory. Disabled by default. The trace contains only allowlisted lifecycle metadata—never prompts, responses, tool arguments, credentials, or raw error messages. |
 | `OPENCLAUDE_INTERRUPT_TRACE_FILE` | No | Optional absolute JSONL output path used only when `OPENCLAUDE_INTERRUPT_TRACE` is enabled. On Linux, missing parent directories are created privately and every parent is opened through `/proc/self/fd` without following symbolic links before the final regular file is appended. If the file already exists, its mode is reset to `0600` on every append, so do not configure a shared file. Other platforms retain the bounded trace in memory but do not write this file because Node does not expose an equivalent safe descriptor-relative traversal API there. Writes are best-effort and never change request behavior. Use a separate path per OpenClaude process and keep the resulting diagnostic file private. |

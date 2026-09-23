@@ -203,12 +203,21 @@ function createInteractiveMonitorPermission(): {
       push(item) {
         queue = [...queue, item]
       },
-      remove(toolUseID) {
-        queue = queue.filter(item => item.toolUseID !== toolUseID)
+      remove(toolUseID, permissionSessionId, agentId) {
+        queue = queue.filter(
+          item =>
+            item.toolUseID !== toolUseID ||
+            item.permissionSessionId !== permissionSessionId ||
+            item.toolUseContext.agentId !== agentId,
+        )
       },
-      update(toolUseID, patch) {
+      update(toolUseID, permissionSessionId, agentId, patch) {
         queue = queue.map(item =>
-          item.toolUseID === toolUseID ? { ...item, ...patch } : item,
+          item.toolUseID === toolUseID &&
+          item.permissionSessionId === permissionSessionId &&
+          item.toolUseContext.agentId === agentId
+            ? { ...item, ...patch }
+            : item,
         )
       },
     },

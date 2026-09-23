@@ -13,11 +13,13 @@ import {
   it,
   mock,
 } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Command } from '@commander-js/extra-typings'
+import { applyChildProcessHeapOptions } from './applyChildProcessHeapOptions.js'
 import {
+  BACKGROUND_SESSION_CLEANUP_WORKER_ENV,
   BACKGROUND_SESSION_ID_ENV,
   BACKGROUND_SESSION_LAUNCHER_PID_ENV,
 } from '../cli/bgRouting.js'
@@ -44,9 +46,15 @@ const mockProfileCheckpoint = mock((_checkpoint: string) => {})
 const mockPsHandler = mock(async (_args: string[]) => {})
 const mockLogsHandler = mock(async (_args: string[]) => {})
 const mockAttachHandler = mock(async (_args: string[]) => {})
-const mockKillHandler = mock(async (_args: string[]) => {})
+const mockKillHandler = mock(
+  async (
+    _args: string[],
+    _options?: { retentionSettingsReady?: boolean },
+  ) => {},
+)
 const mockHandleBgFlag = mock(async (_args: string[]) => {})
 const mockPrepareBackgroundSessionFinalizer = mock(async () => 'installed')
+const mockRunBackgroundSessionCleanupWorker = mock(async () => {})
 const mockLoadEnvFile = mock((_filePath: string) => ({}))
 const mockParseProviderEnvFileArgs = mock((_args: string[]) => ({ paths: [] }))
 const mockReapplyRememberedEnvFileValues = mock(() => {})
@@ -66,6 +74,7 @@ const mockGetProviderValidationError = mock(
   async (_env: NodeJS.ProcessEnv) => undefined,
 )
 const mockEagerLoadSettingsFromArgs = mock((_args: string[]) => ({ ok: true }))
+const mockResetSettingsCache = mock(() => {})
 const mockResolveOutOfProcessTeammateProviderFromCliArgs = mock(
   (_args: string[], _settings: unknown): ProviderOverride | undefined =>
     undefined,
@@ -90,6 +99,7 @@ const runtimeMocks = [
   mockKillHandler,
   mockHandleBgFlag,
   mockPrepareBackgroundSessionFinalizer,
+  mockRunBackgroundSessionCleanupWorker,
   mockLoadEnvFile,
   mockParseProviderEnvFileArgs,
   mockReapplyRememberedEnvFileValues,
@@ -99,6 +109,7 @@ const runtimeMocks = [
   mockApplyStartupEnvFromProfile,
   mockGetProviderValidationError,
   mockEagerLoadSettingsFromArgs,
+  mockResetSettingsCache,
   mockResolveOutOfProcessTeammateProviderFromCliArgs,
   mockApplyAgentProviderOverrideToEnv,
   mockGetInitialSettings,
@@ -118,47 +129,73 @@ function clearRuntimeMocks() {
 }
 
 describe('cli.tsx — NODE_OPTIONS --max-old-space-size (issue #402)', () => {
-  const originalNodeOptions = process.env.NODE_OPTIONS
+  const cliSource = readFileSync(new URL('./cli.tsx', import.meta.url), 'utf8')
 
-  beforeEach(() => {
-    delete process.env.NODE_OPTIONS
+  it('wires the child-process heap helper from the CLI entrypoint', () => {
+    expect(cliSource).toContain(
+      "import { applyChildProcessHeapOptions } from './applyChildProcessHeapOptions.js'",
+    )
+    expect(cliSource).toContain('applyChildProcessHeapOptions(process.env, process.execArgv)')
   })
 
-  afterEach(() => {
-    if (originalNodeOptions !== undefined) {
-      process.env.NODE_OPTIONS = originalNodeOptions
-    } else {
-      delete process.env.NODE_OPTIONS
-    }
+  it('propagates a numeric process.execArgv heap cap to NODE_OPTIONS for subprocesses', () => {
+    const env: NodeJS.ProcessEnv = {}
+    applyChildProcessHeapOptions(env, ['--max-old-space-size=4096', '--expose-gc'])
+    expect(env.NODE_OPTIONS).toBe('--max-old-space-size=4096')
+  })
+
+  it('does not append 8192 when process.execArgv already has a percentage heap flag', () => {
+    const env: NodeJS.ProcessEnv = {}
+    applyChildProcessHeapOptions(env, ['--max-old-space-size-percentage=50'])
+    expect(env.NODE_OPTIONS).toBeUndefined()
   })
 
   it('sets --max-old-space-size=8192 when NODE_OPTIONS is not set', () => {
-    // Guard predicate: fires when the flag is absent
-    const shouldSetHeapCap = !process.env.NODE_OPTIONS?.includes('--max-old-space-size')
-    expect(shouldSetHeapCap).toBe(true)
+    const env: NodeJS.ProcessEnv = {}
+    applyChildProcessHeapOptions(env)
+    expect(env.NODE_OPTIONS).toBe('--max-old-space-size=8192')
   })
 
   it('does not override existing --max-old-space-size=4096', () => {
-    process.env.NODE_OPTIONS = '--max-old-space-size=4096 --experimental-vm-modules'
-
-    const shouldSetHeapCap = !process.env.NODE_OPTIONS.includes('--max-old-space-size')
-    expect(shouldSetHeapCap).toBe(false)
-    expect(process.env.NODE_OPTIONS).toContain('4096')
+    const env: NodeJS.ProcessEnv = {
+      NODE_OPTIONS: '--max-old-space-size=4096 --experimental-vm-modules',
+    }
+    applyChildProcessHeapOptions(env)
+    expect(env.NODE_OPTIONS).toBe(
+      '--max-old-space-size=4096 --experimental-vm-modules',
+    )
   })
 
   it('does not override existing --max-old-space-size=8192', () => {
-    process.env.NODE_OPTIONS = '--max-old-space-size=8192'
-
-    const shouldSetHeapCap = !process.env.NODE_OPTIONS.includes('--max-old-space-size')
-    expect(shouldSetHeapCap).toBe(false)
-    expect(process.env.NODE_OPTIONS).toBe('--max-old-space-size=8192')
+    const env: NodeJS.ProcessEnv = {
+      NODE_OPTIONS: '--max-old-space-size=8192',
+    }
+    applyChildProcessHeapOptions(env)
+    expect(env.NODE_OPTIONS).toBe('--max-old-space-size=8192')
   })
 
   it('appends --max-old-space-size when NODE_OPTIONS has other flags', () => {
-    process.env.NODE_OPTIONS = '--inspect=9229'
+    const env: NodeJS.ProcessEnv = { NODE_OPTIONS: '--inspect=9229' }
+    applyChildProcessHeapOptions(env)
+    expect(env.NODE_OPTIONS).toBe('--inspect=9229 --max-old-space-size=8192')
+  })
 
-    const result = `${process.env.NODE_OPTIONS} --max-old-space-size=8192`
-    expect(result).toBe('--inspect=9229 --max-old-space-size=8192')
+  it('does not override existing --max-old-space-size-percentage=50', () => {
+    const env: NodeJS.ProcessEnv = {
+      NODE_OPTIONS: '--max-old-space-size-percentage=50',
+    }
+    applyChildProcessHeapOptions(env)
+    expect(env.NODE_OPTIONS).toBe('--max-old-space-size-percentage=50')
+    expect(env.NODE_OPTIONS).not.toMatch(/--max-old-space-size=\d+/)
+  })
+
+  it('uses OPENCLAUDE_NODE_MAX_OLD_SPACE_SIZE_MB when appending a heap cap', () => {
+    const env: NodeJS.ProcessEnv = {
+      NODE_OPTIONS: '--inspect=9229',
+      OPENCLAUDE_NODE_MAX_OLD_SPACE_SIZE_MB: '2048',
+    }
+    applyChildProcessHeapOptions(env)
+    expect(env.NODE_OPTIONS).toBe('--inspect=9229 --max-old-space-size=2048')
   })
 })
 
@@ -317,18 +354,15 @@ describe('cli.tsx — --provider startup ordering', () => {
     expect(process.env.GEMINI_MODEL).toBe('gemini-2.0-flash')
   })
 
-  it('dispatches background session management before config and provider validation', async () => {
+  it('dispatches background session management before provider validation', async () => {
     const src = await Bun.file(`${import.meta.dir}/cli.tsx`).text()
     const bgManagementIndex = src.indexOf("args[0] === 'ps'")
-    const configEnableIndex = src.indexOf('enableConfigs()')
     const providerValidationIndex = src.indexOf(
       'await validateProviderEnvForStartupOrExit()',
     )
 
     expect(bgManagementIndex).toBeGreaterThanOrEqual(0)
-    expect(configEnableIndex).toBeGreaterThanOrEqual(0)
     expect(providerValidationIndex).toBeGreaterThanOrEqual(0)
-    expect(bgManagementIndex).toBeLessThan(configEnableIndex)
     expect(bgManagementIndex).toBeLessThan(providerValidationIndex)
   })
 
@@ -362,6 +396,7 @@ const mockImporters = {
   }),
   bgFinalizer: async () => ({
     prepareBackgroundSessionFinalizer: mockPrepareBackgroundSessionFinalizer,
+    runBackgroundSessionCleanupWorker: mockRunBackgroundSessionCleanupWorker,
   }),
   envFile: async () => ({
     loadEnvFile: mockLoadEnvFile,
@@ -393,6 +428,9 @@ const mockImporters = {
   }),
   flagSettings: async () => ({
     eagerLoadSettingsFromArgs: mockEagerLoadSettingsFromArgs,
+  }),
+  settingsCache: async () => ({
+    resetSettingsCache: mockResetSettingsCache,
   }),
   agentRouting: async () => ({
     applyAgentProviderOverrideToEnv: mockApplyAgentProviderOverrideToEnv,
@@ -464,13 +502,42 @@ describe('cli.tsx — background routing behavior', () => {
 
       await runCliEntrypoint([command, ...tail], bgOptions)
 
-      expect(handler.mock.calls).toEqual([[tail]])
+      if (command === 'kill') {
+        expect(mockKillHandler.mock.calls).toEqual([
+          [tail, { retentionSettingsReady: true }],
+        ])
+      } else {
+        expect(handler.mock.calls).toEqual([[tail]])
+      }
       expect(mockParseProviderEnvFileArgs).not.toHaveBeenCalled()
       expect(mockHandleBgFlag).not.toHaveBeenCalled()
-      expect(mockEnableConfigs).not.toHaveBeenCalled()
+      expect(mockEnableConfigs).toHaveBeenCalledTimes(
+        command === 'kill' ? 1 : 0,
+      )
+      expect(mockEagerLoadSettingsFromArgs).toHaveBeenCalledTimes(
+        command === 'kill' ? 1 : 0,
+      )
       expect(mockValidateProviderEnvForStartupOrExit).not.toHaveBeenCalled()
       expect(mockCliMain).not.toHaveBeenCalled()
     }
+  })
+
+  it('keeps kill reachable when retention settings cannot be loaded', async () => {
+    mockEagerLoadSettingsFromArgs.mockImplementationOnce(() => ({
+      ok: false,
+      message: 'missing retention settings',
+    }))
+
+    await runCliEntrypoint(
+      ['kill', 'session-1', '--settings', 'missing.json'],
+      bgOptions,
+    )
+
+    expect(mockKillHandler).toHaveBeenCalledWith(
+      ['session-1', '--settings', 'missing.json'],
+      { retentionSettingsReady: false },
+    )
+    expect(mockValidateProviderEnvForStartupOrExit).not.toHaveBeenCalled()
   })
 
   it('establishes background finalizer ownership before any command path', async () => {
@@ -489,6 +556,36 @@ describe('cli.tsx — background routing behavior', () => {
     expect(mockPrepareBackgroundSessionFinalizer).toHaveBeenCalledTimes(1)
     expect(mockPsHandler).not.toHaveBeenCalled()
     expect(mockEnableConfigs).not.toHaveBeenCalled()
+  })
+
+  it('runs an internal cleanup worker before any command path', async () => {
+    process.env[BACKGROUND_SESSION_CLEANUP_WORKER_ENV] = '1'
+    try {
+      await runCliEntrypoint(['ps'], bgOptions)
+    } finally {
+      delete process.env[BACKGROUND_SESSION_CLEANUP_WORKER_ENV]
+    }
+
+    expect(mockRunBackgroundSessionCleanupWorker).toHaveBeenCalledTimes(1)
+    expect(mockPrepareBackgroundSessionFinalizer).not.toHaveBeenCalled()
+    expect(mockPsHandler).not.toHaveBeenCalled()
+    expect(mockEnableConfigs).toHaveBeenCalledTimes(1)
+    expect(mockResetSettingsCache).toHaveBeenCalledTimes(1)
+    expect(mockEagerLoadSettingsFromArgs.mock.calls).toEqual([[['ps']]])
+    expect(mockRunBackgroundSessionCleanupWorker).toHaveBeenCalledWith({
+      reloadSettings: expect.any(Function),
+    })
+    const workerOptions = (
+      mockRunBackgroundSessionCleanupWorker.mock.calls as unknown as Array<
+        [{ reloadSettings?: () => boolean }]
+      >
+    )[0]?.[0]
+    expect(workerOptions?.reloadSettings?.()).toBe(true)
+    expect(mockResetSettingsCache).toHaveBeenCalledTimes(2)
+    expect(mockEagerLoadSettingsFromArgs.mock.calls).toEqual([
+      [['ps']],
+      [['ps']],
+    ])
   })
 
   it('routes partial background metadata through the finalizer before dispatch', async () => {
@@ -516,10 +613,22 @@ describe('cli.tsx — background routing behavior', () => {
 
       await runCliEntrypoint([command, '--bg', 'session-1'], bgOptions)
 
-      expect(handler.mock.calls).toEqual([[['--bg', 'session-1']]])
+      const tail = ['--bg', 'session-1']
+      if (command === 'kill') {
+        expect(mockKillHandler.mock.calls).toEqual([
+          [tail, { retentionSettingsReady: true }],
+        ])
+      } else {
+        expect(handler.mock.calls).toEqual([[tail]])
+      }
       expect(mockParseProviderEnvFileArgs).not.toHaveBeenCalled()
       expect(mockHandleBgFlag).not.toHaveBeenCalled()
-      expect(mockEnableConfigs).not.toHaveBeenCalled()
+      expect(mockEnableConfigs).toHaveBeenCalledTimes(
+        command === 'kill' ? 1 : 0,
+      )
+      expect(mockEagerLoadSettingsFromArgs).toHaveBeenCalledTimes(
+        command === 'kill' ? 1 : 0,
+      )
       expect(mockValidateProviderEnvForStartupOrExit).not.toHaveBeenCalled()
       expect(mockCliMain).not.toHaveBeenCalled()
     }

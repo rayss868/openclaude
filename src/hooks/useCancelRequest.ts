@@ -33,17 +33,36 @@ import {
   hasCommandsInQueue,
 } from '../utils/messageQueueManager.js'
 import { emitTaskTerminatedSdk } from '../utils/sdkEventQueue.js'
-import { traceInterruptionEvent } from '../utils/interruptionTrace.js'
+import {
+  requestAbort,
+  traceInterruptionEvent,
+} from '../utils/interruptionTrace.js'
 
 /** Time window in ms during which a second press kills all background agents. */
 const KILL_AGENTS_CONFIRM_WINDOW_MS = 3000
 
 export type CancelRequestSource = 'cancel_keybinding' | 'ctrl_c'
 
+export function abortPendingToolPermissionRequests(
+  queue: ReadonlyArray<Pick<ToolUseConfirm, 'onAbort'>>,
+  source?: string,
+  causalEventId?: string,
+  activeQueryController?: AbortController | null,
+): void {
+  for (const item of queue) {
+    item.onAbort(source, causalEventId)
+  }
+  if (activeQueryController && !activeQueryController.signal.aborted) {
+    requestAbort(activeQueryController, 'user-cancel', {
+      source: source ?? 'permission_dialog',
+      causalEventId,
+      subsystem: 'repl',
+      controllerRole: 'query-root',
+    })
+  }
+}
+
 type CancelRequestHandlerProps = {
-  setToolUseConfirmQueue: (
-    f: (toolUseConfirmQueue: ToolUseConfirm[]) => ToolUseConfirm[],
-  ) => void
   onCancel: (source: CancelRequestSource, causalEventId?: string) => void
   onAgentsKilled: () => void
   isMessageSelectorVisible: boolean
@@ -65,7 +84,6 @@ type CancelRequestHandlerProps = {
  */
 export function CancelRequestHandler(props: CancelRequestHandlerProps): null {
   const {
-    setToolUseConfirmQueue,
     onCancel,
     onAgentsKilled,
     isMessageSelectorVisible,
@@ -102,7 +120,6 @@ export function CancelRequestHandler(props: CancelRequestHandlerProps): null {
     // This takes precedence over queue management so users can always interrupt Claude
     if (abortSignal !== undefined && !abortSignal.aborted) {
       logEvent('tengu_cancel', cancelProps)
-      setToolUseConfirmQueue(() => [])
       onCancel(source, causalEventId)
       return
     }
@@ -117,12 +134,10 @@ export function CancelRequestHandler(props: CancelRequestHandlerProps): null {
 
     // Fallback: nothing to cancel or pop (shouldn't reach here if isActive is correct)
     logEvent('tengu_cancel', cancelProps)
-    setToolUseConfirmQueue(() => [])
     onCancel(source, causalEventId)
   }, [
     abortSignal,
     popCommandFromQueue,
-    setToolUseConfirmQueue,
     onCancel,
     streamMode,
   ])

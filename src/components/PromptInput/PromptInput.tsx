@@ -68,7 +68,7 @@ import { getFastModeUnavailableReason, isFastModeAvailable, isFastModeCooldown, 
 import { isFullscreenEnvEnabled } from '../../utils/fullscreen.js';
 import type { PromptInputHelpers } from '../../utils/handlePromptSubmit.js';
 import { extractDraggedFilePaths } from '../../utils/dragDropPaths.js';
-import { getImageFromClipboard, PASTE_THRESHOLD } from '../../utils/imagePaste.js';
+import { CLIPBOARD_IMAGE_PASTE_FAILURE_KEY, formatClipboardImagePasteError, getImageFromClipboard, PASTE_THRESHOLD } from '../../utils/imagePaste.js';
 import type { ImageDimensions } from '../../utils/imageResizer.js';
 import { cacheImagePath, storeImage } from '../../utils/imageStore.js';
 import { isMacosOptionChar, MACOS_OPTION_SPECIAL_CHARS } from '../../utils/keyboardShortcuts.js';
@@ -1738,6 +1738,13 @@ function PromptInput({
           timeoutMs: 1000
         });
       }
+    }).catch(error => {
+      addNotification({
+        key: CLIPBOARD_IMAGE_PASTE_FAILURE_KEY,
+        text: formatClipboardImagePasteError(error),
+        priority: 'immediate',
+        timeoutMs: 5000
+      });
     });
   }, [addNotification, onImagePaste]);
 

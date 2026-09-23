@@ -251,7 +251,7 @@ export function prepareOpenAIRequest({
   else if (maxCompletionTokensValue !== undefined) {
     body.max_completion_tokens = maxCompletionTokensValue
   }
-  if (params.stream && !isLocalProviderUrl(request.baseUrl)) {
+  if (params.stream) {
     body.stream_options = { include_usage: true }
   }
 

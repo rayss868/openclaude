@@ -12,9 +12,11 @@ import {
 import type { QuerySource } from '../../constants/querySource.js'
 import { getSystemContext, getUserContext } from '../../context.js'
 import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
+import { createPermissionSessionStateGetter } from '../../hooks/toolPermission/permissionSessionOwnership.js'
 import { query } from '../../query.js'
 import type { Terminal } from '../../query/transitions.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
+import type { AppState } from '../../state/AppStateStore.js'
 import { getDumpPromptsPath } from '../../services/api/dumpPrompts.js'
 import { cleanupAgentTracking } from '../../services/api/promptCacheBreakDetection.js'
 import {
@@ -79,6 +81,10 @@ import type { ContentReplacementState } from '../../utils/toolResultStorage.js'
 import { createAgentId } from '../../utils/uuid.js'
 import { resolveAgentTools } from './agentToolUtils.js'
 import { type AgentDefinition, isBuiltInAgent } from './loadAgentsDir.js'
+import {
+  canDescendantShowPermissionPrompts,
+  shouldAvoidAgentPermissionPrompts,
+} from './permissionPromptAvailability.js'
 
 /**
  * Initialize agent-specific MCP servers
@@ -269,14 +275,15 @@ export async function* runAgent({
   onQueryProgress,
   agentName,
   routingSubagentType,
+  permissionSessionState,
 }: {
   agentDefinition: AgentDefinition
   promptMessages: Message[]
   toolUseContext: ToolUseContext
   canUseTool: CanUseToolFn
   isAsync: boolean
-  /** Whether this agent can show permission prompts. Defaults to !isAsync.
-   * Set to true for in-process teammates that run async but share the terminal. */
+  /** Whether this agent can show permission prompts. When omitted, infer it
+   * from the parent session; specialized unattended callers should pass false. */
   canShowPermissionPrompts?: boolean
   forkContextMessages?: Message[]
   querySource: QuerySource
@@ -340,10 +347,32 @@ export async function* runAgent({
    *  which drops the original subagent_type that agentRouting is keyed on. Pass
    *  the original subagent_type here so the configured route still resolves. */
   routingSubagentType?: string
+  /** App/root permission state captured synchronously by an ordinary AgentTool
+   * before delayed or restarted execution can switch the displayed session. */
+  permissionSessionState?: {
+    appState: AppState
+    rootAppState: AppState
+  }
 }): AsyncGenerator<Message, void> {
   // Track subagent usage for feature discovery
 
-  const appState = toolUseContext.getAppState()
+  const initialAppState =
+    permissionSessionState?.appState ?? toolUseContext.getAppState()
+  const getOriginAppState = createPermissionSessionStateGetter(
+    toolUseContext.options.permissionSessionId,
+    initialAppState,
+    toolUseContext.getAppState,
+  )
+  const initialRootAppState =
+    permissionSessionState?.rootAppState ??
+    toolUseContext.getRootAppState?.() ??
+    initialAppState
+  const getOriginRootAppState = createPermissionSessionStateGetter(
+    toolUseContext.options.permissionSessionId,
+    initialRootAppState,
+    () => toolUseContext.getRootAppState?.() ?? toolUseContext.getAppState(),
+  )
+  const appState = getOriginAppState()
   const permissionMode = appState.toolPermissionContext.mode
   // Always-shared channel to the root AppState store. toolUseContext.setAppState
   // is a no-op when the *parent* is itself an async agent (nested async→async),
@@ -446,12 +475,30 @@ export async function* runAgent({
       ? systemContextNoGit
       : baseSystemContext
 
-  // Override permission mode if agent defines one
-  // However, don't override if parent is in bypassPermissions or acceptEdits mode - those should always take precedence
-  // For async agents, also set shouldAvoidPermissionPrompts since they can't show UI
+  const inheritedCanShowPermissionPrompts =
+    canShowPermissionPrompts ??
+    toolUseContext.options.canShowPermissionPrompts
+  const shouldAvoidAgentPrompts = shouldAvoidAgentPermissionPrompts({
+    isAsync,
+    canShowPermissionPrompts: inheritedCanShowPermissionPrompts,
+    permissionMode: agentDefinition.permissionMode,
+    isNonInteractiveSession: toolUseContext.options.isNonInteractiveSession,
+  })
+  const descendantCanShowPermissionPrompts =
+    canDescendantShowPermissionPrompts({
+      canShowPermissionPrompts: inheritedCanShowPermissionPrompts,
+      permissionMode: agentDefinition.permissionMode,
+      isNonInteractiveSession: toolUseContext.options.isNonInteractiveSession,
+    })
+
+  // Override permission mode if agent defines one.
+  // However, don't override if parent is in bypassPermissions or acceptEdits mode - those should always take precedence.
+  // Async agents in an interactive session share the parent's permission UI;
+  // only truly non-interactive agents must auto-deny unresolved prompts.
   const agentPermissionMode = agentDefinition.permissionMode
   const agentGetAppState = () => {
-    const state = toolUseContext.getAppState()
+    const state = getOriginAppState()
+    const rootState = getOriginRootAppState()
     let toolPermissionContext = state.toolPermissionContext
 
     // Override permission mode if agent defines one (unless parent is bypassPermissions, acceptEdits, or auto)
@@ -471,17 +518,17 @@ export async function* runAgent({
       }
     }
 
-    // Set flag to auto-deny prompts for agents that can't show UI
-    // Use explicit canShowPermissionPrompts if provided, otherwise:
-    //   - bubble mode: always show prompts (bubbles to parent terminal)
-    //   - default: !isAsync (sync agents show prompts, async agents don't)
-    const shouldAvoidPrompts =
-      canShowPermissionPrompts !== undefined
-        ? !canShowPermissionPrompts
-        : agentPermissionMode === 'bubble'
-          ? false
-          : isAsync
-    if (shouldAvoidPrompts) {
+    // Use an explicit caller override when present. Bubble mode always forwards
+    // to the parent terminal. Otherwise, async execution is not itself a reason
+    // to deny: in interactive sessions the inherited canUseTool callback owns
+    // the main-session permission queue.
+    if (rootState.toolPermissionContext.mode === 'dontAsk') {
+      toolPermissionContext = {
+        ...toolPermissionContext,
+        mode: 'dontAsk',
+        shouldAvoidPermissionPrompts: true,
+      }
+    } else if (shouldAvoidAgentPrompts) {
       toolPermissionContext = {
         ...toolPermissionContext,
         shouldAvoidPermissionPrompts: true,
@@ -493,7 +540,7 @@ export async function* runAgent({
     // Since these are background agents, waiting is fine — the user should
     // only be interrupted when automated checks can't resolve the permission.
     // This applies to bubble mode (always) and explicit canShowPermissionPrompts.
-    if (isAsync && !shouldAvoidPrompts) {
+    if (isAsync && !shouldAvoidAgentPrompts) {
       toolPermissionContext = {
         ...toolPermissionContext,
         awaitAutomatedChecksBeforeDialog: true,
@@ -715,6 +762,11 @@ export async function* runAgent({
       : isAsync
         ? true
         : (toolUseContext.options.isNonInteractiveSession ?? false),
+    // Preserve prompt capability independently from the child execution mode.
+    // Async children are marked non-interactive for query behavior, but their
+    // inherited canUseTool callback can still reach the interactive root.
+    canShowPermissionPrompts: descendantCanShowPermissionPrompts,
+    permissionSessionId: toolUseContext.options.permissionSessionId,
     appendSystemPrompt: toolUseContext.options.appendSystemPrompt,
     tools: allTools,
     commands: [],
@@ -751,6 +803,7 @@ export async function* runAgent({
     readFileState: agentReadFileState,
     abortController: agentAbortController,
     getAppState: agentGetAppState,
+    getRootAppState: getOriginRootAppState,
     ...(!isAsync && toolUseContext.queryLifecycle
       ? { queryLifecycle: toolUseContext.queryLifecycle }
       : {}),

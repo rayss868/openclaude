@@ -993,7 +993,7 @@ async function* queryLoop(
       messagesForQuery = snipResult.messages
       snipTokensFreed = snipResult.tokensFreed
       if (snipResult.boundaryMessage) {
-        yield snipResult.boundaryMessage
+        yield snipResult.boundaryMessage as Message
       }
       queryCheckpoint('query_snip_end')
     }

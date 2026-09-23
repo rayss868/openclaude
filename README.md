@@ -340,7 +340,7 @@ Advanced and source-build guides:
 - **Tool-driven coding workflows**: Bash, file read/write/edit, grep, glob, agents, tasks, MCP, and slash commands
 - **Streaming responses**: Real-time token output and tool progress
 - **Tool calling**: Multi-step tool loops with model calls, tool execution, and follow-up responses
-- **Images**: URL and base64 image inputs for providers that support vision
+- **Images**: URL and base64 image inputs for providers that support vision. Paste from the clipboard with Ctrl+V (Alt+V on Windows). 1080p/4K screenshots still attach. If processing fails and the image is over the 5MB payload limit or the 8000px API edge, the prompt shows that error instead of "No image found". For Anthropic requests containing more than 20 images (including retained conversation history and tool results), local images must fit within 2000×2000 pixels. On Amazon Bedrock and Google Cloud Vertex AI, document blocks also count toward that 20-block threshold. OpenClaude attempts to resize them before sending; if processing cannot produce a compliant image, it reports an actionable error rather than silently dropping attachments. Resize the affected images or start a new conversation with fewer images (or documents on those partners).
 - **Provider profiles**: Guided setup plus saved user-level provider profile support
 - **Local and remote model backends**: Cloud APIs, local servers, and Apple Silicon local inference
 - **Codebase intelligence (repo map)**: Structural map of the repository ranked by PageRank importance, auto-injected into context when the `REPO_MAP` flag is enabled or the `REPO_MAP` environment variable is set. Inspect with `/repomap` (2048-token default). See [docs/repo-map.md](docs/repo-map.md) for details.
@@ -442,11 +442,13 @@ See [Agent Routing and Step Limits](docs/agent-routing.md) for the full guide.
 
 ## Web Search and Fetch
 
-By default, `WebSearch` works on non-Anthropic models using DuckDuckGo. This gives GPT-4o, DeepSeek, Gemini, Ollama, and other OpenAI-compatible providers a free web search path out of the box.
+By default, `WebSearch` works on non-Anthropic models using configured search adapters and then DuckDuckGo. When the active provider is Ollama, OpenClaude first uses the signed-in local Ollama Web Search endpoint. Set `OLLAMA_API_KEY` to enable the hosted Ollama endpoint as a fallback.
 
-> **Note:** DuckDuckGo fallback works by scraping search results and may be rate-limited, blocked, or subject to DuckDuckGo's Terms of Service. If you want a more reliable supported option, configure Firecrawl.
+> **Note:** DuckDuckGo fallback works by scraping search results and may be rate-limited, blocked, or subject to DuckDuckGo's Terms of Service. If you want a more reliable supported option, configure Ollama Web Search or Firecrawl.
 
 For Anthropic-native backends and Codex responses, OpenClaude keeps the native provider web search behavior.
+
+To select Ollama search explicitly, use `WEB_SEARCH_PROVIDER=ollama`. A local Ollama route uses its configured `OPENAI_BASE_URL` or `OLLAMA_BASE_URL`; hosted search sends `OLLAMA_API_KEY` only to `https://ollama.com/api/web_search`.
 
 `WebFetch` works, but its basic HTTP plus HTML-to-markdown path can still fail on JavaScript-rendered sites or sites that block plain HTTP requests.
 

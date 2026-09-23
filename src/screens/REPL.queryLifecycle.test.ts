@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { InterruptionCorrectionTracker } from '../utils/interruptionCorrection.js'
 import { QueryGuard } from '../utils/QueryGuard.js'
+import { tryStartQueryWithConfiguredIdleTimeout } from '../utils/queryGuardConfig.js'
 
 const source = readFileSync(join(import.meta.dirname, 'REPL.tsx'), 'utf8')
 
@@ -32,29 +33,65 @@ function getOnQueryImplBody(): string {
   return source.slice(start, end)
 }
 
-function getCompactBoundaryHandlerBody(): string {
-  const start = source.indexOf('if (isCompactBoundaryMessage(newMessage))')
-  expect(start).toBeGreaterThan(-1)
-  const end = source.indexOf('} else if (newMessage.type ===', start)
-  expect(end).toBeGreaterThan(start)
-  return source.slice(start, end)
-}
-
 describe('REPL query lifecycle timeout logging', () => {
-  test('keeps pre-compaction messages available for rewind after a compact boundary', () => {
-    const body = getCompactBoundaryHandlerBody()
-
-    expect(body).toMatch(
-      /else\s*\{\s*setMessages\(old => \[\.\.\.old, newMessage\]\)/,
+  test('wires the executable timeout boundary into the production query start', () => {
+    expect(source).toContain('new QueryGuard(getQueryGuardOptionsFromEnv())')
+    expect(source).toContain(
+      'const startResult = tryStartQueryWithConfiguredIdleTimeout(queryGuard, {',
     )
-    expect(body).not.toContain('setMessages(() => [newMessage])')
   })
 
-  test('constructs QueryGuard with resolved hard max config', () => {
-    expect(source).toContain(
-      "import { getQueryGuardOptionsFromEnv } from '../utils/queryGuardConfig.js'",
+  test('applies the resolved timeout before starting the query', () => {
+    const calls: string[] = []
+    const guard = {
+      setIdleTimeoutMs(timeoutMs: number) {
+        calls.push(`set:${timeoutMs}`)
+        return true
+      },
+      tryStart(metadata: { queryId: string; querySource: string }) {
+        calls.push(`start:${metadata.queryId}`)
+        return {
+          generation: 1,
+          context: {
+            ...metadata,
+            queryGeneration: 1,
+            startedAt: 1,
+          },
+        }
+      },
+    }
+
+    const result = tryStartQueryWithConfiguredIdleTimeout(
+      guard,
+      { queryId: 'query-1', querySource: 'repl_main_thread', startedAt: 1 },
+      {},
+      15 * 60 * 1000,
     )
-    expect(source).toContain('new QueryGuard(getQueryGuardOptionsFromEnv())')
+
+    expect(result?.generation).toBe(1)
+    expect(calls).toEqual(['set:900000', 'start:query-1'])
+  })
+
+  test('reapplies a runtime environment timeout before starting the query', () => {
+    const calls: string[] = []
+    const guard = {
+      setIdleTimeoutMs(timeoutMs: number) {
+        calls.push(`set:${timeoutMs}`)
+        return true
+      },
+      tryStart() {
+        calls.push('start')
+        return null
+      },
+    }
+
+    tryStartQueryWithConfiguredIdleTimeout(
+      guard,
+      { queryId: 'query-2', querySource: 'repl_main_thread' },
+      { OPENCLAUDE_QUERY_IDLE_TIMEOUT_MS: '600000' },
+      15 * 60 * 1000,
+    )
+    expect(calls).toEqual(['set:600000', 'start'])
   })
 
   test('clears interruption-correction state before resuming another session', () => {

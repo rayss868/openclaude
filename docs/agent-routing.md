@@ -95,6 +95,21 @@ and `Plan` (if feature-gated on), and `code-reviewer` (requires diff inline). Fo
 verifier on `gpt-5-mini` while your main session stays on its model, but only when the verification gate is active. Absent
 any entry, the verifier inherits the main-loop model.
 
+## Sub-agent permission prompts
+
+In an interactive session, an ordinary foreground or background Agent tool
+sub-agent that reaches an unresolved tool permission request forwards it to
+the main session. The user can approve or deny the request there, and the
+sub-agent continues with that decision. Existing allow and deny rules are
+still evaluated first. Background agents and their pending permission prompts
+remain owned by the session that spawned them; switching sessions never moves
+a prompt or approval into the newly active session. Unattended scheduled
+commands remain fail-closed.
+
+Non-interactive sessions remain fail-closed: unresolved requests are denied
+unless a configured permission rule resolves them. You do not need to
+enable `--dangerously-skip-permissions` for interactive sub-agent verification.
+
 ## GitHub Copilot sub-agent optimization
 
 When `CLAUDE_CODE_USE_GITHUB=1`, OpenClaude serializes sub-agent execution to

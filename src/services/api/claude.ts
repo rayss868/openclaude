@@ -21,6 +21,10 @@ import type { TextBlockParam } from '@anthropic-ai/sdk/resources/index.mjs'
 import type { Stream } from '@anthropic-ai/sdk/streaming.mjs'
 import { randomUUID } from 'crypto'
 import {
+  prepareImagesForAnthropicRequest,
+  usesAnthropicImageLimits,
+} from '../../utils/requestImageValidation.js'
+import {
   getAPIProvider,
   isFirstPartyAnthropicBaseUrl,
   isGithubNativeAnthropicMode,
@@ -109,7 +113,7 @@ import {
   extractQuotaStatusFromHeaders,
 } from '../claudeAiLimits.js'
 import { getAPIContextManagement } from '../compact/apiMicrocompact.js'
-import { getStreamIdleTimeoutMs } from './openaiShim.js'
+import { getApiTimeoutMs, getStreamIdleTimeoutMs } from './openaiShim.js'
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 const autoModeStateModule = feature('TRANSCRIPT_CLASSIFIER')
@@ -893,10 +897,14 @@ function shouldDeferLspTool(tool: Tool): boolean {
  * Otherwise defaults to 300s — long enough for slow backends without
  * approaching the API's 10-minute non-streaming boundary.
  */
-function getNonstreamingFallbackTimeoutMs(): number {
-  const override = parseInt(process.env.API_TIMEOUT_MS || '', 10)
-  if (override) return override
-  return isEnvTruthy(process.env.CLAUDE_CODE_REMOTE) ? 120_000 : 300_000
+export function getNonstreamingFallbackTimeoutMs(): number {
+  // Validate and clamp API_TIMEOUT_MS through the shared parser so a malformed
+  // or negative override cannot yield a NaN/negative timeout; fall back to the
+  // context-specific default (shorter on remote to stay under CCR's idle-kill).
+  return getApiTimeoutMs(
+    process.env,
+    isEnvTruthy(process.env.CLAUDE_CODE_REMOTE) ? 120_000 : 300_000,
+  )
 }
 
 /**
@@ -1984,6 +1992,18 @@ async function* queryModel(
   let apiQueryLogged = false
 
   try {
+    const apiProvider = getAPIProvider()
+    if (usesAnthropicImageLimits({
+      apiProvider,
+      isFirstPartyBaseUrl: isFirstPartyAnthropicBaseUrl(),
+      isGithubNativeAnthropic: isGithubNativeAnthropicMode(options.model),
+      hasProviderOverride: Boolean(options.providerOverride),
+    })) {
+      messagesForAPI = await prepareImagesForAnthropicRequest(messagesForAPI, {
+        // These partners count document blocks toward the many-image threshold.
+        countDocuments: apiProvider === 'bedrock' || apiProvider === 'vertex',
+      })
+    }
     queryCheckpoint('query_client_creation_start')
     const generator = withRetry<Stream<BetaRawMessageStreamEvent> | null>(
       () =>

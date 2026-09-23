@@ -22,7 +22,7 @@ import { createAttachmentMessage, getAttachmentMessages } from '../attachments.j
 import { logForDebugging } from '../debug.js';
 import { isEnvTruthy } from '../envUtils.js';
 import { AbortError, MalformedCommandError } from '../errors.js';
-import { extractResultText, prepareForkedCommandContext } from '../forkedAgent.js';
+import { createRootAppStateGetter, extractResultText, prepareForkedCommandContext } from '../forkedAgent.js';
 import { getFsImplementation } from '../fsOperations.js';
 import { isFullscreenEnvEnabled } from '../fullscreen.js';
 import { toArray } from '../generators.js';
@@ -150,10 +150,14 @@ async function executeForkedSlashCommand(command: CommandBase & PromptCommand, a
         toolUseContext: {
           ...context,
           getAppState: modifiedGetAppState,
+          getRootAppState: createRootAppStateGetter(context),
           abortController: bgAbortController
         },
         canUseTool,
         isAsync: true,
+        // Scheduled assistant-mode commands are unattended fire-and-forget
+        // work, even when the owning session is interactive.
+        canShowPermissionPrompts: false,
         querySource: 'agent:custom',
         model: command.model as ModelAlias | undefined,
         availableTools: freshTools,
@@ -229,7 +233,8 @@ async function executeForkedSlashCommand(command: CommandBase & PromptCommand, a
       promptMessages,
       toolUseContext: {
         ...context,
-        getAppState: modifiedGetAppState
+        getAppState: modifiedGetAppState,
+        getRootAppState: createRootAppStateGetter(context)
       },
       canUseTool,
       isAsync: false,
