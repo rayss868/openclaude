@@ -521,6 +521,15 @@ function legacyModelSupportsEffort(
   if (supported3P !== undefined) {
     return supported3P
   }
+  // Fork: custom OpenAI-compatible endpoints (e.g. OpenRouter, self-hosted)
+  // should always support effort even if the model isn't in the Codex alias list.
+  // Check env route directly since callers may not pass context.
+  if (
+    modelUsesOpenAIEffort(model, context) &&
+    (context?.routeId === 'custom' || resolveActiveRouteIdFromEnv(process.env) === 'custom')
+  ) {
+    return true
+  }
   if (
     modelUsesOpenAIEffort(model, context) &&
     modelSupportsCodexReasoningEffort(model, context)

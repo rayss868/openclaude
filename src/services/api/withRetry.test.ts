@@ -190,16 +190,15 @@ describe('retry configuration', () => {
     expect(apiRetryMaxRetriesToNumber(undefined)).toBeUndefined()
   })
 
-  test('resolveRetryDelayMs uses the fixed delay and honors a longer Retry-After', async () => {
+  test('uses the configured fixed delay even when Retry-After is longer', async () => {
     const { resolveRetryDelayMs } = await importFreshWithRetryModule()
     // No fixed delay configured -> fall back to backoff (null).
     expect(resolveRetryDelayMs(null, 3000)).toBeNull()
-    // Fixed delay wins when it exceeds a smaller Retry-After.
+    // The configured delay is the source of truth for every retry.
     expect(resolveRetryDelayMs(5000, 2000)).toBe(5000)
-    // A larger Retry-After is respected over the fixed delay.
-    expect(resolveRetryDelayMs(5000, 8000)).toBe(8000)
-    // delayMs 0 retries immediately unless Retry-After is longer.
-    expect(resolveRetryDelayMs(0, null)).toBe(0)
+    expect(resolveRetryDelayMs(5000, 8000)).toBe(5000)
+    // delayMs 0 retries immediately, regardless of Retry-After.
+    expect(resolveRetryDelayMs(0, 12000)).toBe(0)
   })
 
   test('uses default retry delay when env var is absent', async () => {

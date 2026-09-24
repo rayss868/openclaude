@@ -14,6 +14,8 @@
  * - Project and Local files are discovered by traversing from the current directory up to root
  * - Files closer to the current directory have higher priority (loaded later)
  * - AGENTS.md is preferred for root project instructions; CLAUDE.md is only used when AGENTS.md is absent
+ * - Instruction files in subfolders below the current directory are also eagerly
+ *   loaded (hidden directories and node_modules are skipped)
  * - .openclaude/CLAUDE.md and all .md files in .openclaude/rules/ are checked in each directory for Project memory
  *
  * Memory @include directive:
@@ -954,6 +956,9 @@ export const getMemoryFiles = memoize(
       }
     }
 
+    // NOTE: Subfolder instruction loading removed in fork.
+    // Only root workspace instruction files are loaded, not subfolders.
+
     // Process root project instruction files from additional directories (--add-dir) if env var is enabled
     // This is controlled by CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD and defaults to off
     // Note: we don't check isSettingSourceEnabled('projectSettings') here because --add-dir
@@ -1361,6 +1366,36 @@ export async function getManagedAndUserConditionalRules(
  * @param processedPaths Set of already processed file paths (will be mutated)
  * @returns Array of MemoryFileInfo objects
  */
+/**
+ * Collect directories strictly below `root` that may hold instruction files,
+ * parents before children so more specific (deeper) files are processed later
+ * and get higher attention. Skips hidden directories (.git, .openclaude, ...)
+ * and node_modules, and never follows symlinks (Dirent reports symlinked dirs
+ * as isSymbolicLink, so this cannot loop).
+ */
+function collectNestedInstructionDirs(root: string): string[] {
+  const result: string[] = []
+  const stack: string[] = [root]
+
+  while (stack.length > 0) {
+    const dir = stack.pop()!
+    try {
+      for (const entry of getFsImplementation().readdirSync(dir)) {
+        if (!entry.isDirectory() || entry.isSymbolicLink()) continue
+        if (entry.name.startsWith('.') || entry.name === 'node_modules') {
+          continue
+        }
+        const child = join(dir, entry.name)
+        result.push(child)
+        stack.push(child)
+      }
+    } catch {
+      // Unreadable directory: skip its subtree.
+    }
+  }
+  return result
+}
+
 export async function getMemoryFilesForNestedDirectory(
   dir: string,
   targetPath: string,

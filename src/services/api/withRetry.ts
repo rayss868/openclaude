@@ -993,18 +993,14 @@ export function apiRetryMaxRetriesToNumber(
 }
 
 /**
- * Chooses the retry delay when a fixed `apiRetry.delayMs` is configured. A
- * larger server-provided Retry-After still wins. Returns null when no fixed
+ * Uses the configured `apiRetry.delayMs` for retries. Returns null when no fixed
  * delay is configured (callers fall back to the default backoff). Pure.
  */
 export function resolveRetryDelayMs(
   fixedDelayMs: number | null,
-  retryAfterMs: number | null,
+  _retryAfterMs: number | null,
 ): number | null {
-  if (fixedDelayMs === null) return null
-  return retryAfterMs !== null && retryAfterMs > fixedDelayMs
-    ? retryAfterMs
-    : fixedDelayMs
+  return fixedDelayMs
 }
 
 export function getDefaultMaxRetries(): number {
