@@ -10,7 +10,7 @@ function getPreReadInstruction(): string {
 }
 
 function getChunkedWriteInstruction(): string {
-  return `\n- Keep each call small: send at most ${MAX_FILE_WRITE_CHUNK_LINES} lines of content per call. Generating a very large file in one call can time out on slow models.\n- Use write_mode "replace" for complete content of at most ${MAX_FILE_WRITE_CHUNK_LINES} lines.\n- For larger content, split it into blocks of at most ${MAX_FILE_WRITE_CHUNK_LINES} lines: call write_mode "start" with the first block, then call write_mode "append" with the returned write_id and sequential chunk_index values starting at 1 for each following block, and finally call write_mode "finish" with that write_id.\n- Chunked writes keep the target unchanged until "finish" succeeds. No single call may exceed 32,000 characters.`
+  return `\n- Keep each call small: send at most ${MAX_FILE_WRITE_CHUNK_LINES} lines of content per call. Generating a very large file in one call can time out on slow models.\n- Send at most one content chunk per response: issue one Write call, wait for its result, then send the next chunk in your next response. Do not batch several appends into one response.\n- Use write_mode "replace" for complete content of at most ${MAX_FILE_WRITE_CHUNK_LINES} lines.\n- For larger content, split it into blocks of at most ${MAX_FILE_WRITE_CHUNK_LINES} lines: call write_mode "start" with the first block, then call write_mode "append" with the returned write_id and sequential chunk_index values starting at 1 for each following block, and finally call write_mode "finish" with that write_id.\n- Chunked writes keep the target unchanged until "finish" succeeds. No single call may exceed 32,000 characters.`
 }
 
 export function getWriteToolDescription(): string {

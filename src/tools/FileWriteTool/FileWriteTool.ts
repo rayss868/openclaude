@@ -573,6 +573,7 @@ export const FileWriteTool = buildTool({
         write_id!,
         chunk_index!,
         content!,
+        parentMessage.uuid,
       )
       return { data: status }
     }

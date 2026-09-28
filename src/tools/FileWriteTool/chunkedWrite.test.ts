@@ -63,14 +63,28 @@ test('ordered chunks commit the exact concatenated content', async () => {
   const started = await startChunkedWrite(target, 'first-', snapshot(null))
 
   await expect(
-    appendChunkedWrite(target, started.writeId, 2, 'wrong-order'),
+    appendChunkedWrite(target, started.writeId, 2, 'wrong-order', 'resp-1'),
   ).rejects.toThrow(/chunk index/i)
-  await appendChunkedWrite(target, started.writeId, 1, 'second-')
-  await appendChunkedWrite(target, started.writeId, 2, 'third')
+  await appendChunkedWrite(target, started.writeId, 1, 'second-', 'resp-1')
+  await appendChunkedWrite(target, started.writeId, 2, 'third', 'resp-2')
   const finalized = await commitChunkedWrite(target, started.writeId)
 
   expect(finalized.status.type).toBe('chunked_finish')
   expect(finalized.oldContent).toBeNull()
+  expect(await readFile(target, 'utf8')).toBe('first-second-third')
+})
+
+test('only one append is allowed per assistant response', async () => {
+  const target = await tempTarget()
+  const started = await startChunkedWrite(target, 'first-', snapshot(null))
+
+  await appendChunkedWrite(target, started.writeId, 1, 'second-', 'resp-1')
+  await expect(
+    appendChunkedWrite(target, started.writeId, 2, 'third', 'resp-1'),
+  ).rejects.toThrow(/one chunk .* per assistant response/i)
+
+  await appendChunkedWrite(target, started.writeId, 2, 'third', 'resp-2')
+  await commitChunkedWrite(target, started.writeId)
   expect(await readFile(target, 'utf8')).toBe('first-second-third')
 })
 
@@ -95,6 +109,7 @@ test('append rejects oversized chunks', async () => {
       started.writeId,
       1,
       'x'.repeat(MAX_FILE_WRITE_CHUNK_CHARS + 1),
+      'resp-1',
     ),
   ).rejects.toThrow(/32000/)
 
@@ -105,9 +120,9 @@ test('append rejects oversized chunks', async () => {
 })
 test('unknown IDs and mismatched paths are rejected', async () => {
   const target = await tempTarget()
-  await expect(appendChunkedWrite(target, 'missing', 1, 'x')).rejects.toThrow(
-    /unknown/i,
-  )
+  await expect(
+    appendChunkedWrite(target, 'missing', 1, 'x', 'resp-1'),
+  ).rejects.toThrow(/unknown/i)
 
   const started = await startChunkedWrite(target, 'x', snapshot(null))
   const other = await tempTarget()

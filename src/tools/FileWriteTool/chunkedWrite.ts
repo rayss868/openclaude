@@ -35,6 +35,7 @@ export type ChunkedWriteState = {
   oldContent: string | null
   encoding: BufferEncoding
   lineEndings: LineEndingType
+  lastAppendResponseUuid: string | null
 }
 
 /** Status reported back to the caller after each chunked write step. */
@@ -159,6 +160,7 @@ export async function startChunkedWrite(
     oldContent: snapshot.oldContent,
     encoding: snapshot.encoding,
     lineEndings: snapshot.lineEndings,
+    lastAppendResponseUuid: null,
   })
 
   return {
@@ -178,6 +180,7 @@ export async function appendChunkedWrite(
   writeId: string,
   chunkIndex: number,
   content: string,
+  responseUuid: string,
 ): Promise<ChunkedWriteStatus> {
   enforceChunkLimit(content)
 
@@ -190,6 +193,13 @@ export async function appendChunkedWrite(
       `Target path ${targetPath} does not match the chunked write for ${writeId}`,
     )
   }
+  if (state.lastAppendResponseUuid === responseUuid) {
+    throw new ChunkedWriteError(
+      `Only one chunk may be appended per assistant response. Chunk ` +
+        `${state.nextChunkIndex} is still pending for ${writeId}; send it as ` +
+        `the only Write call in your next response.`,
+    )
+  }
   if (chunkIndex !== state.nextChunkIndex) {
     throw new ChunkedWriteError(
       `Chunk index must be ${state.nextChunkIndex}, received ${chunkIndex}`,
@@ -200,6 +210,7 @@ export async function appendChunkedWrite(
   await fs.appendFile(state.tempPath, content, { encoding: 'utf8' })
 
   state.nextChunkIndex = chunkIndex + 1
+  state.lastAppendResponseUuid = responseUuid
 
   return {
     type: 'chunked_append',
