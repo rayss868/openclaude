@@ -837,8 +837,13 @@ export async function getAttachments(
         // but that content is NOT user intent and must not trigger discovery.
         // Without this gate, a 110KB SKILL.md fires ~3.3s of chunked AKI
         // queries on every skill invocation (session 13a9afae).
+        // Honor the user setting as well: feature() alone is always true in
+        // this build, so without this gate turn-0 discovery fires even when
+        // skill search is off and the "Skills relevant" block leaks into the
+        // first message regardless of the setting.
         ...(feature('EXPERIMENTAL_SKILL_SEARCH') &&
         skillSearchModules &&
+        skillSearchModules.featureCheck.isSkillSearchEnabled() &&
         !options?.skipSkillDiscovery
           ? [
               maybeAttachment('skill_discovery', () =>
@@ -3001,19 +3006,11 @@ async function getSkillListingAttachments(
       ? uniqBy([...localCommands, ...mcpSkills], 'name')
       : localCommands
 
-  // When skill search is active, filter to bundled + MCP instead of full
-  // suppression. Resolves the turn-0 gap: main thread gets turn-0 discovery
-  // via getTurnZeroSkillDiscovery (blocking), but subagents use the async
-  // subagent_spawn signal (collected post-tools, visible turn 1). Bundled +
-  // MCP are small and intent-signaled; user/project/plugin skills go through
-  // discovery. feature() first for DCE — the property-access string leaks
-  // otherwise even with ?. on null.
-  if (
-    feature('EXPERIMENTAL_SKILL_SEARCH') &&
-    skillSearchModules?.featureCheck.isSkillSearchEnabled()
-  ) {
-    allCommands = filterToBundledAndMcp(allCommands)
-  }
+  // The static listing is always the small always-on core (bundled + MCP).
+  // User/project/plugin skills stay invocable by name but are left out of the
+  // turn-0 dump so the initial context never lists every installed skill; when
+  // skill search is on they are surfaced on demand via discovery instead.
+  allCommands = filterToBundledAndMcp(allCommands)
 
   const agentKey = toolUseContext.agentId ?? ''
   let sent = sentSkillNames.get(agentKey)

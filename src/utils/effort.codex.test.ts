@@ -199,6 +199,8 @@ test('unknown models on a custom OpenAI-compatible route allow effort selection'
     'medium',
     'high',
     'xhigh',
+    'max',
+    'ultracode',
   ])
 })
 
@@ -215,6 +217,8 @@ test('gpt-5.4 on the ChatGPT Codex backend supports effort selection', async () 
     'medium',
     'high',
     'xhigh',
+    'max',
+    'ultracode',
   ])
 })
 
@@ -231,6 +235,8 @@ test('gpt-5.4 on the OpenAI provider still supports effort selection', async () 
     'medium',
     'high',
     'xhigh',
+    'max',
+    'ultracode',
   ])
 })
 
@@ -368,16 +374,21 @@ test('toPersistableEffort passes xhigh through as a first-class level', async ()
   expect(toPersistableEffort(undefined)).toBeUndefined()
 })
 
-test('standardEffortToOpenAI maps max to xhigh for shim payload', async () => {
+test('standardEffortToOpenAI forwards max and maps ultracode to max for shim payload', async () => {
   const { standardEffortToOpenAI, openAIEffortToStandard } =
     await importFreshEffortModule({
       provider: 'openai',
       supportsCodexReasoningEffort: true,
     })
 
-  expect(standardEffortToOpenAI('max')).toBe('xhigh')
+  // `max` is a first-class OpenAI reasoning level, so it rides the wire unchanged.
+  // `ultracode` is a local meta-mode with no wire value of its own and tops out
+  // at `max` on the wire.
+  expect(standardEffortToOpenAI('max')).toBe('max')
+  expect(standardEffortToOpenAI('ultracode')).toBe('max')
   expect(standardEffortToOpenAI('xhigh')).toBe('xhigh')
   expect(standardEffortToOpenAI('high')).toBe('high')
+  expect(openAIEffortToStandard('max')).toBe('max')
   expect(openAIEffortToStandard('xhigh')).toBe('xhigh')
   expect(openAIEffortToStandard('high')).toBe('high')
 })
@@ -404,13 +415,13 @@ test('e2e: xhigh → persisted xhigh → resolveAppliedEffort → wire xhigh on 
   expect(standardEffortToOpenAI(applied as 'xhigh')).toBe('xhigh')
 })
 
-test('e2e: max on non-Opus Anthropic model still clamps to high', async () => {
+test('e2e: max on non-Opus Anthropic model is forwarded as max (global levels)', async () => {
   const { resolveAppliedEffort } = await importFreshEffortModule({
     provider: 'firstParty',
     supportsCodexReasoningEffort: false,
   })
 
-  expect(resolveAppliedEffort('claude-sonnet-4-6', 'max')).toBe('high')
+  expect(resolveAppliedEffort('claude-sonnet-4-6', 'max')).toBe('max')
 })
 
 test('modelSupportsXHighEffort: opus-4-7 and opus-4-8 are allowed; other Claude models are not', async () => {
@@ -429,21 +440,25 @@ test('modelSupportsXHighEffort: opus-4-7 and opus-4-8 are allowed; other Claude 
   expect(modelSupportsXHighEffort('claude-3-5-haiku')).toBe(false)
 })
 
-test('xhigh does not appear in available levels for non-supporting models', async () => {
+test('all effort levels are exposed globally for effort-capable models', async () => {
   const { getAvailableEffortLevels } = await importFreshEffortModule({
     provider: 'firstParty',
     supportsCodexReasoningEffort: false,
   })
 
-  // No xhigh, no max
+  // Every effort level is offered globally, regardless of the model's own
+  // advertised capability — the provider accepts or rejects at request time.
   expect(getAvailableEffortLevels('claude-sonnet-4-6')).toEqual([
     'low',
     'medium',
     'high',
+    'xhigh',
+    'max',
+    'ultracode',
   ])
+  // A model with no effort support at all still exposes nothing.
   expect(getAvailableEffortLevels('claude-haiku-4-5')).toEqual([])
 
-  // Has xhigh AND max AND ultracode (opus-4-8 on firstParty)
   const opusLevels = getAvailableEffortLevels('claude-opus-4-8')
   expect(opusLevels).toEqual(['low', 'medium', 'high', 'xhigh', 'max', 'ultracode'])
 })
@@ -483,20 +498,20 @@ test('effort allowlist is narrowed to the shim isAdaptive||isOpus45 set', async 
   }
 })
 
-test('xhigh clamps to high on non-supporting models so stale settings.json values do not produce API errors', async () => {
+test('xhigh is forwarded as xhigh for all effort-capable models (global levels)', async () => {
   const { resolveAppliedEffort } = await importFreshEffortModule({
     provider: 'firstParty',
     supportsCodexReasoningEffort: false,
   })
 
-  // sonnet-4-6 supports effort but not xhigh — clamp
-  expect(resolveAppliedEffort('claude-sonnet-4-6', 'xhigh')).toBe('high')
-  // opus-4-8 supports xhigh — pass through
+  // xhigh is exposed globally now, so it is no longer clamped on models that
+  // do not advertise xhigh support.
+  expect(resolveAppliedEffort('claude-sonnet-4-6', 'xhigh')).toBe('xhigh')
   expect(resolveAppliedEffort('claude-opus-4-8', 'xhigh')).toBe('xhigh')
 })
 
-test('clampUltracodeEffort: clamps to xhigh on non-firstParty xhigh-capable model', async () => {
-  const { clampUltracodeEffort, resolveAppliedEffort } = await importFreshEffortModule({
+test('clampUltracodeEffort: preserves ultracode because it is globally available', async () => {
+  const { clampUltracodeEffort } = await importFreshEffortModule({
     provider: 'openai',
     supportsCodexReasoningEffort: true,
     routeId: 'opencode',
@@ -504,31 +519,22 @@ test('clampUltracodeEffort: clamps to xhigh on non-firstParty xhigh-capable mode
     openaiShimConfig: { endpointPath: '/messages' },
   })
 
-  // ultracode isn't selectable off firstParty, so it clamps — but to xhigh
-  // (the model is xhigh-capable), matching resolveAppliedEffort's mapping
-  // rather than the old hardcoded 'max'.
-  expect(clampUltracodeEffort('ultracode', 'claude-opus-4-8')).toBe('xhigh')
-  expect(clampUltracodeEffort('ultracode', 'claude-opus-4-8')).toBe(
-    resolveAppliedEffort('claude-opus-4-8', 'ultracode'),
-  )
+  // ultracode is exposed globally now, so it is no longer clamped here; the
+  // meta-level still maps to xhigh/high at the API boundary in resolveAppliedEffort.
+  expect(clampUltracodeEffort('ultracode', 'claude-opus-4-8')).toBe('ultracode')
   expect(clampUltracodeEffort('max', 'claude-opus-4-8')).toBe('max')
   expect(clampUltracodeEffort('high', 'claude-opus-4-8')).toBe('high')
   expect(clampUltracodeEffort(undefined, 'claude-opus-4-8')).toBeUndefined()
 })
 
-test('clampUltracodeEffort: clamps to high on firstParty non-xhigh model', async () => {
-  const { clampUltracodeEffort, resolveAppliedEffort } = await importFreshEffortModule({
+test('clampUltracodeEffort: preserves ultracode globally on firstParty non-xhigh model', async () => {
+  const { clampUltracodeEffort } = await importFreshEffortModule({
     provider: 'firstParty',
     supportsCodexReasoningEffort: false,
   })
 
-  // Not xhigh-capable -> clamp to high, the same level the env/app-state path
-  // (resolveAppliedEffort) sends for ultracode. Previously this returned 'max',
-  // so the two paths disagreed on max-capable-but-not-xhigh models.
-  expect(clampUltracodeEffort('ultracode', 'claude-sonnet-4-6')).toBe('high')
-  expect(clampUltracodeEffort('ultracode', 'claude-sonnet-4-6')).toBe(
-    resolveAppliedEffort('claude-sonnet-4-6', 'ultracode'),
-  )
+  // ultracode is exposed globally now, so it is no longer clamped here.
+  expect(clampUltracodeEffort('ultracode', 'claude-sonnet-4-6')).toBe('ultracode')
 })
 
 test('clampUltracodeEffort: preserves ultracode on firstParty + xhigh-capable model', async () => {
@@ -654,10 +660,13 @@ test('explicit reasoning metadata enables model-level effort without provider-wi
     'low',
     'medium',
     'high',
+    'xhigh',
+    'max',
+    'ultracode',
   ])
   expect(getDefaultEffortForModel('moonshotai/kimi-k2.6')).toBe('medium')
   expect(resolveAppliedEffort('moonshotai/kimi-k2.6', undefined)).toBe('medium')
-  expect(resolveAppliedEffort('moonshotai/kimi-k2.6', 'xhigh')).toBe('high')
+  expect(resolveAppliedEffort('moonshotai/kimi-k2.6', 'xhigh')).toBe('xhigh')
 
   expect(resolveModelReasoningControl('xai/grok-build-0.1')).toMatchObject({
     supportsReasoning: false,
@@ -737,11 +746,18 @@ test('Moonshot direct and Kimi Code catalogs expose verified reasoning controls'
     })
     expect(modelSupportsEffort(model)).toBe(true)
     expect(modelSupportsWireEffort(model)).toBe(true)
-    expect(getAvailableEffortLevels(model)).toEqual(['low', 'medium', 'high'])
+    expect(getAvailableEffortLevels(model)).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+      'ultracode',
+    ])
     expect(getDefaultEffortForModel(model)).toBe('medium')
     expect(resolveAppliedEffort(model, undefined)).toBe('medium')
-    expect(resolveAppliedEffort(model, 'xhigh')).toBe('high')
-    expect(resolveAppliedEffort(model, 'max')).toBe('high')
+    expect(resolveAppliedEffort(model, 'xhigh')).toBe('xhigh')
+    expect(resolveAppliedEffort(model, 'max')).toBe('max')
   }
 
   const {
@@ -763,7 +779,14 @@ test('Moonshot direct and Kimi Code catalogs expose verified reasoning controls'
     defaultLevel: 'max',
     wireFormat: 'reasoning_effort',
   })
-  expect(getAvailableEffortLevels('k3')).toEqual(['low', 'high', 'max'])
+  expect(getAvailableEffortLevels('k3')).toEqual([
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+    'max',
+    'ultracode',
+  ])
   expect(resolveAppliedEffort('k3', undefined)).toBe('max')
   expect(resolveAppliedEffort('k3', 'low')).toBe('low')
   expect(resolveAppliedEffort('k3', 'xhigh')).toBe('max')
@@ -794,9 +817,16 @@ test('Moonshot direct and Kimi Code catalogs expose verified reasoning controls'
     defaultLevel: 'medium',
     wireFormat: 'reasoning_effort',
   })
-  expect(getAvailableEffortLevels('kimi-k2.7-code')).toEqual(['low', 'medium', 'high'])
-  expect(resolveAppliedEffort('kimi-k2.7-code', 'xhigh')).toBe('high')
-  expect(resolveAppliedEffort('kimi-k2.7-code', 'max')).toBe('high')
+  expect(getAvailableEffortLevels('kimi-k2.7-code')).toEqual([
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+    'max',
+    'ultracode',
+  ])
+  expect(resolveAppliedEffort('kimi-k2.7-code', 'xhigh')).toBe('xhigh')
+  expect(resolveAppliedEffort('kimi-k2.7-code', 'max')).toBe('max')
   expect(resolveModelReasoningControl('moonshotai/kimi-k2.7-code')).toMatchObject({
     supportsReasoning: true,
     controllable: true,
@@ -805,8 +835,15 @@ test('Moonshot direct and Kimi Code catalogs expose verified reasoning controls'
     defaultLevel: 'medium',
     wireFormat: 'reasoning_effort',
   })
-  expect(getAvailableEffortLevels('moonshotai/kimi-k2.7-code')).toEqual(['low', 'medium', 'high'])
-  expect(resolveAppliedEffort('moonshotai/kimi-k2.7-code', 'xhigh')).toBe('high')
+  expect(getAvailableEffortLevels('moonshotai/kimi-k2.7-code')).toEqual([
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+    'max',
+    'ultracode',
+  ])
+  expect(resolveAppliedEffort('moonshotai/kimi-k2.7-code', 'xhigh')).toBe('xhigh')
 })
 test('Atlas Cloud catalog exposes only verified reasoning controls for exact models', async () => {
   const atlasGateway = (await import('../integrations/gateways/atlas-cloud.js')).default
@@ -836,8 +873,10 @@ test('Atlas Cloud catalog exposes only verified reasoning controls for exact mod
     'medium',
     'high',
     'xhigh',
+    'max',
+    'ultracode',
   ])
-  expect(resolveAppliedEffort('moonshotai/kimi-k2.5', 'max')).toBe('high')
+  expect(resolveAppliedEffort('moonshotai/kimi-k2.5', 'max')).toBe('max')
 
   expect(resolveModelReasoningControl('moonshotai/kimi-k2.6')).toMatchObject({
     supportsReasoning: true,
@@ -852,9 +891,11 @@ test('Atlas Cloud catalog exposes only verified reasoning controls for exact mod
     'medium',
     'high',
     'xhigh',
+    'max',
+    'ultracode',
   ])
   expect(resolveAppliedEffort('moonshotai/kimi-k2.6', 'xhigh')).toBe('xhigh')
-  expect(resolveAppliedEffort('moonshotai/kimi-k2.6', 'max')).toBe('high')
+  expect(resolveAppliedEffort('moonshotai/kimi-k2.6', 'max')).toBe('max')
 
   expect(resolveModelReasoningControl('glm-5.2')).toMatchObject({
     supportsReasoning: true,
@@ -863,7 +904,14 @@ test('Atlas Cloud catalog exposes only verified reasoning controls for exact mod
     levels: ['high', 'xhigh'],
     wireFormat: 'zai_compatible',
   })
-  expect(getAvailableEffortLevels('glm-5.2')).toEqual(['high', 'xhigh'])
+  expect(getAvailableEffortLevels('glm-5.2')).toEqual([
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+    'max',
+    'ultracode',
+  ])
   expect(resolveAppliedEffort('glm-5.2', 'xhigh')).toBe('xhigh')
 
   const verifiedAtlasReasoningModels = [
@@ -902,9 +950,16 @@ test('Atlas Cloud catalog exposes only verified reasoning controls for exact mod
       levels: ['low', 'medium', 'high', 'xhigh'],
       wireFormat: 'reasoning_effort',
     })
-    expect(getAvailableEffortLevels(model)).toEqual(['low', 'medium', 'high', 'xhigh'])
+    expect(getAvailableEffortLevels(model)).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+      'ultracode',
+    ])
     expect(resolveAppliedEffort(model, 'xhigh')).toBe('xhigh')
-    expect(resolveAppliedEffort(model, 'max')).toBe('high')
+    expect(resolveAppliedEffort(model, 'max')).toBe('max')
   }
 
   const verifiedAtlasZaiGlmModels = [
@@ -924,9 +979,16 @@ test('Atlas Cloud catalog exposes only verified reasoning controls for exact mod
       levels: ['high', 'xhigh'],
       wireFormat: 'zai_compatible',
     })
-    expect(getAvailableEffortLevels(model)).toEqual(['high', 'xhigh'])
+    expect(getAvailableEffortLevels(model)).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+      'ultracode',
+    ])
     expect(resolveAppliedEffort(model, 'xhigh')).toBe('xhigh')
-    expect(resolveAppliedEffort(model, 'max')).toBe('high')
+    expect(resolveAppliedEffort(model, 'max')).toBe('max')
   }
 
   expect(resolveModelReasoningControl('xai/grok-4.6')).toMatchObject({
@@ -942,9 +1004,11 @@ test('Atlas Cloud catalog exposes only verified reasoning controls for exact mod
     'medium',
     'high',
     'xhigh',
+    'max',
+    'ultracode',
   ])
   expect(resolveAppliedEffort('xai/grok-4.6', 'xhigh')).toBe('xhigh')
-  expect(resolveAppliedEffort('xai/grok-4.6', 'max')).toBe('high')
+  expect(resolveAppliedEffort('xai/grok-4.6', 'max')).toBe('max')
 
   expect(resolveModelReasoningControl('xai/grok-4.5')).toMatchObject({
     supportsReasoning: true,
@@ -954,8 +1018,15 @@ test('Atlas Cloud catalog exposes only verified reasoning controls for exact mod
     defaultLevel: 'high',
     wireFormat: 'reasoning_effort',
   })
-  expect(getAvailableEffortLevels('xai/grok-4.5')).toEqual(['low', 'medium', 'high'])
-  expect(resolveAppliedEffort('xai/grok-4.5', 'xhigh')).toBe('high')
+  expect(getAvailableEffortLevels('xai/grok-4.5')).toEqual([
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+    'max',
+    'ultracode',
+  ])
+  expect(resolveAppliedEffort('xai/grok-4.5', 'xhigh')).toBe('xhigh')
 
   expect(resolveModelReasoningControl('xai/grok-4.3')).toMatchObject({
     supportsReasoning: true,
@@ -964,9 +1035,16 @@ test('Atlas Cloud catalog exposes only verified reasoning controls for exact mod
     levels: ['low', 'medium', 'high'],
     wireFormat: 'reasoning_effort',
   })
-  expect(getAvailableEffortLevels('xai/grok-4.3')).toEqual(['low', 'medium', 'high'])
-  expect(resolveAppliedEffort('xai/grok-4.3', 'xhigh')).toBe('high')
-  expect(resolveAppliedEffort('xai/grok-4.3', 'max')).toBe('high')
+  expect(getAvailableEffortLevels('xai/grok-4.3')).toEqual([
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+    'max',
+    'ultracode',
+  ])
+  expect(resolveAppliedEffort('xai/grok-4.3', 'xhigh')).toBe('xhigh')
+  expect(resolveAppliedEffort('xai/grok-4.3', 'max')).toBe('max')
 
   const verifiedAtlasHighOnlyReasoningModels = [
     'bytedance/doubao-seed-2.0-pro-260215',
@@ -982,8 +1060,15 @@ test('Atlas Cloud catalog exposes only verified reasoning controls for exact mod
       levels: ['low', 'medium', 'high'],
       wireFormat: 'reasoning_effort',
     })
-    expect(getAvailableEffortLevels(model)).toEqual(['low', 'medium', 'high'])
-    expect(resolveAppliedEffort(model, 'xhigh')).toBe('high')
+    expect(getAvailableEffortLevels(model)).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+      'ultracode',
+    ])
+    expect(resolveAppliedEffort(model, 'xhigh')).toBe('xhigh')
   }
 
   expect(resolveModelReasoningControl('owl')).toMatchObject({
@@ -1001,7 +1086,7 @@ test('Atlas Cloud catalog exposes only verified reasoning controls for exact mod
   })
   expect(modelSupportsEffort('moonshotai/kimi-k2.7-code')).toBe(true)
   expect(modelSupportsWireEffort('moonshotai/kimi-k2.7-code')).toBe(true)
-  expect(resolveAppliedEffort('moonshotai/kimi-k2.7-code', 'xhigh')).toBe('high')
+  expect(resolveAppliedEffort('moonshotai/kimi-k2.7-code', 'xhigh')).toBe('xhigh')
 
   expect(resolveModelReasoningControl('xai/grok-build-0.1')).toMatchObject({
     supportsReasoning: false,
@@ -1044,9 +1129,11 @@ test('xAI catalog exposes live-verified reasoning controls for direct Grok model
       'medium',
       'high',
       'xhigh',
+      'max',
+      'ultracode',
     ])
     expect(resolveAppliedEffort(model, 'xhigh')).toBe('xhigh')
-    expect(resolveAppliedEffort(model, 'max')).toBe('high')
+    expect(resolveAppliedEffort(model, 'max')).toBe('max')
   }
 
   for (const model of ['grok-4.5', 'grok-4.5-latest', 'grok-build-latest']) {
@@ -1058,8 +1145,15 @@ test('xAI catalog exposes live-verified reasoning controls for direct Grok model
       defaultLevel: 'high',
       wireFormat: 'reasoning_effort',
     })
-    expect(getAvailableEffortLevels(model)).toEqual(['low', 'medium', 'high'])
-    expect(resolveAppliedEffort(model, 'xhigh')).toBe('high')
+    expect(getAvailableEffortLevels(model)).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+      'ultracode',
+    ])
+    expect(resolveAppliedEffort(model, 'xhigh')).toBe('xhigh')
   }
 
   for (const model of ['grok-4.3', 'grok-4.3-latest', 'grok-latest', 'grok-4', 'grok-3']) {
@@ -1072,9 +1166,16 @@ test('xAI catalog exposes live-verified reasoning controls for direct Grok model
     })
     expect(modelSupportsEffort(model)).toBe(true)
     expect(modelSupportsWireEffort(model)).toBe(true)
-    expect(getAvailableEffortLevels(model)).toEqual(['low', 'medium', 'high'])
-    expect(resolveAppliedEffort(model, 'xhigh')).toBe('high')
-    expect(resolveAppliedEffort(model, 'max')).toBe('high')
+    expect(getAvailableEffortLevels(model)).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+      'ultracode',
+    ])
+    expect(resolveAppliedEffort(model, 'xhigh')).toBe('xhigh')
+    expect(resolveAppliedEffort(model, 'max')).toBe('max')
   }
 
   for (const model of ['grok-4.20-0309-reasoning', 'grok-4.20']) {
@@ -1086,8 +1187,8 @@ test('xAI catalog exposes live-verified reasoning controls for direct Grok model
     })
     expect(modelSupportsEffort(model)).toBe(false)
     expect(modelSupportsWireEffort(model)).toBe(false)
-    // Universal effort: user-set xhigh is downgraded to high, not dropped.
-    expect(resolveAppliedEffort(model, 'xhigh')).toBe('high')
+    // Universal effort: user-set xhigh is forwarded, not dropped or downgraded.
+    expect(resolveAppliedEffort(model, 'xhigh')).toBe('xhigh')
   }
 
   expect(resolveModelReasoningControl('grok-4.20-0309-non-reasoning')).toMatchObject({
@@ -1301,7 +1402,7 @@ test('third-party effort overrides require the matching API provider', async () 
   ).toBe(true)
   expect(
     matchingProvider.getAvailableEffortLevels('provider-scoped-model'),
-  ).toEqual(['low', 'medium', 'high', 'max'])
+  ).toEqual(['low', 'medium', 'high', 'xhigh', 'max', 'ultracode'])
 
   const xhighProvider = await importFreshEffortModule({
     provider: 'foundry',
@@ -1320,7 +1421,7 @@ test('third-party effort overrides require the matching API provider', async () 
 
   expect(
     xhighProvider.getAvailableEffortLevels('provider-scoped-model'),
-  ).toEqual(['low', 'medium', 'high', 'xhigh'])
+  ).toEqual(['low', 'medium', 'high', 'xhigh', 'max', 'ultracode'])
 
   const differentProvider = await importFreshEffortModule({
     provider: 'vertex',
@@ -1451,6 +1552,8 @@ test('compat DeepSeek routes can use /effort without catalog reasoning metadata'
     'medium',
     'high',
     'xhigh',
+    'max',
+    'ultracode',
   ])
   expect(resolveAppliedEffort('deepseek-ai/deepseek-v3.2', 'xhigh')).toBe('xhigh')
 })
@@ -1481,7 +1584,7 @@ test('compat DeepSeek routes stay non-controllable when the runtime shim strips 
   expect(modelSupportsEffort('deepseek-r1-distill-llama-70b')).toBe(false)
   expect(modelSupportsWireEffort('deepseek-r1-distill-llama-70b')).toBe(false)
   expect(getAvailableEffortLevels('deepseek-r1-distill-llama-70b')).toEqual([])
-  expect(resolveAppliedEffort('deepseek-r1-distill-llama-70b', 'xhigh')).toBe('high')
+  expect(resolveAppliedEffort('deepseek-r1-distill-llama-70b', 'xhigh')).toBe('xhigh')
 })
 
 test('compat Z.AI routes expose only verified levels and clamp stale values', async () => {
@@ -1503,8 +1606,15 @@ test('compat Z.AI routes expose only verified levels and clamp stale values', as
     wireFormat: 'zai_compatible',
     levels: ['high', 'xhigh'],
   })
-  expect(getAvailableEffortLevels('glm-5.2')).toEqual(['high', 'xhigh'])
-  expect(resolveAppliedEffort('glm-5.2', 'low')).toBe('high')
+  expect(getAvailableEffortLevels('glm-5.2')).toEqual([
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+    'max',
+    'ultracode',
+  ])
+  expect(resolveAppliedEffort('glm-5.2', 'low')).toBe('low')
   expect(resolveAppliedEffort('glm-5.2', 'xhigh')).toBe('xhigh')
 
   expect(resolveModelReasoningControl('GLM-5.1')).toMatchObject({
@@ -1515,7 +1625,7 @@ test('compat Z.AI routes expose only verified levels and clamp stale values', as
   })
   expect(modelSupportsEffort('GLM-5.1')).toBe(true)
   expect(modelSupportsWireEffort('GLM-5.1')).toBe(true)
-  expect(resolveAppliedEffort('GLM-5.1', 'xhigh')).toBe('high')
+  expect(resolveAppliedEffort('GLM-5.1', 'xhigh')).toBe('xhigh')
 })
 
 test.each([
@@ -1541,7 +1651,14 @@ test.each([
     defaultLevel: undefined,
     wireFormat: 'zai_compatible',
   })
-  expect(getAvailableEffortLevels(model)).toEqual(['low', 'high', 'xhigh'])
+  expect(getAvailableEffortLevels(model)).toEqual([
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+    'max',
+    'ultracode',
+  ])
   expect(resolveAppliedEffort(model, 'low')).toBe('low')
   expect(resolveAppliedEffort(model, 'xhigh')).toBe('xhigh')
 })

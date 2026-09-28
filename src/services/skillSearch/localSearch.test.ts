@@ -82,4 +82,27 @@ describe('searchLocalSkills', () => {
     const matches = await searchLocalSkills('stripes', commands)
     expect(matches.map(m => m.name)).toEqual(['/alpha', '/zebra'])
   })
+
+  test('ignores stopwords and sub-3-character terms', async () => {
+    const commands = [
+      skill({ name: '/anything', description: 'a to the of ui' }),
+    ]
+    expect(await searchLocalSkills('a to the of ui', commands)).toEqual([])
+  })
+
+  test('rejects short interior substrings as noise', async () => {
+    const commands = [
+      skill({ name: '/thing', description: 'supercalifragilistic' }),
+    ]
+    expect(await searchLocalSkills('cali', commands)).toEqual([])
+  })
+
+  test('ranks a name match above a description match', async () => {
+    const commands = [
+      skill({ name: '/ocean', description: 'unrelated words' }),
+      skill({ name: '/other', description: 'ocean waves' }),
+    ]
+    const matches = await searchLocalSkills('ocean', commands)
+    expect(matches.map(m => m.name)).toEqual(['/ocean', '/other'])
+  })
 })

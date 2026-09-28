@@ -1,4 +1,5 @@
 import { FILE_READ_TOOL_NAME } from '../FileReadTool/prompt.js'
+import { MAX_FILE_WRITE_CHUNK_LINES } from './chunkedWrite.js'
 import { FILE_WRITE_TOOL_NAME } from './constants.js'
 
 export { FILE_WRITE_TOOL_NAME } from './constants.js'
@@ -9,7 +10,7 @@ function getPreReadInstruction(): string {
 }
 
 function getChunkedWriteInstruction(): string {
-  return '\n- Use write_mode "replace" for complete content of at most 32,000 characters.\n- For larger content, split it into chunks of at most 32,000 characters: call write_mode "start" with the first chunk, then call write_mode "append" with the returned write_id and sequential chunk_index values starting at 1, and finally call write_mode "finish" with that write_id.\n- Chunked writes keep the target unchanged until "finish" succeeds. Do not use "replace" with content larger than 32,000 characters.'
+  return `\n- Keep each call small: send at most ${MAX_FILE_WRITE_CHUNK_LINES} lines of content per call. Generating a very large file in one call can time out on slow models.\n- Use write_mode "replace" for complete content of at most ${MAX_FILE_WRITE_CHUNK_LINES} lines.\n- For larger content, split it into blocks of at most ${MAX_FILE_WRITE_CHUNK_LINES} lines: call write_mode "start" with the first block, then call write_mode "append" with the returned write_id and sequential chunk_index values starting at 1 for each following block, and finally call write_mode "finish" with that write_id.\n- Chunked writes keep the target unchanged until "finish" succeeds. No single call may exceed 32,000 characters.`
 }
 
 export function getWriteToolDescription(): string {

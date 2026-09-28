@@ -170,6 +170,11 @@ export type ResolvedProviderRequest = {
   reasoning?: {
     effort: ReasoningEffort
   }
+  // True when `reasoning` came from an explicit pick (the /effort override or a
+  // ?reasoning= query) rather than a model default. The forced-chat guard must
+  // not drop an explicit selection — the request-level self-heal retry handles
+  // a provider that rejects the field.
+  reasoningExplicit?: boolean
   thinking?: {
     type: ThinkingType
   }
@@ -496,6 +501,22 @@ export function modelRequiresResponsesApi(model: string): boolean {
 // profile model gate so the family shape lives in one place.
 const GPT5_FAMILY_RE = /^gpt-5(?:[.-]|$)/
 const GPT5_MINI_NANO_RE = /(?:^|[-.])(?:mini|nano)(?:[-.]|$)/
+
+// GPT chat models reject function tools combined with reasoning_effort on
+// /v1/chat/completions (see modelRequiresResponsesApi above). When the
+// transport is forced onto chat_completions — no /responses available, e.g. a
+// custom OpenAI-compatible gateway — the only way to keep tool calls working
+// is to drop reasoning_effort. Deliberately broader than
+// modelRequiresResponsesApi, which only gates verified /responses auto-routing:
+// this must also cover gpt-6+ and unverified future majors, where an agent
+// CLI's tools would otherwise collide with the same family restriction.
+export function modelRejectsToolsWithReasoningEffort(model: string): boolean {
+  const normalized = model.trim().toLowerCase().split('?', 1)[0] ?? ''
+  if (GPT5_MINI_NANO_RE.test(normalized)) return false
+  const match = /^gpt-(\d+)/.exec(normalized)
+  if (!match) return false
+  return Number(match[1]) >= 5
+}
 
 // gpt-5 family models the ChatGPT Codex backend can serve. The -mini/-nano
 // tiers are API-only (never exposed through the Codex transport), so a
@@ -1201,8 +1222,13 @@ export function resolveProviderRequest(options?: {
     isK3 && requestedReasoning?.effort !== undefined
       ? { effort: KIMI_K3_REASONING_ALIASES[requestedReasoning.effort] }
       : requestedReasoning
-  const supportsMaxReasoning =
-    catalogReasoningLevels?.includes('max') === true
+  // Universal effort (local): an explicit max pick must reach any
+  // OpenAI-compatible route, not just the ones with a K3 catalog entry. When a
+  // catalog *does* describe the model, its level list still gates the pick; the
+  // request-level self-heal retry (max -> xhigh -> drop) covers a route that
+  // rejects the value despite claiming support.
+  const supportsMaxReasoning = catalogReasoningLevels === undefined
+    || catalogReasoningLevels.includes('max')
   const reasoning =
     (normalizedReasoning?.effort === 'max' && !supportsMaxReasoning) ||
       (catalogReasoningLevels !== undefined &&
@@ -1228,6 +1254,10 @@ export function resolveProviderRequest(options?: {
               : DEFAULT_OPENAI_BASE_URL))))
       ).replace(/\/+$/, ''),
     reasoning,
+    reasoningExplicit:
+      options?.reasoningEffortOverride !== undefined ||
+      (descriptor.reasoning !== undefined &&
+        descriptor.reasoningFromAlias !== true),
     thinking: descriptor.thinking,
   }
 }

@@ -97,7 +97,7 @@ describe('ultracode display surfaces', () => {
     )
   })
 
-  test('CLAUDE_CODE_EFFORT_LEVEL=ultracode clamps display on unsupported first-party models', () => {
+  test('CLAUDE_CODE_EFFORT_LEVEL=ultracode surfaces ultracode globally (no clamp)', () => {
     process.env.CLAUDE_CODE_EFFORT_LEVEL = 'ultracode'
     expect(
       getDisplayedEffortLevel(
@@ -105,19 +105,19 @@ describe('ultracode display surfaces', () => {
         'high',
         FIRST_PARTY_CONTEXT,
       ),
-    ).toBe('high')
+    ).toBe('ultracode')
     expect(getEffortSuffix('claude-sonnet-4-6', 'high', FIRST_PARTY_CONTEXT)).toBe(
-      ' with high effort',
+      ' with ultracode effort',
     )
   })
 
-  test('CLAUDE_CODE_EFFORT_LEVEL=ultracode displays the API effort on OpenAI routes', () => {
+  test('CLAUDE_CODE_EFFORT_LEVEL=ultracode surfaces ultracode on OpenAI routes too', () => {
     process.env.CLAUDE_CODE_EFFORT_LEVEL = 'ultracode'
     expect(getDisplayedEffortLevel('gpt-5.4', 'high', OPENAI_CONTEXT)).toBe(
-      'xhigh',
+      'ultracode',
     )
     expect(getEffortSuffix('gpt-5.4', 'high', OPENAI_CONTEXT)).toBe(
-      ' with xhigh effort',
+      ' with ultracode effort',
     )
   })
 })

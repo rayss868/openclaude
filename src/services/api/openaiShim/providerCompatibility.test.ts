@@ -608,3 +608,111 @@ test('the façade preserves Gemini signatures from non-streaming message metadat
     signature: 'sig-message',
   })
 })
+
+
+// Cascade fallback: a provider that tops out below `max` rejects the value with
+// a 400, so the shim downgrades one step to `xhigh` and retries before ever
+// falling back to dropping the field entirely.
+test('downgrades a rejected `max` reasoning_effort to `xhigh` and retries', async () => {
+  process.env.OPENAI_BASE_URL = 'https://api.z.ai/api/coding/paas/v4'
+  process.env.OPENAI_API_KEY = 'sk-zai-test'
+
+  const bodies: Array<Record<string, unknown>> = []
+  let callCount = 0
+  globalThis.fetch = (async (_input, init) => {
+    bodies.push(JSON.parse(String(init?.body)))
+    callCount += 1
+    if (callCount === 1) {
+      return new Response(
+        JSON.stringify({
+          error: {
+            message:
+              'reasoning_effort is unsupported, valid levels: low, medium, high, xhigh',
+            type: "invalid_request_error",
+          },
+        }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+    return new Response(
+      JSON.stringify({
+        id: 'chatcmpl-1',
+        model: 'glm-5.2',
+        choices: [
+          {
+            message: { role: 'assistant', content: 'ok' },
+            finish_reason: 'stop',
+          },
+        ],
+        usage: { prompt_tokens: 4, completion_tokens: 3, total_tokens: 7 },
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    )
+  }) as unknown as typeof globalThis.fetch
+
+  const client = createOpenAIShimClient({ reasoningEffort: 'max' }) as unknown as ShimClient
+
+  // Must not throw: the downgraded retry succeeds.
+  await client.beta.messages.create({
+    model: 'glm-5.2',
+    messages: [{ role: 'user', content: 'hi' }],
+    max_tokens: 64,
+    stream: false,
+  })
+
+  // First attempt sent `max`; the self-heal downgraded to `xhigh` and retried.
+  expect(bodies).toHaveLength(2)
+  expect(bodies[0]?.reasoning_effort).toBe('max')
+  expect(bodies[1]?.reasoning_effort).toBe('xhigh')
+})
+
+// Regression: gateways that name only the offending level, never the field.
+// Body below is the verbatim 400 from https://ai.rayzs.qzz.io/v1 for a bogus
+// level; matching solely on `reasoning_effort` would skip the self-heal retry
+// there and surface the raw provider error to the user.
+test('self-heals when the 400 names the rejected level but not reasoning_effort', async () => {
+  process.env.OPENAI_BASE_URL = 'https://gateway.example.test/v1'
+  process.env.OPENAI_API_KEY = 'gateway-test'
+
+  const bodies: Array<Record<string, unknown>> = []
+  let callCount = 0
+  globalThis.fetch = (async (_input, init) => {
+    bodies.push(JSON.parse(String(init?.body)))
+    callCount += 1
+    if (callCount === 1) {
+      return new Response(
+        JSON.stringify({
+          error: {
+            message: 'level "zzz_not_a_level" not supported, valid levels: low, medium, high',
+            type: 'invalid_request_error',
+          },
+        }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+    return new Response(
+      JSON.stringify({
+        id: 'chatcmpl-1',
+        model: 'gpt-6-luna',
+        choices: [
+          { message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' },
+        ],
+        usage: { prompt_tokens: 4, completion_tokens: 3, total_tokens: 7 },
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    )
+  }) as unknown as typeof globalThis.fetch
+
+  const client = createOpenAIShimClient({ reasoningEffort: 'max' }) as unknown as ShimClient
+
+  await client.beta.messages.create({
+    model: 'gpt-6-luna',
+    messages: [{ role: 'user', content: 'hi' }],
+    max_tokens: 64,
+    stream: false,
+  })
+
+  expect(bodies).toHaveLength(2)
+  expect(bodies[0]?.reasoning_effort).toBe('max')
+  expect(bodies[1]?.reasoning_effort).toBe('xhigh')
+})

@@ -40,6 +40,29 @@ function isAbortLikeError(error: unknown): boolean {
   )
 }
 
+/**
+ * True when a 400/422 body is the provider rejecting the effort level we sent.
+ *
+ * Two shapes are accepted, both observed live on OpenAI-compatible gateways:
+ *   `Unsupported value: 'reasoning_effort' ... unsupported`
+ *   `level "xhigh" not supported, valid levels: low, medium, high`
+ * The second never names the field, so matching only on `reasoning_effort`
+ * would silently skip the self-heal retry for those providers.
+ */
+function isReasoningEffortLevelRejection(errorBody: string): boolean {
+  if (
+    !/unsupported|unknown|invalid|not supported|unrecognized|unexpected/i.test(
+      errorBody,
+    )
+  ) {
+    return false
+  }
+  return (
+    /reasoning[_\s-]?effort/i.test(errorBody) ||
+    /level\s+\\?["']/i.test(errorBody)
+  )
+}
+
 type GeminiCredential = {
   kind: string
   credential?: string
@@ -595,6 +618,7 @@ export async function executeOpenAIRequest(
   let didRetryWithoutTools = false
   let didRetryWithoutToolStream = false
   let didRetryWithoutReasoningEffort = false
+  let didDowngradeMaxReasoningEffort = false
   let didRetryWithoutStreamOptions = false
   let retryCredentialLease: CredentialLease | null = null
   let didRefreshCopilotToken = false
@@ -1132,12 +1156,31 @@ export async function executeOpenAIRequest(
         : Array.isArray(body.tools) && body.tools.length > 0
 
     if (
+      !didDowngradeMaxReasoningEffort &&
+      (response.status === 400 || response.status === 422) &&
+      isReasoningEffortLevelRejection(errorBody) &&
+      body.reasoning_effort === 'max'
+    ) {
+      // `max` is a documented OpenAI level, so a rejection means this route
+      // tops out at xhigh. Downgrade one step and keep the user's intent as
+      // close as the provider allows before falling back to dropping the field.
+      didDowngradeMaxReasoningEffort = true
+      maxAttempts += 1
+      body.reasoning_effort = 'xhigh'
+      refreshSerializedBody()
+      retryCredentialLease = credentialLease
+
+      logForDebugging(
+        `[OpenAIShim] self-heal retry reason=reasoning_effort_max_unsupported action=downgrade_to_xhigh method=POST url=${redactUrlForDiagnostics(requestUrl)} model=${request.resolvedModel}`,
+        { level: 'warn' },
+      )
+      continue
+    }
+
+    if (
       !didRetryWithoutReasoningEffort &&
       (response.status === 400 || response.status === 422) &&
-      /reasoning[_\s-]?effort/i.test(errorBody) &&
-      /unsupported|unknown|invalid|not supported|unrecognized|unexpected/i.test(
-        errorBody,
-      ) &&
+      isReasoningEffortLevelRejection(errorBody) &&
       Object.prototype.hasOwnProperty.call(body, 'reasoning_effort')
     ) {
       didRetryWithoutReasoningEffort = true

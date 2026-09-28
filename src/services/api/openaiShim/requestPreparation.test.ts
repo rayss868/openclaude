@@ -257,3 +257,115 @@ test('omits streaming options from a non-streaming loopback request', async () =
 
   expect(prepared.body).not.toHaveProperty('stream_options')
 })
+
+test.each([
+  'gpt-5.4',
+  'gpt-5.5',
+  'gpt-5.6-luna',
+  'gpt-6-luna',
+])('drops reasoning_effort with tools for %s on a forced chat route', async (
+  model,
+) => {
+  await ensureIntegrationsLoaded()
+  const processEnv = {
+    OPENAI_BASE_URL: 'https://gateway.example.test/v1',
+    OPENAI_API_KEY: 'test-key',
+  }
+  const request = {
+    ...resolveProviderRequest({ model, processEnv }),
+    reasoning: { effort: 'high' as const },
+  }
+  const prepared = prepareOpenAIRequest({
+    request,
+    requestProcessEnv: processEnv,
+    params: {
+      model,
+      messages: [{ role: 'user', content: 'hello' }],
+      tools: [{
+        name: 'Read',
+        description: 'Read a file',
+        input_schema: { type: 'object', properties: {} },
+      }],
+      max_tokens: 64,
+      stream: true,
+    },
+    dependencies,
+  })
+
+  expect(prepared.effectiveTransport).toBe('chat_completions')
+  expect(prepared.body).not.toHaveProperty('reasoning_effort')
+  expect(prepared.body).not.toHaveProperty('thinking')
+  expect(prepared.body.tools).toEqual(convertedTools)
+})
+
+test('keeps reasoning_effort with tools for a non-gpt model on a chat route', async () => {
+  await ensureIntegrationsLoaded()
+  const processEnv = {
+    OPENAI_BASE_URL: 'https://gateway.example.test/v1',
+    OPENAI_API_KEY: 'test-key',
+  }
+  const model = 'grok-4.3'
+  const request = {
+    ...resolveProviderRequest({ model, processEnv }),
+    reasoning: { effort: 'high' as const },
+  }
+  const prepared = prepareOpenAIRequest({
+    request,
+    requestProcessEnv: processEnv,
+    params: {
+      model,
+      messages: [{ role: 'user', content: 'hello' }],
+      tools: [{
+        name: 'Read',
+        description: 'Read a file',
+        input_schema: { type: 'object', properties: {} },
+      }],
+      max_tokens: 64,
+      stream: true,
+    },
+    dependencies,
+  })
+
+  expect(prepared.body.reasoning_effort).toBe('high')
+  expect(prepared.body.tools).toEqual(convertedTools)
+})
+
+test.each([
+  'gpt-5.4',
+  'gpt-5.5',
+  'gpt-5.6-luna',
+  'gpt-6-luna',
+])('forwards an explicit /effort pick with tools for %s on a forced chat route', async (
+  model,
+) => {
+  await ensureIntegrationsLoaded()
+  const processEnv = {
+    OPENAI_BASE_URL: 'https://gateway.example.test/v1',
+    OPENAI_API_KEY: 'test-key',
+  }
+  const request = resolveProviderRequest({
+    model,
+    processEnv,
+    reasoningEffortOverride: 'xhigh',
+  })
+  const prepared = prepareOpenAIRequest({
+    request,
+    requestProcessEnv: processEnv,
+    params: {
+      model,
+      messages: [{ role: 'user', content: 'hello' }],
+      tools: [{
+        name: 'Read',
+        description: 'Read a file',
+        input_schema: { type: 'object', properties: {} },
+      }],
+      max_tokens: 64,
+      stream: true,
+    },
+    dependencies,
+  })
+
+  expect(prepared.effectiveTransport).toBe('chat_completions')
+  expect(prepared.body.reasoning_effort).toBe('xhigh')
+  expect(prepared.body.tools).toEqual(convertedTools)
+})

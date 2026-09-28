@@ -8,46 +8,59 @@ export type SkillMatch = {
   score: number
 }
 
-/**
- * Build a searchable text blob for a skill command: the display name (minus
- * the leading slash, which is not part of the name), description, and
- * when-to-use guidance (if present). Lowercased for case-insensitive
- * matching.
- */
-function skillSearchText(cmd: Command): string {
-  return [cmd.name.replace(/^\//, ''), cmd.description, cmd.whenToUse ?? '']
-    .join(' ')
-    .toLowerCase()
-}
+/** Minimum length for a query term to be considered. */
+const MIN_TERM_LENGTH = 3
+
+/** Minimum length for a mid-word substring to match at all. */
+const MIN_SUBSTRING_LENGTH = 4
+
+/** Minimum total score before a skill is reported as a match. */
+const MIN_SCORE = 6
+
+/** Maximum number of meaningful query terms considered. */
+const MAX_TERMS = 8
+
+/** Weight applied to matches in the skill name over its description. */
+const NAME_WEIGHT = 2
+
+/** Common English function words that carry no intent. */
+const STOPWORDS = new Set([
+  'a','an','and','are','as','at','be','but','by','can','do','for','from','had',
+  'has','have','he','her','his','how','i','if','in','is','it','its','me','my',
+  'no','not','of','on','or','our','please','she','so','than','that','the',
+  'their','them','then','there','these','they','this','to','up','was','we',
+  'were','what','when','where','which','who','will','with','would','you','your',
+])
+
+const NON_WORD = /[^a-z0-9]/
 
 /**
- * Score a query term against a skill's searchable text. Simple word
- * tokenization with substring fallback — enough to match partial words
- * ("image" finds "imagegen") while keeping exact terms ranked highest.
+ * Score a query term against a skill's searchable text. Whole-word matches
+ * rank highest, then word-prefix matches, then (for longer terms) substrings
+ * inside a word. Short interior substrings are rejected so one- and two-letter
+ * terms cannot score against nearly every skill.
  */
 function scoreTerm(text: string, term: string): number {
-  if (!term) return 0
   const idx = text.indexOf(term)
   if (idx === -1) return 0
-  // Exact word match scores highest; prefix and substring score lower.
-  if (new RegExp(`(^|\\s)${escapeRegExp(term)}(\\s|$)`).test(text)) {
-    return 10
-  }
-  if (idx === 0) {
-    return 6
-  }
-  return 3
-}
-
-function escapeRegExp(input: string): string {
-  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const boundaryStart = idx === 0 || NON_WORD.test(text.charAt(idx - 1))
+  const end = idx + term.length
+  const boundaryEnd = end >= text.length || NON_WORD.test(text.charAt(end))
+  if (boundaryStart && boundaryEnd) return 10
+  if (boundaryStart) return 6
+  return term.length >= MIN_SUBSTRING_LENGTH ? 3 : 0
 }
 
 function scoreCommand(cmd: Command, terms: string[]): number {
-  const text = skillSearchText(cmd)
+  const nameText = cmd.name.replace(/^\//, '').toLowerCase()
+  const descText = [cmd.description, cmd.whenToUse ?? '']
+    .join(' ')
+    .toLowerCase()
   let score = 0
   for (const term of terms) {
-    score += scoreTerm(text, term)
+    const nameScore = scoreTerm(nameText, term)
+    const descScore = scoreTerm(descText, term)
+    score += Math.max(nameScore * NAME_WEIGHT, descScore)
   }
   return score
 }
@@ -93,9 +106,10 @@ export function clearSkillIndexCache(): void {
 
 /**
  * Search the local skill index for the given query. Returns matches scored
- * by keyword overlap with the skill's name/description/whenToUse. Substring
- * matching means partial words ("image") still find full names
- * ("imagegen-frontend-web").
+ * by keyword overlap with the skill's name/description/whenToUse. Stopwords
+ * and very short terms are dropped, partial words ("image") still find full
+ * names ("imagegen-frontend-web"), and a minimum score keeps weak accidental
+ * substring hits out of the results.
  */
 export async function searchLocalSkills(
   query: string,
@@ -104,13 +118,19 @@ export async function searchLocalSkills(
 ): Promise<SkillMatch[]> {
   const trimmed = query.trim().toLowerCase()
   if (!trimmed) return []
-  const terms = trimmed.split(/\s+/).slice(0, 8)
+  const terms = Array.from(
+    new Set(
+      trimmed
+        .split(/\s+/)
+        .filter(t => t.length >= MIN_TERM_LENGTH && !STOPWORDS.has(t)),
+    ),
+  ).slice(0, MAX_TERMS)
 
   const skills = await getLocalSkillIndex(commands)
   const scored: SkillMatch[] = []
   for (const command of skills) {
     const score = scoreCommand(command, terms)
-    if (score > 0) {
+    if (score >= MIN_SCORE) {
       scored.push({ name: command.name, command, score })
     }
   }

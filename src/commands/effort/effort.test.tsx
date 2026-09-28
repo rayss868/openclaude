@@ -106,7 +106,7 @@ function createTestStreams(): {
   }
 }
 
-test('/effort ultracode reports unavailable for a model without ultracode support', async () => {
+test('/effort ultracode applies globally for a model that previously lacked ultracode support', async () => {
   const { call } = await importFreshEffortCommandModule()
   const messages: (string | undefined)[] = []
   const onDone = (result?: string) => {
@@ -116,11 +116,15 @@ test('/effort ultracode reports unavailable for a model without ultracode suppor
   const element = await call(onDone, {}, 'ultracode')
   const { stdout, stdin } = createTestStreams()
 
+  let finalEffortValue: string | number | undefined
   const instance = await render(
     <AppStateProvider
       initialState={{
         ...getDefaultAppState(),
         mainLoopModelForSession: 'claude-sonnet-4-6',
+      }}
+      onChangeAppState={({ newState }) => {
+        finalEffortValue = newState.effortValue
       }}
     >
       {element}
@@ -138,9 +142,11 @@ test('/effort ultracode reports unavailable for a model without ultracode suppor
   stdin.end()
   stdout.end()
 
-  expect(messages).toEqual([
-    'ultracode is not available for your current model and provider. Use /effort without arguments to see available options.',
-  ])
+  // Universal effort (local): every level is global, so ultracode is no longer
+  // gated away from a model like sonnet-4-6.
+  expect(messages).toHaveLength(1)
+  expect(messages[0]).toMatch(/^Set effort level to ultracode/)
+  expect(finalEffortValue).toBe('ultracode')
 })
 
 test('/effort ultracode applies the ultracode session effort when available', async () => {

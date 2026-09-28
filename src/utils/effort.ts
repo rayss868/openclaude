@@ -41,12 +41,14 @@ export const OPENAI_EFFORT_LEVELS = [
   'medium',
   'high',
   'xhigh',
+  'max',
 ] as const
 
 export type OpenAIEffortLevel = typeof OPENAI_EFFORT_LEVELS[number]
-// OpenAI-compatible shims also serve providers such as Kimi that accept the
-// provider-specific `max` value in the same `reasoning_effort` wire field.
-export type OpenAIShimEffortLevel = OpenAIEffortLevel | 'max'
+// `max` is a first-class OpenAI reasoning level (documented alongside xhigh),
+// so it rides the same wire field. It sits in OpenAIEffortLevel already;
+// the shim alias stays for providers that only accept the OpenAI subset.
+export type OpenAIShimEffortLevel = OpenAIEffortLevel
 export type EffortValue = EffortLevel | number
 
 export type ReasoningControlResolution = {
@@ -94,6 +96,12 @@ const DEFAULT_REASONING_LEVELS: EffortLevel[] = ['low', 'medium', 'high']
 const OPENAI_SHIM_COMPAT_LEVELS: EffortLevel[] = ['low', 'medium', 'high', 'xhigh']
 const DEEPSEEK_METADATA_COMPAT_LEVELS: EffortLevel[] = ['high', 'xhigh']
 const ZAI_METADATA_COMPAT_LEVELS: EffortLevel[] = ['low', 'medium', 'high', 'xhigh']
+// Every effort level — including the meta-level 'ultracode' — is exposed
+// globally for any effort-capable model. The provider accepts or rejects the
+// selected level; the request-level self-heal retry drops the field when it
+// rejects it (universal effort, local feature). 'ultracode' maps to xhigh/high
+// at the API boundary (see resolveAppliedEffort).
+const GLOBAL_EFFORT_LEVELS: EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode']
 
 function getReasoningApiProvider(
   context?: ReasoningControlContext,
@@ -810,8 +818,9 @@ export function resolveOpenAIShimReasoningRequestPlan(options: {
   }
 }
 // @[MODEL LAUNCH]: Add the new model to the allowlist if it supports 'max' effort.
-// Per API docs, 'max' is supported on the recent Opus models (4.8/4.7/4.6) for
-// public models — other models return an error.
+// 'max' is available globally for all models that support effort — the
+// API accepts 'max' as the highest reasoning effort for any effort-capable
+// model, and non-supported models will receive a natural error from the provider.
 function legacyModelSupportsMaxEffort(
   model: string,
   context?: ReasoningControlContext,
@@ -824,7 +833,7 @@ function legacyModelSupportsMaxEffort(
   if (supported3P !== undefined) {
     return supported3P
   }
-  if (model.toLowerCase().includes('opus-4-6') || model.toLowerCase().includes('opus-4-7') || model.toLowerCase().includes('opus-4-8')) {
+  if (legacyModelSupportsEffort(model, context)) {
     return true
   }
   if (process.env.USER_TYPE === 'ant' && resolveAntModel(model)) {
@@ -893,46 +902,7 @@ function getLegacyAvailableEffortLevels(
   if (!legacyModelSupportsEffort(model, context)) {
     return []
   }
-  // OpenCode Claude and Gemini models use /messages or /models/gemini-*
-  // (Anthropic/Google format) even though getAPIProvider() returns 'openai'.
-  // Show standard levels (max) not OpenAI levels (xhigh).
-  const m = model.toLowerCase()
-  const isOpenCodeNativeFormat = (
-    m.includes('claude-opus-4') || m.includes('claude-sonnet-4') ||
-    m.includes('opus-4') || m.includes('sonnet-4') ||
-    m.includes('gemini-3')
-  ) && getReasoningApiProvider(context) === 'openai'
-  if (modelUsesOpenAIEffort(model, context) && !isOpenCodeNativeFormat) {
-    return [...OPENAI_EFFORT_LEVELS] as EffortLevel[]
-  }
-  const levels: EffortLevel[] = ['low', 'medium', 'high']
-  if (legacyModelSupportsXHighEffort(model, context)) {
-    levels.push('xhigh')
-  }
-  if (legacyModelSupportsMaxEffort(model, context)) {
-    levels.push('max')
-  }
-  if (
-    getReasoningApiProvider(context) === 'firstParty' &&
-    legacyModelSupportsXHighEffort(model, context)
-  ) {
-    levels.push('ultracode')
-  }
-  return levels
-}
-
-function appendUltracodeLevel(
-  levels: EffortLevel[],
-  context?: ReasoningControlContext,
-): EffortLevel[] {
-  if (
-    getReasoningApiProvider(context) === 'firstParty' &&
-    levels.includes('xhigh') &&
-    !levels.includes('ultracode')
-  ) {
-    return [...levels, 'ultracode']
-  }
-  return levels
+  return [...GLOBAL_EFFORT_LEVELS]
 }
 
 export function modelSupportsMaxEffort(model: string, context?: ReasoningControlContext): boolean {
@@ -954,7 +924,10 @@ export function modelSupportsXHighEffort(model: string, context?: ReasoningContr
 export function getAvailableEffortLevels(model: string, context?: ReasoningControlContext): EffortLevel[] {
   const control = resolveModelReasoningControl(model, context)
   if (control.source === 'metadata' || control.source === 'capability' || control.source === 'compat') {
-    return appendUltracodeLevel([...control.levels], context)
+    if (!control.controllable) {
+      return [...control.levels]
+    }
+    return [...GLOBAL_EFFORT_LEVELS]
   }
   return getLegacyAvailableEffortLevels(model, context)
 }
@@ -970,7 +943,10 @@ export function openAIEffortToStandard(level: OpenAIEffortLevel): EffortLevel {
 }
 
 export function standardEffortToOpenAI(level: EffortLevel): OpenAIEffortLevel {
-  if (level === 'max' || level === 'ultracode') return 'xhigh'
+  // `max` is a real OpenAI level, so it forwards unchanged. `ultracode` is a
+  // local meta-mode (the top level, plus standing multi-agent permission) with
+  // no wire value of its own, so it rides as the highest wire level, `max`.
+  if (level === 'ultracode') return 'max'
   return level as OpenAIEffortLevel
 }
 
@@ -1216,7 +1192,8 @@ export function resolveAppliedEffort(
     typeof resolved === 'string' &&
     (control.source === 'metadata' || control.source === 'capability' || control.source === 'compat') &&
     control.levels.length > 0 &&
-    !control.levels.includes(resolved)
+    !control.levels.includes(resolved) &&
+    !GLOBAL_EFFORT_LEVELS.includes(resolved as EffortLevel)
   ) {
     const fallback = control.levels.includes('high')
       ? 'high'
@@ -1224,22 +1201,6 @@ export function resolveAppliedEffort(
     return fallback === 'ultracode'
       ? modelSupportsXHighEffort(model, context) ? 'xhigh' : 'high'
       : fallback
-  }
-  // API rejects 'max' on non-Opus-4.6 Anthropic models — downgrade to 'high'.
-  // OpenAI/Codex models use 'max' as the standard form of 'xhigh'; the client
-  // shim converts it back to 'xhigh' on the wire, so don't clamp it here.
-  if (
-    resolved === 'max' &&
-    !modelSupportsMaxEffort(model, context) &&
-    !modelUsesOpenAIEffort(model, context)
-  ) {
-    return 'high'
-  }
-  // xhigh is reserved for OpenAI/Codex models and OpenCode opus-4-7/4-8.
-  // For all other models, downgrade to 'high' so a stale persisted setting
-  // doesn't surface as an API error.
-  if (resolved === 'xhigh' && !modelSupportsXHighEffort(model, context)) {
-    return 'high'
   }
   // ultracode is a meta-level: map it to xhigh (or high if unsupported).
   if (resolved === 'ultracode') {

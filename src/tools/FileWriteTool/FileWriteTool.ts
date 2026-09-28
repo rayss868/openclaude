@@ -50,6 +50,7 @@ import {
   appendChunkedWrite,
   commitChunkedWrite,
   MAX_FILE_WRITE_CHUNK_CHARS,
+  MAX_FILE_WRITE_CHUNK_LINES,
   startChunkedWrite,
 } from './chunkedWrite.js'
 import {
@@ -124,10 +125,11 @@ export const inputSchema = lazySchema(() =>
               `write_id and chunk_index are only valid for append mode. ` +
               `To fix: for write_mode "replace" or "start", omit write_id and ` +
               `chunk_index entirely — send only file_path, write_mode, and ` +
-              `content. Chunked writes are only needed for content larger than ` +
-              `${MAX_FILE_WRITE_CHUNK_CHARS} characters; in that case use ` +
+              `content. Chunked writes are needed once content exceeds ` +
+              `${MAX_FILE_WRITE_CHUNK_LINES} lines or ${MAX_FILE_WRITE_CHUNK_CHARS} characters; ` +
+              `in that case use ` +
               `write_mode "start" (no write_id/chunk_index), then repeated ` +
-              `"append" calls with write_id and chunk_index 0, 1, 2, ..., then ` +
+              `"append" calls with write_id and chunk_index 1, 2, 3, ..., then ` +
               `"finish".`,
           })
         }

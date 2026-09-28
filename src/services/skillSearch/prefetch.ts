@@ -21,13 +21,19 @@ const MAX_DISCOVERED_SKILLS = 10
 /** Minimum query length before discovery is worth running. */
 const MIN_QUERY_LENGTH = 3
 
-/** Flat text (user input + recent message content) to search against. */
+/**
+ * Flat text to search against. The current input is the intent signal, so it
+ * is used alone when present; recent message content is only a fallback for
+ * turns with no input (avoids dragging earlier conversation into the query).
+ */
 function queryTextWith(input: string | null, messages: Message[]): string {
-  const recent = messages
+  const trimmedInput = (input ?? '').trim()
+  if (trimmedInput) return trimmedInput
+  return messages
     .slice(-6)
     .map(m => getContentText(m.content) ?? '')
     .join(' ')
-  return [input ?? '', recent].join(' ').trim()
+    .trim()
 }
 
 function buildDiscoveryAttachment(

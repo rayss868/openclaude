@@ -13,13 +13,12 @@ import {
   type ShimCreateParams,
 } from '../codexShim.js'
 import {
-  baseUrlSupportsResponsesAutoRoute,
   getGithubEndpointType,
   getLocalFastPathConfig,
   isDirectLocalOllamaEndpoint,
   isLikelyOllamaEndpoint,
   isLocalProviderUrl,
-  modelRequiresResponsesApi,
+  modelRejectsToolsWithReasoningEffort,
   resolveProviderRequest,
 } from '../providerConfig.js'
 import { stableStringifyJson } from '../../../utils/stableStringify.js'
@@ -201,12 +200,17 @@ export function prepareOpenAIRequest({
     baseUrl: request.baseUrl,
     processEnv: requestProcessEnv,
   })
+  // Universal effort (local): an explicit /effort pick must reach the provider
+  // even on the forced-chat path. Forward it and let the request-level
+  // self-heal retry drop reasoning_effort if the provider actually rejects the
+  // tools + reasoning_effort combination. Only derived/model defaults are
+  // suppressed up front.
   const suppressReasoningForForcedChat =
+    !request.reasoningExplicit &&
     effectiveTransport === 'chat_completions' &&
     Array.isArray(params.tools) &&
     params.tools.length > 0 &&
-    modelRequiresResponsesApi(request.resolvedModel) &&
-    baseUrlSupportsResponsesAutoRoute(request.baseUrl, requestProcessEnv)
+    modelRejectsToolsWithReasoningEffort(request.resolvedModel)
   const reasoningRequestPlan = resolveOpenAIShimReasoningRequestPlan({
     model: runtimeModel,
     requestedEffort: suppressReasoningForForcedChat

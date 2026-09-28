@@ -180,7 +180,7 @@ describe('CLAUDE_CODE_ALWAYS_ENABLE_EFFORT precedence', () => {
       ['claude-opus-4-5-20251101', 'low', 'low'],
       ['claude-opus-4-6', 'max', 'max'],
       ['claude-opus-4-8', 'xhigh', 'xhigh'],
-      ['claude-sonnet-4-6', 'max', 'high'],
+      ['claude-sonnet-4-6', 'max', 'max'],
     ] as const
 
     for (const [model, selected, expected] of supportedModels) {
@@ -387,6 +387,7 @@ describe('configured third-party effort precedence', () => {
       'high',
       'xhigh',
       'max',
+      'ultracode',
     ])
     expect(resolveAppliedEffort('LongCat-2.0', 'max', context)).toBe('max')
 

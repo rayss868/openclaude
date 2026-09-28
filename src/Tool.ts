@@ -396,9 +396,24 @@ export function toolMatchesName(
 
 /**
  * Finds a tool by name or alias from a list of tools.
+ *
+ * Falls back to a case-insensitive match when nothing matches exactly, because
+ * some models emit lowercase names ("bash") for capitalized tools ("Bash") and
+ * an exact-only lookup rejects them as unknown tools. Exact matches always win
+ * so tools that differ only in case still resolve deterministically.
  */
 export function findToolByName(tools: Tools, name: string): Tool | undefined {
-  return tools.find(t => toolMatchesName(t, name))
+  const exactMatch = tools.find(t => toolMatchesName(t, name))
+  if (exactMatch) {
+    return exactMatch
+  }
+
+  const loweredName = name.toLowerCase()
+  return tools.find(
+    t =>
+      t.name.toLowerCase() === loweredName ||
+      t.aliases?.some(alias => alias.toLowerCase() === loweredName) === true,
+  )
 }
 
 export type Tool<

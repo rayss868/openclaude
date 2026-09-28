@@ -51,10 +51,9 @@ export function EffortPicker({ onSelect, onCancel }: Props) {
       isAvailable: true,
     },
     ...availableLevels.map(level => {
-      // xhigh is now the persisted level for OpenAI/Codex, so compare against
-      // it directly. The 'max' alias path is kept only for legacy settings
-      // that still hold a persisted 'max' from before xhigh was introduced.
-      const isCurrent = currentDisplayedLevel === level || (usesOpenAIEffort && level === 'xhigh' && currentDisplayedLevel === 'max')
+      // Every level is global now, so the current marker follows the displayed
+      // level exactly. The old xhigh↔max alias marked both rows "(current)".
+      const isCurrent = currentDisplayedLevel === level
       return {
         label: (
           <EffortOptionLabel
@@ -97,15 +96,13 @@ export function EffortPicker({ onSelect, onCancel }: Props) {
   }
 
   const supportsEffort = modelSupportsEffort(model)
-  // For OpenAI/Codex: prefer the user's current selection (max → xhigh for
-  // option matching), otherwise the model's alias default, otherwise auto.
-  // For Claude: user's current selection or auto.
+  // For OpenAI/Codex: prefer the user's current selection, otherwise the
+  // model's alias default, otherwise auto. For Claude: user's current
+  // selection or auto.
   const initialFocus = usesOpenAIEffort
-    ? (appStateEffort === 'max'
-        ? 'xhigh'
-        : appStateEffort
-          ? String(appStateEffort)
-          : (modelReasoningEffort || 'auto'))
+    ? (appStateEffort
+        ? String(appStateEffort)
+        : (modelReasoningEffort || 'auto'))
     : (appStateEffort ? String(appStateEffort) : 'auto')
 
   return (

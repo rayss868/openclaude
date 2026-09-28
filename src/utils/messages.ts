@@ -195,6 +195,10 @@ const MEMORY_CORRECTION_HINT =
 
 const TOOL_REFERENCE_TURN_BOUNDARY = 'Tool loaded.'
 
+// Skill descriptions can be multi-paragraph; the discovery reminder keeps one
+// compact line per skill so a long description doesn't flood the turn.
+const MAX_SKILL_SUMMARY_CHARS = 120
+
 /**
  * Appends a memory correction hint to a rejection/cancellation message
  * when auto-memory is enabled and the GrowthBook flag is on.
@@ -2462,7 +2466,17 @@ Read the team config to discover your teammates' names. Check the task list peri
   if (feature('EXPERIMENTAL_SKILL_SEARCH')) {
     if (attachment.type === 'skill_discovery') {
       if (attachment.skills.length === 0) return []
-      const lines = attachment.skills.map(s => `- ${s.name}: ${s.description}`)
+      const lines = attachment.skills.map(s => {
+        const flat = s.description.replace(/\s+/g, ' ').trim()
+        let summary = flat
+        if (flat.length > MAX_SKILL_SUMMARY_CHARS) {
+          const cut = flat.slice(0, MAX_SKILL_SUMMARY_CHARS)
+          const lastSpace = cut.lastIndexOf(' ')
+          summary =
+            (lastSpace > 0 ? cut.slice(0, lastSpace) : cut).trimEnd() + '…'
+        }
+        return `- ${s.name}: ${summary}`
+      })
       return wrapMessagesInSystemReminder([
         createUserMessage({
           content:

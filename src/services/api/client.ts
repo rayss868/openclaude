@@ -13,7 +13,6 @@ import {
   convertEffortValueToLevel,
   type EffortValue,
   resolveAppliedEffort,
-  resolveModelReasoningControl,
   modelSupportsShimReasoningEffort,
   modelSupportsWireEffort,
   standardEffortToOpenAI,
@@ -522,16 +521,6 @@ export async function getAnthropicClient({
         )
         : modelSupportsWireEffort(effortModel, effortContext)
     : false
-  const reasoningControl = effortModel
-    ? resolveModelReasoningControl(effortModel, effortContext)
-    : undefined
-  const k3ReasoningControl =
-    reasoningControl?.source === 'metadata' &&
-    reasoningControl.wireFormat === 'reasoning_effort' &&
-    reasoningControl.levels.length === 3 &&
-    reasoningControl.levels.includes('low') &&
-    reasoningControl.levels.includes('high') &&
-    reasoningControl.levels.includes('max')
   const appliedEffort = effortModel && effortValue !== undefined
     ? resolveAppliedEffort(
       effortModel,
@@ -544,12 +533,7 @@ export async function getAnthropicClient({
     : convertEffortValueToLevel(appliedEffort)
   const shimReasoningEffort: OpenAIShimEffortLevel | undefined =
     appliedEffortLevel !== undefined && supportsShimReasoningEffort
-      ? (reasoningControl?.source === 'metadata' &&
-          reasoningControl.wireFormat === 'reasoning_effort' &&
-          appliedEffortLevel === 'max' &&
-          k3ReasoningControl
-            ? 'max'
-          : standardEffortToOpenAI(appliedEffortLevel))
+      ? standardEffortToOpenAI(appliedEffortLevel)
       : undefined
   // Normalize env-only routes before snapshotting custom headers. Dedicated
   // routes such as Concentrate deliberately clear inherited proxy headers;

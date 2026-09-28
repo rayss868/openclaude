@@ -64,4 +64,19 @@ describe('skill discovery prefetch', () => {
     const att = atts[0] as Attachment & { type: 'skill_discovery' }
     expect(att.skills.map(s => s.name)).toEqual(['/minimalist-ui'])
   })
+
+  test('prefers the current input over prior messages', async () => {
+    clearSkillIndexCache()
+    const ctx = contextWith([
+      skill({ name: '/minimalist-ui', description: 'Editorial interfaces' }),
+      skill({ name: '/imagegen-frontend-web', description: 'Generate frontend images' }),
+    ])
+    const messages = [
+      { role: 'user', content: [{ type: 'text', text: 'we need a minimalist landing page' }] },
+    ] as unknown as Message[]
+    const atts = await getTurnZeroSkillDiscovery('generate an image', messages, ctx)
+    expect(atts).toHaveLength(1)
+    const att = atts[0] as Attachment & { type: 'skill_discovery' }
+    expect(att.skills.map(s => s.name)).toEqual(['/imagegen-frontend-web'])
+  })
 })

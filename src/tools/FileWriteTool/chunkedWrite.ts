@@ -11,6 +11,12 @@ import { commitSiblingTempFileAtomic } from '../../utils/atomicReplace.js'
  * sequential chunks.
  */
 export const MAX_FILE_WRITE_CHUNK_CHARS = 32_000
+/**
+ * Maximum lines the model should send in a single Write call. Large single
+ * responses can exceed slow providers' request timeouts, so the model is
+ * instructed to split bigger files into blocks of at most this many lines.
+ */
+export const MAX_FILE_WRITE_CHUNK_LINES = 50
 
 /**
  * Lifecycle stage of a chunked write. Exported for callers/tooling that need to

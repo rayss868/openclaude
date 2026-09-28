@@ -2586,7 +2586,7 @@ test('force enable respects a shim non-effort contract before request serializat
   expect(requestBody?.reasoning_effort).toBeUndefined()
 })
 
-test('providerOverride clamps stale effort against metadata levels', async () => {
+test('providerOverride forwards a globally selectable level the catalog does not list', async () => {
   let requestBody: Record<string, unknown> | undefined
 
   globalThis.fetch = (async (_input, init) => {
@@ -2666,9 +2666,12 @@ test('providerOverride clamps stale effort against metadata levels', async () =>
     ensureIntegrationsLoaded()
   }
 
-  expect(requestBody?.reasoning_effort).toBe('high')
+  // Universal effort (local): the catalog lists only `high`, but `low` is a
+  // globally selectable level, so it rides the wire; the request-level self-heal
+  // retry drops it if this provider actually rejects it.
+  expect(requestBody?.reasoning_effort).toBe('low')
 })
-test('providerOverride Atlas Kimi metadata emits top-level reasoning_effort and clamps unsupported levels', async () => {
+test('providerOverride Atlas Kimi metadata emits top-level reasoning_effort for a level outside its catalog', async () => {
   let requestBody: Record<string, unknown> | undefined
   const originalFetch = globalThis.fetch
 
@@ -2721,13 +2724,13 @@ test('providerOverride Atlas Kimi metadata emits top-level reasoning_effort and 
       stream: false,
     })
 
-    expect(requestBody?.reasoning_effort).toBe('high')
+    expect(requestBody?.reasoning_effort).toBe('xhigh')
   } finally {
     globalThis.fetch = originalFetch
   }
 })
 
-test('providerOverride Kimi Code clamps unsupported xhigh effort to high', async () => {
+test('providerOverride Kimi Code forwards xhigh even though its catalog stops at high', async () => {
   let requestBody: Record<string, unknown> | undefined
   const originalFetch = globalThis.fetch
 
@@ -2780,7 +2783,10 @@ test('providerOverride Kimi Code clamps unsupported xhigh effort to high', async
       stream: false,
     })
 
-    expect(requestBody?.reasoning_effort).toBe('high')
+    // Universal effort (local): `xhigh` is globally selectable, so it is sent
+    // as-is even though the Kimi Code catalog stops at `high`. A provider that
+    // rejects it is handled by the request-level self-heal retry.
+    expect(requestBody?.reasoning_effort).toBe('xhigh')
   } finally {
     globalThis.fetch = originalFetch
   }
@@ -2884,7 +2890,7 @@ test('providerOverride K3 leaves its default reasoning to the provider', async (
   }
 })
 
-test('providerOverride Hicap keeps multi-level max as xhigh on the wire', async () => {
+test('providerOverride Hicap sends max as max on the wire', async () => {
   let requestBody: Record<string, unknown> | undefined
   const originalFetch = globalThis.fetch
 
@@ -2917,7 +2923,7 @@ test('providerOverride Hicap keeps multi-level max as xhigh on the wire', async 
       stream: false,
     })
 
-    expect(requestBody?.reasoning_effort).toBe('xhigh')
+    expect(requestBody?.reasoning_effort).toBe('max')
   } finally {
     globalThis.fetch = originalFetch
   }
