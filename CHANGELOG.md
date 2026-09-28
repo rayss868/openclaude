@@ -1,5 +1,76 @@
 # Changelog
 
+## [0.31.0-by-rayss](https://github.com/rayss868/openclaude/compare/v0.31.0...v0.31.0-by-rayss) (2026-09-28)
+
+### Features
+
+* **instructions:** fix loading of subfolder instruction files so nested `CLAUDE.md`/`AGENTS.md` are honored when working inside a subdirectory.
+* **effort:** apply universal reasoning-effort levels across models and providers, self-heal rejected requests by retrying without `reasoning_effort`, and tune skill search.
+* **write:** chunk large writes at 50 lines per call to keep generation within the model's limits.
+
+### Bug Fixes
+
+* **retry:** correct request retry logic so transient gateway failures are retried instead of failing the turn.
+* **write:** allow only one chunked-write append per assistant response. A second append is rejected while another chunk is still pending, so multiple Write calls can no longer be batched into a single response.
+
+## [0.31.0](https://github.com/rayss868/openclaude/compare/v0.30.4-by-rayss...v0.31.0) (2026-09-22)
+
+### Bug Fixes
+
+* **ci:** restore main validation ([#2236](https://github.com/anthropics/claude-code/pull/2236))
+* **bg:** clean up old completed session artifacts ([#2167](https://github.com/anthropics/claude-code/pull/2167))
+* **chrome:** launch the packaged CLI entrypoint in npm installs ([#2146](https://github.com/anthropics/claude-code/pull/2146))
+
+### Performance Improvements
+
+* **bg:** avoid full scans for exact session IDs ([#2166](https://github.com/anthropics/claude-code/pull/2166))
+
+## [0.30.4-by-rayss](https://github.com/rayss868/openclaude/compare/v0.30.3-by-rayss...v0.30.4-by-rayss) (2026-09-21)
+
+### Features
+
+* archived rewinds, deeper session and skill search, and Codex thinking blocks.
+* **launcher:** support `--max-old-space-size-percentage` ([#2219](https://github.com/anthropics/claude-code/pull/2219))
+* **query:** configure idle timeout ([#2233](https://github.com/anthropics/claude-code/pull/2233))
+* **web-search:** add Ollama backend ([#2234](https://github.com/anthropics/claude-code/pull/2234))
+
+### Bug Fixes
+
+* **image:** allow large and metadata-less screenshots through when resizing fails ([#1964](https://github.com/anthropics/claude-code/pull/1964))
+* **plugins:** keep the Windows marketplace cache on copy ENOENT ([#2220](https://github.com/anthropics/claude-code/pull/2220))
+* **xai:** validate OAuth state before settling callbacks ([#2228](https://github.com/anthropics/claude-code/pull/2228))
+* **mcp:** resolve server names by own-property instead of the prototype chain ([#1983](https://github.com/anthropics/claude-code/pull/1983))
+* **frontmatter:** anchor the closing `---` to the start of a line ([#2027](https://github.com/anthropics/claude-code/pull/2027))
+* **openai-shim:** request streaming usage from compatible local providers ([#2144](https://github.com/anthropics/claude-code/pull/2144))
+* **api:** validate `API_TIMEOUT_MS` in the native Anthropic clients ([#2169](https://github.com/anthropics/claude-code/pull/2169))
+* **hooks:** preserve compound Bash commands on Windows ([#2217](https://github.com/anthropics/claude-code/pull/2217))
+* **agent:** forward subagent permission prompts to the parent session ([#2235](https://github.com/anthropics/claude-code/pull/2235))
+* **resume:** scope `/resume` titles to user prompts and gate skill search.
+
+### Miscellaneous Chores
+
+* **types:** reduce `any` usage with safety tooling, 7-batch phase 1 ([#2208](https://github.com/anthropics/claude-code/pull/2208))
+
+## [0.30.3-by-rayss](https://github.com/rayss868/openclaude/compare/v0.30.2...v0.30.3-by-rayss) (2026-09-11)
+
+### Features
+
+* **providers:** add the Command Code hybrid gateway ([#2196](https://github.com/anthropics/claude-code/pull/2196))
+* relax refusal language, add command repair and chunked writes, and harden paste/image handling.
+* **skills:** verify registry revocations and add eyebrow drift checks ([#2215](https://github.com/anthropics/claude-code/pull/2215))
+* enable deep search, fix paste/file-write edge cases, and invalidate caches on edit and write.
+
+### Bug Fixes
+
+* identify OpenCode Go requests ([#2203](https://github.com/anthropics/claude-code/pull/2203))
+* **sdk:** preserve the async generator session context ([#2204](https://github.com/anthropics/claude-code/pull/2204))
+* **profiles:** apply the context limit to all profile models ([#2201](https://github.com/anthropics/claude-code/pull/2201))
+
+### Documentation
+
+* **web:** add `llms.txt` for LLM discovery ([#2205](https://github.com/anthropics/claude-code/pull/2205))
+* add a skills guide ([#2211](https://github.com/anthropics/claude-code/pull/2211))
+
 ## [0.30.2](https://github.com/rayss868/openclaude/compare/v0.30.1...v0.30.2) (2026-09-05)
 
 ### Features
@@ -31,6 +102,33 @@
 
 * **resume:** improve the preview screen with a clear `Session preview` header, explanatory subtitle, `Conversation` section label, and a visually separated action and session metadata footer.
 
+## [0.30.0](https://github.com/rayss868/openclaude/compare/v0.29.1...v0.30.0) (2026-08-31)
+
+### Features
+
+* **providers:** add focused LLMTR hybrid gateway ([#2150](https://github.com/anthropics/claude-code/pull/2150))
+* **providers:** live model lists for OpenRouter and OpenGateway ([#2084](https://github.com/anthropics/claude-code/pull/2084))
+
+### Bug Fixes
+
+* **bg:** identify sessions with persisted process markers ([#2163](https://github.com/anthropics/claude-code/pull/2163))
+* **tui:** proper Unicode/IME input handling for composed sequences ([#2018](https://github.com/anthropics/claude-code/pull/2018))
+* **openai-shim:** drop synthetic tool-results marker and guard echoes ([#2039](https://github.com/anthropics/claude-code/pull/2039))
+* **effort:** preserve known model exclusions when force-enabled ([#2148](https://github.com/anthropics/claude-code/pull/2148))
+* **settings:** preserve concurrent updates ([#2137](https://github.com/anthropics/claude-code/pull/2137))
+* **settings:** stop proto-named permission rules from aborting validation ([#2170](https://github.com/anthropics/claude-code/pull/2170))
+* **api:** scope Anthropic attribution to compatible request paths ([#2147](https://github.com/anthropics/claude-code/pull/2147))
+* **plugins:** anchor marketplace hostPattern against lookalike hosts ([#2177](https://github.com/anthropics/claude-code/pull/2177))
+* **integrations:** keep managed AIMLAPI attribution over caller headers ([#2179](https://github.com/anthropics/claude-code/pull/2179))
+
+### Tests
+
+* **settings:** unit-test the multi-source merge customizer ([#2176](https://github.com/anthropics/claude-code/pull/2176))
+
+### Documentation
+
+* tighten PR review expectations in CONTRIBUTING and AGENTS guides ([#2151](https://github.com/anthropics/claude-code/pull/2151))
+
 ## [0.29.1](https://github.com/rayss868/openclaude/compare/v0.29.0...v0.29.1) (2026-08-19)
 
 
@@ -38,6 +136,34 @@
 
 * **resume:** add session delete feature — press Delete key on a session in the /resume picker to permanently remove it, with y/n confirmation prompt. Shows keyboard shortcut hints in the UI.
 
+
+## [0.29.0](https://github.com/rayss868/openclaude/compare/v0.28.0...v0.29.0) (2026-08-19)
+
+### Features
+
+* **memdir:** merge the knowledge graph and conversation arc ([#1811](https://github.com/anthropics/claude-code/pull/1811))
+* **partners:** add Concentrate and Exa to the partner roster ([#2141](https://github.com/anthropics/claude-code/pull/2141))
+* **gateway:** add the Concentrate AI provider with dynamic model discovery ([#2140](https://github.com/anthropics/claude-code/pull/2140))
+* **cost:** support exact custom model pricing ([#2131](https://github.com/anthropics/claude-code/pull/2131))
+* **zai:** expand Coding Plan catalog support ([#2127](https://github.com/anthropics/claude-code/pull/2127))
+* **aimlapi:** passwordless onboarding and resumable card top-up ([#2032](https://github.com/anthropics/claude-code/pull/2032))
+* **partners:** add ApiSmart and refresh the Novita AI logo ([#2121](https://github.com/anthropics/claude-code/pull/2121))
+* **xai:** add Grok 4.6/4.5 to the catalog, xAI provider, and gateways ([#2117](https://github.com/anthropics/claude-code/pull/2117))
+* add optional Sentry error reporting, env-driven and opt-in ([#2139](https://github.com/anthropics/claude-code/pull/2139))
+
+### Bug Fixes
+
+* **code-reviewer:** require inline diff input and preserve read-only search in embedded-search builds ([#2102](https://github.com/anthropics/claude-code/pull/2102))
+* **bg:** preserve detached session terminal outcomes ([#2133](https://github.com/anthropics/claude-code/pull/2133))
+* **mcp:** paginate discovery list operations ([#2132](https://github.com/anthropics/claude-code/pull/2132))
+* **websearch:** reject non-positive `WEB_CUSTOM` env overrides ([#2124](https://github.com/anthropics/claude-code/pull/2124))
+* **api:** resolve swarm-field tool names by own-property ([#2123](https://github.com/anthropics/claude-code/pull/2123))
+* **web:** link release notes to GitHub ([#2114](https://github.com/anthropics/claude-code/pull/2114))
+* move the Ling 3.0 Tiny `:free` window back to Aug 13 (official promo end) and extend availability to Aug 17.
+
+### Code Refactoring
+
+* **cli:** commander-authoritative argv handling for SSH / `cc://` and remote bypass ([#2098](https://github.com/anthropics/claude-code/pull/2098))
 
 ## [0.28.4](https://github.com/rayss868/openclaude/compare/v0.28.3...v0.28.4) (2026-08-18)
 
