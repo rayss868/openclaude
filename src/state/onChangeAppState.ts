@@ -111,7 +111,7 @@ export function onChangeAppState({
     newState.mainLoopModel === null
   ) {
     // Remove from settings
-    updateSettingsForSource('userSettings', { model: undefined })
+    updateSettingsForSource('localSettings', { model: undefined })
     setMainLoopModelOverride(null)
   }
 
@@ -121,7 +121,7 @@ export function onChangeAppState({
     newState.mainLoopModel !== null
   ) {
     // Save to settings
-    updateSettingsForSource('userSettings', { model: newState.mainLoopModel })
+    updateSettingsForSource('localSettings', { model: newState.mainLoopModel })
     setMainLoopModelOverride(newState.mainLoopModel)
 
     // Keep active provider profiles in sync with /model choices so restarts

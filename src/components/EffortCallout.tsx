@@ -90,7 +90,7 @@ export function EffortCallout(t0) {
   if ($[9] !== defaultLevel) {
     t8 = value => {
       const effortLevel = value === defaultLevel ? undefined : value;
-      updateSettingsForSource("userSettings", {
+      updateSettingsForSource("localSettings", {
         effortLevel: toPersistableEffort(effortLevel)
       });
       onDoneRef.current(value);

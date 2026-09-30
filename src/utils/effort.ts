@@ -1032,9 +1032,9 @@ export function getInitialEffortSetting(): EffortLevel | undefined {
  * session-ephemeral effort (CLI --effort, EffortCallout default) fall through
  * to undefined so it follows future model-default changes.
  *
- * priorPersisted must come from userSettings on disk
- * (getSettingsForSource('userSettings')?.effortLevel), NOT merged settings
- * (project/policy layers would leak into the user's global settings.json)
+ * priorPersisted must come from localSettings on disk
+ * (getSettingsForSource('localSettings')?.effortLevel), NOT merged settings
+ * (user/project/policy layers would leak into this workspace's settings.local.json)
  * and NOT AppState.effortValue (includes session-scoped sources that
  * deliberately do not write to settings.json).
  */

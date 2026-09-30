@@ -46,7 +46,7 @@ export type Props = {
   /** Overrides the dim header line below "Select model". */
   headerText?: string;
   /**
-   * When true, skip writing effortLevel to userSettings on selection.
+   * When true, skip writing effortLevel to localSettings on selection.
    * Used by the assistant installer wizard where the model choice is
    * project-scoped (written to the assistant's .openclaude/settings.json via
    * install.ts) and should not leak to the user's global ~/.openclaude/settings.json.
@@ -370,10 +370,10 @@ export function ModelPicker(t0) {
         effort: clampedEffort as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
       });
       if (!skipSettingsWrite) {
-        const effortLevel = resolvePickerEffortPersistence(clampedEffort, getDefaultEffortLevelForOption(selectedValue, effortContext), getSettingsForSource("userSettings")?.effortLevel, hasToggledEffort);
+        const effortLevel = resolvePickerEffortPersistence(clampedEffort, getDefaultEffortLevelForOption(selectedValue, effortContext), getSettingsForSource("localSettings")?.effortLevel, hasToggledEffort);
         const persistable = toPersistableEffort(effortLevel);
         if (persistable !== undefined) {
-          updateSettingsForSource("userSettings", {
+          updateSettingsForSource("localSettings", {
             effortLevel: persistable
           });
         }

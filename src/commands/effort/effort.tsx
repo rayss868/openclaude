@@ -17,7 +17,7 @@ type EffortCommandResult = {
 function setEffortValue(effortValue: EffortValue): EffortCommandResult {
   const persistable = toPersistableEffort(effortValue);
   if (persistable !== undefined) {
-    const result = updateSettingsForSource('userSettings', {
+    const result = updateSettingsForSource('localSettings', {
       effortLevel: persistable
     });
     if (result.error) {
@@ -76,7 +76,7 @@ export function showCurrentEffort(appStateEffort: EffortValue | undefined, model
   };
 }
 function unsetEffortLevel(): EffortCommandResult {
-  const result = updateSettingsForSource('userSettings', {
+  const result = updateSettingsForSource('localSettings', {
     effortLevel: undefined
   });
   if (result.error) {
