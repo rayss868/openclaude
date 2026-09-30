@@ -238,6 +238,15 @@ export const getSystemContext = memoize(
       getRepoMapContext(),
     ])
 
+    // Agent Hall peers: injected so the model knows about other sessions in
+    // this workspace without the user having to run /hall. No-op unless Hall is
+    // enabled and the session client is connected.
+    let hallPeers: string | null = null
+    if (feature('HALL')) {
+      const { getHallPeersContext } = await import('./hall/session.js')
+      hallPeers = await getHallPeersContext()
+    }
+
     // Include system prompt injection if set (for cache breaking, internal-only)
     const injection = feature('BREAK_CACHE_COMMAND')
       ? getSystemPromptInjection()
@@ -248,11 +257,13 @@ export const getSystemContext = memoize(
       has_git_status: gitStatus !== null,
       has_repo_map: repoMap !== null,
       has_injection: injection !== null,
+      has_hall_peers: hallPeers !== null,
     })
 
     return {
       ...(gitStatus && { gitStatus }),
       ...(repoMap && { repoMap }),
+      ...(hallPeers && { hallPeers }),
       ...(feature('BREAK_CACHE_COMMAND') && injection
         ? {
             cacheBreaker: `[CACHE_BREAKER: ${injection}]`,

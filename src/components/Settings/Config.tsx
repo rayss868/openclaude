@@ -388,7 +388,31 @@ export function Config({
         enabled: toolHistoryCompressionEnabled
       });
     }
-  }, ...(feature('CONTEXT_COLLAPSE') ? [{
+  }, ...(feature('HALL') ? [{
+    id: 'agentHallEnabled',
+    label: 'Agent Hall (multi-session coordination)',
+    value: globalConfig.agentHallEnabled,
+    type: 'boolean' as const,
+    onChange(agentHallEnabled: boolean) {
+      saveGlobalConfig(current_hall => ({
+        ...current_hall,
+        agentHallEnabled
+      }));
+      setGlobalConfig({
+        ...getGlobalConfig(),
+        agentHallEnabled
+      });
+      // Apply without a restart: start/stop the session's Hall client now.
+      try {
+        (require('../../hall/session.js') as typeof import('../../hall/session.js')).applyHallSetting(agentHallEnabled);
+      } catch (error) {
+        logError(`Failed to apply Agent Hall setting: ${error}`);
+      }
+      logEvent('tengu_agent_hall_setting_changed', {
+        enabled: agentHallEnabled
+      });
+    }
+  }] : []), ...(feature('CONTEXT_COLLAPSE') ? [{
     id: 'contextCollapseEnabled',
     label: 'Context collapse (lossy)',
     value: globalConfig.contextCollapseEnabled,

@@ -128,6 +128,11 @@ const peersCmd = feature('UDS_INBOX')
       require('./commands/peers/index.js') as typeof import('./commands/peers/index.js')
     ).default
   : null
+const hallCmd = feature('HALL')
+  ? (
+      require('./commands/hall/index.js') as typeof import('./commands/hall/index.js')
+    ).default
+  : null
 const buddy = isBuddyEnabled()
   ? (
       require('./commands/buddy/index.js') as typeof import('./commands/buddy/index.js')
@@ -384,6 +389,7 @@ const COMMANDS = memoize((): Command[] => [
   ...(!isUsing3PServices() ? [logout, login()].filter(Boolean) : []),
   passes,
   ...(peersCmd ? [peersCmd] : []),
+  ...(hallCmd ? [hallCmd] : []),
   tasks,
   ...(workflowsCmd ? [workflowsCmd] : []),
   ...(torch ? [torch] : []),

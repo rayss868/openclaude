@@ -117,6 +117,13 @@ const SnipTool = feature('HISTORY_SNIP')
 const ListPeersTool = feature('UDS_INBOX')
   ? require('./tools/ListPeersTool/ListPeersTool.js').ListPeersTool
   : null
+const HallPeersTool = feature('HALL')
+  ? require('./tools/HallPeersTool/HallPeersTool.js').HallPeersTool
+  : null
+const HallPeerActivityTool = feature('HALL')
+  ? require('./tools/HallPeerActivityTool/HallPeerActivityTool.js')
+      .HallPeerActivityTool
+  : null
 const DiscoverSkillsTool = feature('EXPERIMENTAL_SKILL_SEARCH')
   ? require('./tools/DiscoverSkillsTool/index.js').DiscoverSkillsTool
   : null
@@ -220,6 +227,8 @@ export function getAllBaseTools(): Tools {
     // Cache getter results to avoid double-invocation of lazy require()
     ...(() => { const smt = getSendMessageTool(); return smt ? [smt] : [] })(),
     ...(ListPeersTool ? [ListPeersTool] : []),
+    ...(HallPeersTool ? [HallPeersTool] : []),
+    ...(HallPeerActivityTool ? [HallPeerActivityTool] : []),
     ...(DiscoverSkillsTool ? [DiscoverSkillsTool] : []),
     ...(isAgentSwarmsEnabled()
       ? (() => { const tct = getTeamCreateTool(); const tdt = getTeamDeleteTool(); return [tct, tdt].filter(Boolean) })()

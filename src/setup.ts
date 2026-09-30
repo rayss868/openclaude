@@ -101,6 +101,14 @@ export async function setup(
     }
   }
 
+  // Agent Hall — per-user coordination for independent sessions. Opt-in at
+  // runtime via OPENCLAUDE_HALL and strictly non-fatal: a failure leaves the
+  // session running without coordination.
+  if (feature('HALL')) {
+    const hall = await import('./hall/session.js')
+    void hall.startHallSessionIfEnabled()
+  }
+
   // Teammate snapshot — SIMPLE-only gate (no escape hatch, swarm not used in bare)
   if (!isBareMode() && isAgentSwarmsEnabled()) {
     const { captureTeammateModeSnapshot } = await import(

@@ -1,0 +1,1 @@
+export const HALL_PEERS_TOOL_NAME = 'HallPeers'

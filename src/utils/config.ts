@@ -293,6 +293,7 @@ export type GlobalConfig = {
   autoCompactEnabled: boolean // Controls whether auto-compact is enabled
   contextCollapseEnabled: boolean // Opt-in: collapse old transcript spans into summaries (lossy; off by default)
   toolHistoryCompressionEnabled: boolean // Compress old tool_result content (shim providers; Anthropic-native only while prompt caching is inactive)
+  agentHallEnabled: boolean // Coordinate independent OpenClaude sessions through the Agent Hall daemon (off by default)
   compactTailTurns?: number // Recent messages preserved verbatim by auto-compact's relevance pruning (default: 3)
   /**
    * Per-prompt local interactive REPL turn cap (default: 50).
@@ -730,6 +731,7 @@ function createDefaultGlobalConfig(): GlobalConfig {
     autoCompactEnabled: true,
     contextCollapseEnabled: false,
     toolHistoryCompressionEnabled: true,
+    agentHallEnabled: false,
     showTurnDuration: true,
     showCacheStats: 'compact',
     hasSeenTasksHint: false,
@@ -789,6 +791,7 @@ export const GLOBAL_CONFIG_KEYS = [
   'queryIdleTimeoutMs',
   'contextCollapseEnabled',
   'toolHistoryCompressionEnabled',
+  'agentHallEnabled',
   'showTurnDuration',
   'showCacheStats',
   'diffTool',

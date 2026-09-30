@@ -758,7 +758,10 @@ export async function main(
   }
 
   // Fast-path for `claude daemon [subcommand]`: long-running supervisor.
-  if (feature('DAEMON') && args[0] === 'daemon') {
+  // In this fork daemonMain runs the Agent Hall daemon, which the session
+  // bootstrap spawns detached (src/hall/bootstrap.ts), so HALL opens this path
+  // too — otherwise the spawned `daemon` argument falls through to a full CLI.
+  if ((feature('DAEMON') || feature('HALL')) && args[0] === 'daemon') {
     profileCheckpoint('cli_daemon_path');
     const {
       enableConfigs

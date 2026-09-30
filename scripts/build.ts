@@ -88,6 +88,7 @@ const featureFlags: Record<string, boolean> = {
   KAIROS: false,                  // Persistent assistant/session mode (cloud backend)
   BRIDGE_MODE: false,             // Remote desktop bridge via CCR infrastructure
   DAEMON: false,                  // Background daemon process (stubbed in open build)
+  HALL: true,                     // Agent Hall per-user coordination daemon; runtime opt-in via OPENCLAUDE_HALL
   AGENT_TRIGGERS: false,          // Scheduled remote agent triggers
   ABLATION_BASELINE: false,       // A/B testing harness for eval experiments
   CONTEXT_COLLAPSE: true,        // Context collapsing optimization
@@ -221,10 +222,6 @@ result = await Bun.build({
           [
             '../daemon/workerRegistry.js',
             'export async function runDaemonWorker() { throw new Error("Daemon worker is unavailable in the open build."); }',
-          ],
-          [
-            '../daemon/main.js',
-            'export async function daemonMain() { throw new Error("Daemon mode is unavailable in the open build."); }',
           ],
           [
             '../cli/handlers/templateJobs.js',
