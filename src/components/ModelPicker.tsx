@@ -10,11 +10,11 @@ import { useKeybindings } from '../keybindings/useKeybinding.js';
 import { useSearchInput } from '../hooks/useSearchInput.js';
 import { SearchBox } from './SearchBox.js';
 import { useAppState, useSetAppState } from '../state/AppState.js';
-import { convertEffortValueToLevel, type EffortLevel, getAvailableEffortLevels, getDefaultEffortForModel, modelSupportsEffort, modelSupportsMaxEffort, resolvePickerEffortPersistence, toPersistableEffort, type ReasoningControlContext } from '../utils/effort.js';
+import { convertEffortValueToLevel, type EffortLevel, getAvailableEffortLevels, getDefaultEffortForModel, getInitialEffortSetting, modelSupportsEffort, modelSupportsMaxEffort, resolvePickerEffortPersistence, toPersistableEffort, type ReasoningControlContext } from '../utils/effort.js';
 import { isModelAllowed } from '../utils/model/modelAllowlist.js';
 import { getDefaultMainLoopModel, type ModelSetting, modelDisplayString, parseUserSpecifiedModel } from '../utils/model/model.js';
 import { getModelOptions, SWITCH_PROFILE_VALUE_PREFIX, type ModelOption, parseSwitchProfileValue, resolveSelectedSwitchProfileId } from '../utils/model/modelOptions.js';
-import { getSettingsForSource, updateSettingsForSource } from '../utils/settings/settings.js';
+import { setProjectEffortSetting } from '../utils/config.js';
 import { ConfigurableShortcutHint } from './ConfigurableShortcutHint.js';
 import { Select } from './CustomSelect/index.js';
 import { Byline } from './design-system/Byline.js';
@@ -46,7 +46,7 @@ export type Props = {
   /** Overrides the dim header line below "Select model". */
   headerText?: string;
   /**
-   * When true, skip writing effortLevel to localSettings on selection.
+   * When true, skip persisting the selected effortLevel on selection.
    * Used by the assistant installer wizard where the model choice is
    * project-scoped (written to the assistant's .openclaude/settings.json via
    * install.ts) and should not leak to the user's global ~/.openclaude/settings.json.
@@ -370,12 +370,10 @@ export function ModelPicker(t0) {
         effort: clampedEffort as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
       });
       if (!skipSettingsWrite) {
-        const effortLevel = resolvePickerEffortPersistence(clampedEffort, getDefaultEffortLevelForOption(selectedValue, effortContext), getSettingsForSource("localSettings")?.effortLevel, hasToggledEffort);
+        const effortLevel = resolvePickerEffortPersistence(clampedEffort, getDefaultEffortLevelForOption(selectedValue, effortContext), getInitialEffortSetting(), hasToggledEffort);
         const persistable = toPersistableEffort(effortLevel);
         if (persistable !== undefined) {
-          updateSettingsForSource("localSettings", {
-            effortLevel: persistable
-          });
+          setProjectEffortSetting(persistable);
         }
         setAppState(prev_0 => ({
           ...prev_0,

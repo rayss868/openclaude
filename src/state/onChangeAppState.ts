@@ -8,7 +8,11 @@ import {
   clearAwsCredentialsCache,
   clearGcpCredentialsCache,
 } from '../utils/auth.js'
-import { getGlobalConfig, saveGlobalConfig } from '../utils/config.js'
+import {
+  getGlobalConfig,
+  saveGlobalConfig,
+  setProjectModelSetting,
+} from '../utils/config.js'
 import { toError } from '../utils/errors.js'
 import { logError } from '../utils/log.js'
 import { applyConfigEnvironmentVariables } from '../utils/managedEnv.js'
@@ -22,7 +26,6 @@ import {
   notifySessionMetadataChanged,
   type SessionExternalMetadata,
 } from '../utils/sessionState.js'
-import { updateSettingsForSource } from '../utils/settings/settings.js'
 import type { AppState } from './AppStateStore.js'
 
 // Inverse of the push below — restore on worker restart.
@@ -111,7 +114,7 @@ export function onChangeAppState({
     newState.mainLoopModel === null
   ) {
     // Remove from settings
-    updateSettingsForSource('localSettings', { model: undefined })
+    setProjectModelSetting(undefined)
     setMainLoopModelOverride(null)
   }
 
@@ -121,7 +124,7 @@ export function onChangeAppState({
     newState.mainLoopModel !== null
   ) {
     // Save to settings
-    updateSettingsForSource('localSettings', { model: newState.mainLoopModel })
+    setProjectModelSetting(newState.mainLoopModel)
     setMainLoopModelOverride(newState.mainLoopModel)
 
     // Keep active provider profiles in sync with /model choices so restarts

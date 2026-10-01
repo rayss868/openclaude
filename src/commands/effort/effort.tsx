@@ -6,7 +6,7 @@ import { useAppState, useSetAppState } from '../../state/AppState.js';
 import type { LocalJSXCommandOnDone } from '../../types/command.js';
 import { type EffortValue, clampUltracodeEffort, getAvailableEffortLevels, getDisplayedEffortLevel, getEffortEnvOverride, getEffortValueDescription, isEffortLevel, isOpenAIEffortLevel, modelUsesOpenAIEffort, openAIEffortToStandard, toPersistableEffort } from '../../utils/effort.js';
 import { EffortPicker } from '../../components/EffortPicker.js';
-import { updateSettingsForSource } from '../../utils/settings/settings.js';
+import { setProjectEffortSetting } from '../../utils/config.js';
 const COMMON_HELP_ARGS = ['help', '-h', '--help'];
 type EffortCommandResult = {
   message: string;
@@ -17,14 +17,7 @@ type EffortCommandResult = {
 function setEffortValue(effortValue: EffortValue): EffortCommandResult {
   const persistable = toPersistableEffort(effortValue);
   if (persistable !== undefined) {
-    const result = updateSettingsForSource('localSettings', {
-      effortLevel: persistable
-    });
-    if (result.error) {
-      return {
-        message: `Failed to set effort level: ${result.error.message}`
-      };
-    }
+    setProjectEffortSetting(persistable);
   }
   logEvent('tengu_effort_command', {
     effort: effortValue as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
@@ -76,14 +69,7 @@ export function showCurrentEffort(appStateEffort: EffortValue | undefined, model
   };
 }
 function unsetEffortLevel(): EffortCommandResult {
-  const result = updateSettingsForSource('localSettings', {
-    effortLevel: undefined
-  });
-  if (result.error) {
-    return {
-      message: `Failed to set effort level: ${result.error.message}`
-    };
-  }
+  setProjectEffortSetting(undefined);
   logEvent('tengu_effort_command', {
     effort: 'auto' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
   });

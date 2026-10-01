@@ -6,6 +6,7 @@
  * during dead code elimination
  */
 import { getMainLoopModelOverride } from '../../bootstrap/state.js'
+import { getProjectModelSetting } from '../config.js'
 import {
   getSubscriptionType,
   isClaudeAISubscriber,
@@ -178,6 +179,7 @@ export function getUserSpecifiedModelSetting(): ModelSetting | undefined {
         (provider === 'minimax' ? getMiniMaxModelEnv() : undefined) ||
         (isOpenAIShimProvider ? process.env.OPENAI_MODEL : undefined) ||
         (provider === 'firstParty' ? process.env.ANTHROPIC_MODEL : undefined) ||
+        normalizeModelSetting(getProjectModelSetting()) ||
         setting ||
         undefined
   }

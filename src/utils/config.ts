@@ -137,6 +137,11 @@ export type ProjectConfig = {
   }
   /** Spawn mode for `claude remote-control` multi-session. Set by first-run dialog or `w` toggle. */
   remoteControlSpawnMode?: 'same-dir' | 'worktree'
+  // Per-workspace model and effort live in the global config instead of a
+  // workspace-local .openclaude/settings.local.json, so merely opening a
+  // project no longer creates that folder.
+  model?: string
+  effortLevel?: string
 }
 
 const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
@@ -2043,6 +2048,24 @@ export function getCurrentProjectConfig(): ProjectConfig {
   }
 
   return projectConfig
+}
+
+export function getProjectModelSetting(): string | undefined {
+  return getCurrentProjectConfig().model
+}
+
+export function setProjectModelSetting(model: string | undefined): void {
+  saveCurrentProjectConfig(c => (c.model === model ? c : { ...c, model }))
+}
+
+export function getProjectEffortSetting(): string | undefined {
+  return getCurrentProjectConfig().effortLevel
+}
+
+export function setProjectEffortSetting(effortLevel: string | undefined): void {
+  saveCurrentProjectConfig(c =>
+    c.effortLevel === effortLevel ? c : { ...c, effortLevel },
+  )
 }
 
 export function saveCurrentProjectConfig(

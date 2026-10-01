@@ -1,6 +1,7 @@
 // biome-ignore-all assist/source/organizeImports: internal-only import markers must not be reordered
 import { isUltrathinkEnabled } from './thinking.js'
 import { getInitialSettings } from './settings/settings.js'
+import { getProjectEffortSetting } from './config.js'
 import { isProSubscriber, isMaxSubscriber, isTeamSubscriber } from './auth.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from 'src/services/analytics/growthbook.js'
 import { getAPIProvider } from './model/providers.js'
@@ -1020,8 +1021,13 @@ export function toPersistableEffort(
 }
 
 export function getInitialEffortSetting(): EffortLevel | undefined {
-  // toPersistableEffort validates 'max' on read, so a manually
-  // edited settings.json with an invalid level doesn't leak into a fresh session.
+  // Per-workspace effort is preferred over merged settings. toPersistableEffort
+  // validates on read, so a manually edited config with an invalid level
+  // doesn't leak into a fresh session.
+  const projectEffort = getProjectEffortSetting()
+  if (projectEffort !== undefined && isEffortLevel(projectEffort)) {
+    return toPersistableEffort(projectEffort)
+  }
   return toPersistableEffort(getInitialSettings().effortLevel)
 }
 
