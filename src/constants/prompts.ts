@@ -44,6 +44,7 @@ import {
   getScratchpadDir,
 } from '../utils/permissions/filesystem.js'
 import { isEnvTruthy } from '../utils/envUtils.js'
+import { isIncognitoEnabled } from '../utils/incognito.js'
 import { isReplModeEnabled } from '../tools/REPLTool/constants.js'
 import { feature } from 'bun:bundle'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from 'src/services/analytics/growthbook.js'
@@ -137,6 +138,7 @@ function getLanguageSection(
   languagePreference: string | undefined,
 ): string | null {
   if (!languagePreference) return null
+  if (isIncognitoEnabled()) return null
 
   return `# Language
 Always respond in ${languagePreference}. Use ${languagePreference} for all explanations, comments, and communications with the user. Technical terms and code identifiers should remain in their original form.`
