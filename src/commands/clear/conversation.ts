@@ -56,6 +56,7 @@ export async function clearConversation({
   getAppState,
   setAppState,
   setConversationId,
+  preserveMcp,
 }: {
   setMessages: (updater: (prev: Message[]) => Message[]) => void
   readFileState: FileStateCache
@@ -64,6 +65,8 @@ export async function clearConversation({
   getAppState?: () => AppState
   setAppState?: (f: (prev: AppState) => AppState) => void
   setConversationId?: (id: UUID) => void
+  /** Keep MCP clients/tools/commands connected instead of forcing a reconnect. */
+  preserveMcp?: boolean
 }): Promise<void> {
   // Execute SessionEnd hooks before clearing (bounded by
   // CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS, default 1.5s)
@@ -189,13 +192,15 @@ export async function clearConversation({
         // Reset MCP state to default to trigger re-initialization.
         // Preserve pluginReconnectKey so /clear doesn't cause a no-op
         // (it's only bumped by /reload-plugins).
-        mcp: {
-          clients: [],
-          tools: [],
-          commands: [],
-          resources: {},
-          pluginReconnectKey: prev.mcp.pluginReconnectKey,
-        },
+        mcp: preserveMcp
+          ? prev.mcp
+          : {
+              clients: [],
+              tools: [],
+              commands: [],
+              resources: {},
+              pluginReconnectKey: prev.mcp.pluginReconnectKey,
+            },
         goal: null,
       }
     })

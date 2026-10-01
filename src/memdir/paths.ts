@@ -13,12 +13,14 @@ import {
 } from '../utils/envUtils.js'
 import { findCanonicalGitRoot } from '../utils/git.js'
 import { sanitizePath } from '../utils/path.js'
+import { isIncognitoEnabled } from '../utils/incognito.js'
 import { getEnabledSettingSources } from '../utils/settings/constants.js'
 import { getSettingsForSource } from '../utils/settings/settings.js'
 
 /**
  * Whether auto-memory features are enabled (memdir, agent memory, past session search).
  * Enabled by default. Priority chain (first defined wins):
+ *   0. Incognito mode (/incognito) → OFF
  *   1. CLAUDE_CODE_DISABLE_AUTO_MEMORY env var (1/true → OFF, 0/false → ON)
  *   2. CLAUDE_CODE_SIMPLE (--bare) → OFF
  *   3. CCR without persistent storage → OFF (no CLAUDE_CODE_REMOTE_MEMORY_DIR)
@@ -29,6 +31,9 @@ import { getSettingsForSource } from '../utils/settings/settings.js'
  *   5. Default: enabled
  */
 export function isAutoMemoryEnabled(): boolean {
+  if (isIncognitoEnabled()) {
+    return false
+  }
   const envVal = process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY
   if (isEnvTruthy(envVal)) {
     return false

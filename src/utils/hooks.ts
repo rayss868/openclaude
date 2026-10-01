@@ -121,6 +121,7 @@ import type {
 } from './settings/types.js'
 import { getHookDisplayText } from './hooks/hooksSettings.js'
 import { getWindowsBashHookCommand } from './hooks/windowsBashCommand.js'
+import { isIncognitoEnabled } from './incognito.js'
 import { logForDebugging } from './debug.js'
 import { logForDiagnosticsNoPII } from './diagLogs.js'
 import { firstLineOf } from './stringUtils.js'
@@ -2184,6 +2185,10 @@ async function* executeHooks({
     return
   }
 
+  if (isIncognitoEnabled()) {
+    return
+  }
+
   const hookEvent = hookInput.hook_event_name
   const hookName = matchQuery ? `${hookEvent}:${matchQuery}` : hookEvent
 
@@ -3215,6 +3220,9 @@ async function executeHooksOutsideREPL({
   timeoutMs: number
 }): Promise<HookOutsideReplResult[]> {
   if (isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE)) {
+    return []
+  }
+  if (isIncognitoEnabled()) {
     return []
   }
 

@@ -18,6 +18,7 @@ import { isBareMode, isEnvTruthy } from './utils/envUtils.js'
 import { execFileNoThrow } from './utils/execFileNoThrow.js'
 import { getBranch, getDefaultBranch, getIsGit, gitExe } from './utils/git.js'
 import { shouldIncludeGitInstructions } from './utils/gitSettings.js'
+import { isIncognitoEnabled } from './utils/incognito.js'
 import { logError } from './utils/log.js'
 import { getCwd } from './utils/cwd.js'
 import type { RepoMapResult } from './context/repoMap/index.js'
@@ -303,6 +304,7 @@ async function loadUserContext(): Promise<{
   // --bare means "skip what I didn't ask for", not "ignore what I asked for".
   const shouldDisableClaudeMd =
     isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_CLAUDE_MDS) ||
+    isIncognitoEnabled() ||
     (isBareMode() && getAdditionalDirectoriesForClaudeMd().length === 0)
   // Await the async I/O (readFile/readdir directory walk) so the event
   // loop yields naturally at the first fs.readFile.

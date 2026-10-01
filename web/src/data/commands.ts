@@ -71,6 +71,7 @@ export const commands: SlashCommand[] = [
   { name: 'replay', description: 'Replay a session showing tool execution timeline', category: 'session', args: '[session id or search term]' },
   { name: 'tag', description: 'Toggle a searchable tag on the current session', category: 'session', args: '<tag-name>' },
   { name: 'btw', description: 'Ask a quick side question without interrupting the main conversation', category: 'session', args: '<question>' },
+  { name: 'incognito', description: 'Rebuild the context without memory or instruction injections (tools and MCP stay available)', category: 'session', args: '[on|off|status]' },
   { name: 'goal', description: 'Set and manage a session completion goal', category: 'session', args: '[condition|status|pause|resume|clear]' },
   { name: 'tasks', description: 'List and manage background tasks', category: 'session' },
   { name: 'session', description: 'Show remote session URL and QR code', category: 'session' },

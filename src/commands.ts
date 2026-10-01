@@ -32,6 +32,7 @@ import help from './commands/help/index.js'
 import ide from './commands/ide/index.js'
 import init from './commands/init.js'
 import initVerifiers from './commands/init-verifiers.js'
+import incognito from './commands/incognito/index.js'
 import keybindings from './commands/keybindings/index.js'
 import lsp from './commands/lsp/index.js'
 import login from './commands/login/index.js'
@@ -320,6 +321,7 @@ const COMMANDS = memoize((): Command[] => [
   heapDump,
   help,
   ide,
+  incognito,
   init,
   keybindings,
   knowledge,

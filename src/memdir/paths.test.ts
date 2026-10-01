@@ -5,6 +5,7 @@ import {
   setIsInteractive,
 } from '../bootstrap/state.js'
 import { SETTING_SOURCES } from '../utils/settings/constants.js'
+import { setIncognitoEnabled } from '../utils/incognito.js'
 import { isAutoMemoryEnabled } from './paths.ts'
 
 const realSettings = (await import(
@@ -72,6 +73,7 @@ afterEach(() => {
   }
   setIsInteractive(_originalInteractive)
   setAllowedSettingSources([...SETTING_SOURCES])
+  setIncognitoEnabled(false)
   // mock.restore() undoes spies but NOT mock.module() registrations, which
   // otherwise leak into later test files in the same (serial) run. Re-register
   // the real settings module so the process is left clean.
@@ -96,6 +98,27 @@ test('an explicit settings opt-in overrides the non-interactive default', () => 
     { source: 'userSettings', settings: { memory: { autoWrite: true } } },
   ])
   expect(isAutoMemoryEnabled()).toBe(true)
+})
+
+test('incognito mode disables auto memory', () => {
+  mockSources([{ source: 'userSettings', settings: {} }])
+  setIncognitoEnabled(true)
+  expect(isAutoMemoryEnabled()).toBe(false)
+})
+
+test('incognito wins over an explicit settings opt-in', () => {
+  mockSources([
+    { source: 'userSettings', settings: { autoMemoryEnabled: true } },
+  ])
+  setIncognitoEnabled(true)
+  expect(isAutoMemoryEnabled()).toBe(false)
+})
+
+test('CLAUDE_CODE_DISABLE_AUTO_MEMORY=0 cannot re-enable during incognito', () => {
+  process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '0'
+  mockSources([{ source: 'userSettings', settings: {} }])
+  setIncognitoEnabled(true)
+  expect(isAutoMemoryEnabled()).toBe(false)
 })
 
 test('memory.autoWrite: false opts out via the new discoverable alias (#1326)', () => {
