@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.31.1-by-rayss](https://github.com/rayss868/openclaude/compare/v0.31.0-by-rayss...v0.31.1-by-rayss) (2026-10-02)
+
+### Features
+
+* **hall:** add Agent Hall multi-session coordination for working across concurrent sessions.
+* **incognito:** add `/incognito` mode that strips memory and instruction injections, and gate the language system-prompt section under it.
+* **persistence:** scope effort and model persistence to per-workspace `localSettings` instead of global `userSettings`.
+* **resume:** index large sessions so `/resume` deep search covers long conversations.
+* **agents:** give sub-agents full main-agent parity — the claudeMd block (user `CLAUDE.md` + auto-memory `MEMORY.md`) is no longer dropped, `mcp__*` tools are always available even for agents with an explicit tool allow-list, and built-in agents inherit the parent model instead of a pinned haiku/sonnet.
+
 ## [0.31.0-by-rayss](https://github.com/rayss868/openclaude/compare/v0.31.0...v0.31.0-by-rayss) (2026-09-28)
 
 ### Features
