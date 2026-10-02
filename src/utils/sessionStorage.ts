@@ -3909,8 +3909,9 @@ export function isLiteLog(log: LogOption): boolean {
 const SEARCH_HEAD_BYTES = 16 * 1024
 const SEARCH_TAIL_BYTES = 32 * 1024
 const SEARCH_MID_WINDOW_BYTES = 32 * 1024
-const SEARCH_MAX_TOTAL_READ_BYTES = 256 * 1024
-const SEARCH_MAX_CHAR_COUNT = 40_000
+const SEARCH_MAX_MID_WINDOWS = 12
+const SEARCH_MAX_TOTAL_READ_BYTES = 512 * 1024
+const SEARCH_MAX_CHAR_COUNT = 80_000
 
 /**
  * Reads a session file directly (sampled windows — head, evenly spaced
@@ -3946,7 +3947,7 @@ export async function readLogFileTextForSearch(
       // long conversation are still searchable (head/tail alone can miss
       // the bulk of a session body).
       const midCount = Math.min(
-        4,
+        SEARCH_MAX_MID_WINDOWS,
         Math.floor((SEARCH_MAX_TOTAL_READ_BYTES - headLen - SEARCH_TAIL_BYTES) / SEARCH_MID_WINDOW_BYTES),
       )
       for (let i = 1; i <= midCount; i++) {
@@ -6382,13 +6383,13 @@ async function enrichLog(
   // (Fuse / agentic) can match words inside the conversation body, not
   // just metadata. Off by default to keep non-search paths (e.g.
   // searchSessionsByCustomTitle) free of extra I/O; enabled by progressive
-  // resume loaders that feed the LogSelector. Files larger than ~1 MB are
-  // skipped to keep the initial /resume load responsive; agentic search
-  // reads them on demand via readLogFileTextForSearch.
-  const searchableText =
-    includeSearchableText && (log.fileSize ?? 0) <= 1024 * 1024
-      ? await readLogFileTextForSearch(log)
-      : undefined
+  // resume loaders that feed the LogSelector. readLogFileTextForSearch is
+  // itself bounded by SEARCH_MAX_TOTAL_READ_BYTES regardless of file size,
+  // so large sessions are sampled (head + evenly spaced middle windows +
+  // tail) without reading the whole file.
+  const searchableText = includeSearchableText
+    ? await readLogFileTextForSearch(log)
+    : undefined
 
   const enriched: LogOption = {
     ...log,

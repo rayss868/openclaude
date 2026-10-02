@@ -13,6 +13,7 @@ import {
 import {
   adoptResumedSessionFile,
   buildConversationChain,
+  enrichLogs,
   getProjectDir,
   isEphemeralToolProgress,
   loadSameRepoMessageLogsProgressive,
@@ -1019,4 +1020,42 @@ test('readLogFileTextForSearch respects abort signal', async () => {
     isSidechain: false,
   }
   expect(await readLogFileTextForSearch(log, controller.signal)).toBe('')
+})
+
+test('enrichLogs samples searchableText inside sessions larger than 1 MB', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'openclaude-session-storage-'))
+  tempDirs.push(dir)
+  const filePath = join(dir, 'big-session.jsonl')
+
+  // Build a session file well beyond the old 1 MB skip threshold. The body
+  // keyword is inside the conversation body, so it only shows up in
+  // searchableText when the session file is sampled at all.
+  const filler = 'x'.repeat(4000)
+  const lines: string[] = []
+  lines.push(JSON.stringify(user(id(101), null, 'big-session-body-keyword')))
+  for (let i = 0; i < 300; i++) {
+    lines.push(JSON.stringify(assistant(id(102 + i), null, `${i} ${filler}`)))
+  }
+  await writeFile(filePath, `${lines.join('\n')}\n`)
+
+  const fileSize = (await readFile(filePath)).byteLength
+  expect(fileSize).toBeGreaterThan(1024 * 1024)
+
+  const log: LogOption = {
+    date: ts,
+    messages: [],
+    isLite: true,
+    fullPath: filePath,
+    value: 0,
+    created: new Date(ts),
+    modified: new Date(ts),
+    firstPrompt: '',
+    messageCount: 0,
+    fileSize,
+    isSidechain: false,
+    sessionId,
+  }
+
+  const { logs } = await enrichLogs([log], 0, 1, { includeSearchableText: true })
+  expect(logs[0]?.searchableText ?? '').toContain('big-session-body-keyword')
 })

@@ -95,7 +95,7 @@ const CHILD_PREFIX_WIDTH = 4; // '  ▸ '
 // Deep search constants
 const DEEP_SEARCH_MAX_MESSAGES = 2000;
 const DEEP_SEARCH_CROP_SIZE = 1000;
-const DEEP_SEARCH_MAX_TEXT_LENGTH = 50000; // Cap searchable text per session
+const DEEP_SEARCH_MAX_TEXT_LENGTH = 80000; // Cap searchable text per session
 const FUSE_THRESHOLD = 0.3;
 const DATE_TIE_THRESHOLD_MS = 60 * 1000; // 1 minute - use relevance as tie-breaker within this window
 const SNIPPET_CONTEXT_CHARS = 50; // Characters to show before/after match
@@ -603,7 +603,7 @@ export function LogSelector(t0: LogSelectorProps) {
       if ($[56] !== deepSearchResults.results || $[57] !== filtered_0 || $[58] !== titleMatchIds) {
         let t29;
         if ($[60] !== titleMatchIds) {
-          t29 = log_7 => !titleMatchIds.has(log_7.messages[0]?.uuid);
+          t29 = log_7 => !titleMatchIds.has(getSessionIdFromLog(log_7));
           $[60] = titleMatchIds;
           $[61] = t29;
         } else {
@@ -1448,7 +1448,7 @@ export function LogSelector(t0: LogSelectorProps) {
   }
   let t69;
   if ($[197] !== agenticSearchState.status || $[198] !== isAgenticSearchOptionFocused || $[199] !== onAgenticSearch || $[200] !== searchQuery) {
-    t69 = Boolean(searchQuery.trim()) && onAgenticSearch && false && agenticSearchState.status !== "searching" && agenticSearchState.status !== "results" && agenticSearchState.status !== "error" && <Box flexShrink={0} flexDirection="column"><Box flexDirection="row" gap={1}><Text color={isAgenticSearchOptionFocused ? "suggestion" : undefined}>{isAgenticSearchOptionFocused ? figures.pointer : " "}</Text><Text color={isAgenticSearchOptionFocused ? "suggestion" : undefined} bold={isAgenticSearchOptionFocused}>Search deeply using Claude →</Text></Box><Box height={1} /></Box>;
+    t69 = Boolean(searchQuery.trim()) && onAgenticSearch && agenticSearchState.status !== "searching" && agenticSearchState.status !== "results" && agenticSearchState.status !== "error" && <Box flexShrink={0} flexDirection="column"><Box flexDirection="row" gap={1}><Text color={isAgenticSearchOptionFocused ? "suggestion" : undefined}>{isAgenticSearchOptionFocused ? figures.pointer : " "}</Text><Text color={isAgenticSearchOptionFocused ? "suggestion" : undefined} bold={isAgenticSearchOptionFocused}>Search deeply using Claude →</Text></Box><Box height={1} /></Box>;
     $[197] = agenticSearchState.status;
     $[198] = isAgenticSearchOptionFocused;
     $[199] = onAgenticSearch;
@@ -1568,7 +1568,7 @@ function _temp7(r_0: DeepSearchResult): LogOption {
   return r_0.log;
 }
 function _temp6(log_6: LogOption): string | undefined {
-  return log_6.messages[0]?.uuid;
+  return getSessionIdFromLog(log_6);
 }
 function _temp5(fuseIndex_0, debouncedDeepSearchQuery_0, setDeepSearchResults_0, setIsSearching_0) {
   const results = fuseIndex_0.search(debouncedDeepSearchQuery_0);
