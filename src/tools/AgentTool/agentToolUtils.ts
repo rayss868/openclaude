@@ -215,6 +215,17 @@ export function resolveAgentTools(
     }
   }
 
+  // Fork build: MCP tools are always available to sub-agents, even when the
+  // agent declares an explicit tool allow-list (which cannot name the dynamic
+  // mcp__* tools). Without this, explicit-list agents silently lost every MCP
+  // tool while wildcard agents kept them.
+  for (const tool of allowedAvailableTools) {
+    if (tool.name.startsWith('mcp__') && !resolvedToolsSet.has(tool)) {
+      resolved.push(tool)
+      resolvedToolsSet.add(tool)
+    }
+  }
+
   return {
     hasWildcard: false,
     validTools,

@@ -111,7 +111,7 @@ export const CLAUDE_CODE_GUIDE_AGENT: BuiltInAgentDefinition = {
       ],
   source: 'built-in',
   baseDir: 'built-in',
-  model: 'haiku',
+  model: 'inherit',
   permissionMode: 'dontAsk',
   getSystemPrompt({ toolUseContext }) {
     const commands = toolUseContext.options.commands

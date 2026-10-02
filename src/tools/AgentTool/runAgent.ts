@@ -15,7 +15,6 @@ import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
 import { createPermissionSessionStateGetter } from '../../hooks/toolPermission/permissionSessionOwnership.js'
 import { query } from '../../query.js'
 import type { Terminal } from '../../query/transitions.js'
-import { getFeatureValue_CACHED_MAY_BE_STALE } from '../../services/analytics/growthbook.js'
 import type { AppState } from '../../state/AppStateStore.js'
 import { getDumpPromptsPath } from '../../services/api/dumpPrompts.js'
 import { cleanupAgentTracking } from '../../services/api/promptCacheBreakDetection.js'
@@ -448,20 +447,10 @@ export async function* runAgent({
     override?.systemContext ?? getSystemContext(),
   ])
 
-  // Read-only agents (Explore, Plan) don't act on commit/PR/lint rules from
-  // CLAUDE.md — the main agent has full context and interprets their output.
-  // Dropping claudeMd here saves ~5-15 Gtok/week across 34M+ Explore spawns.
-  // Explicit override.userContext from callers is preserved untouched.
-  // Kill-switch defaults true; flip tengu_slim_subagent_claudemd=false to revert.
-  const shouldOmitClaudeMd =
-    agentDefinition.omitClaudeMd &&
-    !override?.userContext &&
-    getFeatureValue_CACHED_MAY_BE_STALE('tengu_slim_subagent_claudemd', true)
-  const { claudeMd: _omittedClaudeMd, ...userContextNoClaudeMd } =
-    baseUserContext
-  const resolvedUserContext = shouldOmitClaudeMd
-    ? userContextNoClaudeMd
-    : baseUserContext
+  // Fork build: sub-agents get the same user context as the main agent, so the
+  // claudeMd block (user CLAUDE.md + auto-memory MEMORY.md) is never dropped.
+  // The upstream omitClaudeMd / tengu_slim_subagent_claudemd gate is bypassed.
+  const resolvedUserContext = baseUserContext
 
   // Explore/Plan are read-only search agents — the parent-session-start
   // gitStatus (up to 40KB, explicitly labeled stale) is dead weight. If they
