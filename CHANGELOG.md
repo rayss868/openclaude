@@ -9,6 +9,13 @@
 * **persistence:** scope effort and model persistence to per-workspace `localSettings` instead of global `userSettings`.
 * **resume:** index large sessions so `/resume` deep search covers long conversations.
 * **agents:** give sub-agents full main-agent parity — the claudeMd block (user `CLAUDE.md` + auto-memory `MEMORY.md`) is no longer dropped, `mcp__*` tools are always available even for agents with an explicit tool allow-list, and built-in agents inherit the parent model instead of a pinned haiku/sonnet.
+* **effort:** apply universal reasoning-effort levels across models and providers, and self-heal rejected requests by retrying without `reasoning_effort` (OpenAI shim).
+* **skills:** tune local skill search scoring and prefetch.
+* **write:** chunk large writes at 50 lines per call to stay within model output limits.
+
+### Bug Fixes
+
+* **write:** allow only one chunked-write append per assistant response. A second append is rejected while another chunk is still pending.
 
 ## [0.31.0-by-rayss](https://github.com/rayss868/openclaude/compare/v0.31.0...v0.31.0-by-rayss) (2026-09-28)
 
