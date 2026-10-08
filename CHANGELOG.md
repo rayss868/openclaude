@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.2-by-rayss](https://github.com/rayss868/openclaude/compare/v0.31.1-by-rayss...v0.31.2-by-rayss) (2026-10-08)
+
+### Features
+
+* **skills:** suggest the closest skill names when an unknown skill is invoked ("Unknown skill: human-writer. Did you mean: /human-like-writer?").
+* **update:** check npm for a newer version on startup and every 30 minutes and show an "Update available" notification with the manual update command. No auto-install — the user decides when to update.
+
 ## [0.31.1-by-rayss](https://github.com/rayss868/openclaude/compare/v0.31.0-by-rayss...v0.31.1-by-rayss) (2026-10-02)
 
 ### Features
