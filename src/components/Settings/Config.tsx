@@ -65,10 +65,12 @@ type Props = {
 type SettingBase = {
   id: string;
   label: string;
+  description?: string;
 } | {
   id: string;
   label: React.ReactNode;
   searchText: string;
+  description?: string;
 };
 type Setting = (SettingBase & {
   value: boolean;
@@ -279,6 +281,7 @@ export function Config({
   // Global settings
   {
     id: 'autoCompactEnabled',
+    description: 'Automatically summarizes the conversation when the context window fills.',
     label: 'Auto-compact',
     value: globalConfig.autoCompactEnabled,
     type: 'boolean' as const,
@@ -297,6 +300,7 @@ export function Config({
     }
   }, {
     id: 'maxMessagesCompactionThreshold',
+    description: 'Message count that triggers auto-compaction (0 disables the count-based trigger).',
     label: 'Message-count compaction',
     value: normalizeMaxMessagesCompactionThreshold(globalConfig.maxMessagesCompactionThreshold),
     options: [...MAX_MESSAGES_COMPACTION_THRESHOLDS],
@@ -317,6 +321,7 @@ export function Config({
     }
   }, {
     id: 'compactTailTurns',
+    description: 'Recent turns kept verbatim after compaction instead of being summarized.',
     label: 'Compaction: recent messages kept',
     // Display and persist through the SAME normalization autoCompact applies,
     // so a hand-edited 2.5 or 0 shows (and saves) as what actually runs.
@@ -340,6 +345,7 @@ export function Config({
     }
   }, {
     id: 'replMaxTurns',
+    description: 'Cap on agent turns per user prompt in interactive sessions.',
     label: 'Max turns (interactive)',
     // Display/persist the saved preference (normalized). Effective runtime cap
     // may still be overridden by CLI `--max-turns` or OPENCLAUDE_MAX_TURNS.
@@ -373,6 +379,7 @@ export function Config({
   }), {
     id: 'toolHistoryCompressionEnabled',
     label: 'Tool history compression',
+    description: 'Truncates old tool outputs to stubs in long sessions to save context. Safe to disable on large-context models.',
     value: globalConfig.toolHistoryCompressionEnabled,
     type: 'boolean' as const,
     onChange(toolHistoryCompressionEnabled: boolean) {
@@ -390,6 +397,7 @@ export function Config({
     }
   }, ...(feature('HALL') ? [{
     id: 'agentHallEnabled',
+    description: 'Multi-session agent coordination (Agent Hall) for parallel work.',
     label: 'Agent Hall (multi-session coordination)',
     value: globalConfig.agentHallEnabled,
     type: 'boolean' as const,
@@ -414,6 +422,7 @@ export function Config({
     }
   }] : []), ...(feature('CONTEXT_COLLAPSE') ? [{
     id: 'contextCollapseEnabled',
+    description: 'Lossy folding of older context to save tokens; may drop detail.',
     label: 'Context collapse (lossy)',
     value: globalConfig.contextCollapseEnabled,
     type: 'boolean' as const,
@@ -439,6 +448,7 @@ export function Config({
     }
   }] : []), {
     id: 'showCacheStats',
+    description: 'Display prompt-cache hit rates in the UI.',
     label: 'Cache stats display',
     value: globalConfig.showCacheStats,
     options: ['off', 'compact', 'full'],
@@ -459,6 +469,7 @@ export function Config({
     }
   }, {
     id: 'spinnerTipsEnabled',
+    description: 'Show usage tips while the spinner is running.',
     label: 'Show tips',
     value: settingsData?.spinnerTipsEnabled ?? true,
     type: 'boolean' as const,
@@ -477,6 +488,7 @@ export function Config({
     }
   }, {
     id: 'prefersReducedMotion',
+    description: 'Disable animations and motion effects in the UI.',
     label: 'Reduce motion',
     value: settingsData?.prefersReducedMotion ?? false,
     type: 'boolean' as const,
@@ -502,6 +514,7 @@ export function Config({
     }
   }, {
     id: 'verificationAgentEnabled',
+    description: 'Run a verification agent to double-check work with tests before reporting done.',
     label: 'Verification agent',
     searchText: 'verification agent verify test double-check',
     value: settingsData?.verificationAgent !== false,
@@ -517,6 +530,7 @@ export function Config({
     }
   }, {
     id: 'thinkingEnabled',
+    description: 'Extended reasoning mode; may improve quality but adds latency.',
     label: 'Thinking mode',
     value: thinkingEnabled ?? true,
     type: 'boolean' as const,
@@ -536,6 +550,7 @@ export function Config({
   // Fast mode toggle (internal-only, eliminated from external builds)
   ...(isFastModeEnabled() && isFastModeAvailable() ? [{
     id: 'fastMode',
+    description: 'Faster output on the same model (supported models only).',
     label: `Fast mode (${FAST_MODE_MODEL_DISPLAY} only)`,
     value: !!isFastMode,
     type: 'boolean' as const,
@@ -569,6 +584,7 @@ export function Config({
     }
   }] : []), ...(getFeatureValue_CACHED_MAY_BE_STALE('tengu_chomp_inflection', false) ? [{
     id: 'promptSuggestionEnabled',
+    description: 'Suggest follow-up prompts after a response.',
     label: 'Prompt suggestions',
     value: promptSuggestionEnabled,
     type: 'boolean' as const,
@@ -584,6 +600,7 @@ export function Config({
   }] : []),
   ...(feature('EXPERIMENTAL_SKILL_SEARCH') ? [{
     id: 'skillSearch',
+    description: 'Auto-discover relevant skills for a request.',
     label: 'Skill search discovery',
     searchText: 'skill search discover skills',
     value: settingsData?.skillSearch === true,
@@ -600,6 +617,7 @@ export function Config({
   }] : []),
   {
     id: 'autoMemoryEnabled',
+    description: 'Persist useful context about the user and project across sessions.',
     label: 'Auto-memory',
     searchText: 'auto memory remember project context',
     value: settingsData?.autoMemoryEnabled !== false,
@@ -616,6 +634,7 @@ export function Config({
   },
   ...(isFileCheckpointingAvailable ? [{
     id: 'fileCheckpointingEnabled',
+    description: 'Snapshot files before edits so you can rewind code with /undo.',
     label: 'Rewind code (checkpoints)',
     value: globalConfig.fileCheckpointingEnabled,
     type: 'boolean' as const,
@@ -634,12 +653,14 @@ export function Config({
     }
   }] : []), {
     id: 'verbose',
+    description: 'Show full tool inputs and outputs instead of summaries.',
     label: 'Verbose output',
     value: verbose,
     type: 'boolean',
     onChange: onChangeVerbose
   }, {
     id: 'terminalProgressBarEnabled',
+    description: 'Report activity progress via the terminal progress bar (where supported).',
     label: 'Terminal progress bar',
     value: globalConfig.terminalProgressBarEnabled,
     type: 'boolean' as const,
@@ -658,6 +679,7 @@ export function Config({
     }
   }, {
     id: 'defaultStatusLineEnabled',
+    description: 'Show the built-in status line at the bottom of the UI.',
     label: 'Default status line',
     value: globalConfig.defaultStatusLineEnabled ?? true,
     type: 'boolean' as const,
@@ -676,6 +698,7 @@ export function Config({
     }
   }, ...(getFeatureValue_CACHED_MAY_BE_STALE('tengu_terminal_sidebar', false) ? [{
     id: 'showStatusInTerminalTab',
+    description: 'Mirror session status in the terminal tab title.',
     label: 'Show status in terminal tab',
     value: globalConfig.showStatusInTerminalTab ?? false,
     type: 'boolean' as const,
@@ -694,6 +717,7 @@ export function Config({
     }
   }] : []), {
     id: 'showTurnDuration',
+    description: 'Display how long each response turn took.',
     label: 'Show turn duration',
     value: globalConfig.showTurnDuration,
     type: 'boolean' as const,
@@ -714,6 +738,7 @@ export function Config({
     // How many times to retry transient API errors (429/529/5xx) before
     // giving up. 'unlimited' keeps retrying until success. 'default' = unset.
     id: 'apiRetryMaxRetries',
+    description: 'How many times a failed API request is retried before giving up.',
     label: 'API retry attempts',
     searchText: 'api retry retries unlimited 429 request',
     value: apiRetryMaxRetriesDisplay(settingsData?.apiRetry?.maxRetries),
@@ -743,6 +768,7 @@ export function Config({
     // Fixed delay (ms) between retries when apiRetry.delayMs is configured.
     // '0' = retry immediately. 'default' = unset (revert to backoff).
     id: 'apiRetryDelayMs',
+    description: 'Base delay in milliseconds between API retry attempts.',
     label: 'API retry delay',
     searchText: 'api retry delay ms wait between retries',
     value: apiRetryDelayMsDisplay(settingsData?.apiRetry?.delayMs, settingsData?.apiRetry),
@@ -774,6 +800,7 @@ export function Config({
     // persistence entirely. A positive number deletes files older than that
     // many days.
     id: 'cleanupPeriodDays',
+    description: 'Days to keep past session transcripts before automatic deletion.',
     label: 'Session transcript retention',
     searchText: 'cleanup cleanupPeriodDays session transcripts retention delete purge keep days never',
     value: cleanupPeriodDaysDisplay(settingsData?.cleanupPeriodDays),
@@ -795,6 +822,7 @@ export function Config({
     }
   }, {
     id: 'defaultPermissionMode',
+    description: 'Permission mode applied to new sessions.',
     label: 'Default permission mode',
     value: settingsData?.permissions?.defaultMode || 'default',
     options: getDefaultPermissionModeOptions(showAutoInDefaultModePicker),
@@ -837,6 +865,7 @@ export function Config({
     }
   }, ...(feature('TRANSCRIPT_CLASSIFIER') && showAutoInDefaultModePicker ? [{
     id: 'useAutoModeDuringPlan',
+    description: 'Use auto permission mode while in plan mode.',
     label: 'Use auto mode during plan',
     value: (settingsData as {
       useAutoModeDuringPlan?: boolean;
@@ -868,6 +897,7 @@ export function Config({
     }
   }] : []), {
     id: 'respectGitignore',
+    description: 'Hide gitignored files from the file picker.',
     label: 'Respect .gitignore in file picker',
     value: globalConfig.respectGitignore,
     type: 'boolean' as const,
@@ -886,6 +916,7 @@ export function Config({
     }
   }, {
     id: 'copyFullResponse',
+    description: 'Always copy the full response, skipping the /copy picker.',
     label: 'Always copy full response (skip /copy picker)',
     value: globalConfig.copyFullResponse,
     type: 'boolean' as const,
@@ -908,6 +939,7 @@ export function Config({
   // alt-screen mode). In inline mode the terminal emulator owns selection.
   ...(isFullscreenEnvEnabled() ? [{
     id: 'copyOnSelect',
+    description: 'Copy selected text to the clipboard automatically.',
     label: 'Copy on select',
     value: globalConfig.copyOnSelect ?? true,
     type: 'boolean' as const,
@@ -927,6 +959,7 @@ export function Config({
     }
   }] : []), {
     id: 'flickerFreeMode',
+    description: 'Alt-screen rendering to reduce terminal flicker.',
     label: 'Flicker-free mode',
     value: globalConfig.flickerFreeMode ?? (process.env.USER_TYPE === 'ant'),
     type: 'boolean' as const,
@@ -948,12 +981,14 @@ export function Config({
   // autoUpdates setting is hidden - use DISABLE_AUTOUPDATER env var to control
   autoUpdaterDisabledReason ? {
     id: 'autoUpdatesChannel',
+    description: 'Release channel for automatic CLI updates.',
     label: 'Auto-update channel',
     value: 'disabled',
     type: 'managedEnum' as const,
     onChange() {}
   } : {
     id: 'autoUpdatesChannel',
+    description: 'Release channel for automatic CLI updates.',
     label: 'Auto-update channel',
     value: settingsData?.autoUpdatesChannel ?? 'latest',
     type: 'managedEnum' as const,
@@ -962,12 +997,14 @@ export function Config({
     }
   }, {
     id: 'theme',
+    description: 'Color theme for the terminal UI.',
     label: 'Theme',
     value: themeSetting,
     type: 'managedEnum',
     onChange: setTheme
   }, {
     id: 'notifChannel',
+    description: 'Channel used to deliver session notifications.',
     label: feature('KAIROS') || feature('KAIROS_PUSH_NOTIFICATION') ? 'Local notifications' : 'Notifications',
     value: globalConfig.preferredNotifChannel,
     options: ['auto', 'iterm2', 'terminal_bell', 'iterm2_with_bell', 'kitty', 'ghostty', 'notifications_disabled'],
@@ -984,6 +1021,7 @@ export function Config({
     }
   }, ...(feature('KAIROS') || feature('KAIROS_PUSH_NOTIFICATION') ? [{
     id: 'taskCompleteNotifEnabled',
+    description: 'Send a notification when a task finishes and the session is idle.',
     label: 'Push when idle',
     value: globalConfig.taskCompleteNotifEnabled ?? false,
     type: 'boolean' as const,
@@ -999,6 +1037,7 @@ export function Config({
     }
   }, {
     id: 'inputNeededNotifEnabled',
+    description: 'Send a notification when the agent needs your input to continue.',
     label: 'Push when input needed',
     value: globalConfig.inputNeededNotifEnabled ?? false,
     type: 'boolean' as const,
@@ -1014,6 +1053,7 @@ export function Config({
     }
   }, {
     id: 'agentPushNotifEnabled',
+    description: 'Let the agent decide when to send you a notification.',
     label: 'Push when Claude decides',
     value: globalConfig.agentPushNotifEnabled ?? false,
     type: 'boolean' as const,
@@ -1029,12 +1069,14 @@ export function Config({
     }
   }] : []), {
     id: 'outputStyle',
+    description: 'Persona that shapes how responses are written.',
     label: 'Output style',
     value: currentOutputStyle,
     type: 'managedEnum' as const,
     onChange: () => {} // handled by OutputStylePicker submenu
   }, ...(showDefaultViewPicker ? [{
     id: 'defaultView',
+    description: 'Choose whether transcript or plan/tasks is shown by default.',
     label: 'What you see by default',
     // 'default' means the setting is unset — currently resolves to
     // transcript (main.tsx falls through when defaultView !== 'chat').
@@ -1074,12 +1116,14 @@ export function Config({
     }
   }] : []), {
     id: 'language',
+    description: 'Language the agent uses to respond.',
     label: 'Language',
     value: currentLanguage ?? 'Default (English)',
     type: 'managedEnum' as const,
     onChange: () => {} // handled by LanguagePicker submenu
   }, {
     id: 'editorMode',
+    description: 'Keybindings style for the input editor (normal, vim-style, etc.).',
     label: 'Editor mode',
     // Convert 'emacs' to 'normal' for backward compatibility
     value: globalConfig.editorMode === 'emacs' ? 'normal' : globalConfig.editorMode || 'normal',
@@ -1101,6 +1145,7 @@ export function Config({
     }
   }, {
     id: 'prStatusFooterEnabled',
+    description: 'Show pull-request status in the footer after pushing a branch.',
     label: 'Show PR status footer',
     value: globalConfig.prStatusFooterEnabled ?? true,
     type: 'boolean' as const,
@@ -1122,18 +1167,21 @@ export function Config({
     }
   }, {
     id: 'model',
+    description: 'Main model used for conversation.',
     label: 'Model',
     value: mainLoopModel === null ? 'Default (recommended)' : mainLoopModel,
     type: 'managedEnum' as const,
     onChange: onChangeMainModelConfig
   }, {
     id: 'compactModel',
+    description: 'Model used to generate conversation summaries when compacting.',
     label: 'Compaction model',
     value: compactModelDisplayString(globalConfig.compactModel),
     type: 'managedEnum' as const,
     onChange() {}
   }, ...(isConnectedToIde ? [{
     id: 'diffTool',
+    description: 'Tool used to display file diffs (auto, internal, or git diff).',
     label: 'Diff tool',
     value: globalConfig.diffTool ?? 'auto',
     options: ['terminal', 'auto'],
@@ -1154,6 +1202,7 @@ export function Config({
     }
   }] : []), ...(!isSupportedTerminal() ? [{
     id: 'autoConnectIde',
+    description: 'Automatically connect to a running IDE when started outside one.',
     label: 'Auto-connect to IDE (external terminal)',
     value: globalConfig.autoConnectIde ?? false,
     type: 'boolean' as const,
@@ -1173,6 +1222,7 @@ export function Config({
     }
   }] : []), ...(isSupportedTerminal() ? [{
     id: 'autoInstallIdeExtension',
+    description: 'Install the OpenClaude extension into detected IDEs automatically.',
     label: 'Auto-install IDE extension',
     value: globalConfig.autoInstallIdeExtension ?? true,
     type: 'boolean' as const,
@@ -1192,6 +1242,7 @@ export function Config({
     }
   }] : []), {
     id: 'claudeInChromeDefaultEnabled',
+    description: 'Enable the Chrome browser integration for new sessions by default.',
     label: 'Claude in Chrome enabled by default',
     value: globalConfig.claudeInChromeDefaultEnabled ?? true,
     type: 'boolean' as const,
@@ -1215,6 +1266,7 @@ export function Config({
     const label = cliOverride ? `Teammate mode [overridden: ${cliOverride}]` : 'Teammate mode';
     return [{
       id: 'teammateMode',
+      description: 'How teammate agents run: auto, tmux panes, or in-process.',
       label,
       value: globalConfig.teammateMode ?? 'auto',
       options: ['auto', 'tmux', 'in-process'],
@@ -1239,6 +1291,7 @@ export function Config({
       }
     }, {
       id: 'teammateDefaultModel',
+      description: 'Model used for spawned teammate agents.',
       label: 'Default teammate model',
       value: teammateModelDisplayString(globalConfig.teammateDefaultModel),
       type: 'managedEnum' as const,
@@ -1248,6 +1301,7 @@ export function Config({
   // Remote at startup toggle — gated on build flag + GrowthBook + policy
   ...(feature('BRIDGE_MODE') && isBridgeEnabled() ? [{
     id: 'remoteControlAtStartup',
+    description: 'Start every session with remote control enabled.',
     label: 'Enable Remote Control for all sessions',
     value: globalConfig.remoteControlAtStartup === undefined ? 'default' : String(globalConfig.remoteControlAtStartup),
     options: ['true', 'false', 'default'],
@@ -1294,6 +1348,7 @@ export function Config({
     }
   }] : []),   ...(shouldShowExternalIncludesToggle ? [{
     id: 'showExternalIncludesDialog',
+    description: 'Approve or reset external CLAUDE.md includes.',
     label: pendingScope === 'User' ? 'User CLAUDE.md external includes' : 'External CLAUDE.md includes',
     value: (() => {
       const cfg = getCurrentProjectConfig();
@@ -1305,6 +1360,7 @@ export function Config({
     }
   }] : []), ...(process.env.ANTHROPIC_API_KEY && !isRunningOnHomespace() ? [{
     id: 'apiKey',
+    description: 'Use the ANTHROPIC_API_KEY environment variable as the credential.',
     label: <Text>
                 Use custom API key:{' '}
                 <Text bold>
@@ -2105,6 +2161,11 @@ export function Config({
                               </Text>}
                           </Box>
                         </Box>
+                        {setting_2.description && isSelected && <Box marginLeft={2}>
+                            <Text dimColor wrap="truncate-end">
+                              {setting_2.description}
+                            </Text>
+                          </Box>}
                       </React.Fragment>;
           })}
                 {scrollOffset + maxVisible < filteredSettingsItems.length && <Text dimColor>
