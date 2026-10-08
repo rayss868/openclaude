@@ -315,6 +315,59 @@ export function isCommandInput(input: string): boolean {
   return input.startsWith('/')
 }
 
+/**
+ * Find visible command names closest to a mistyped command name, for
+ * "Did you mean ...?" hints on unknown-skill errors. Uses a looser Fuse
+ * threshold than typeahead because here a near miss is more useful than none.
+ */
+export function findClosestSkillNames(
+  commandName: string,
+  commands: Command[],
+  limit = 3,
+): string[] {
+  const query = commandName.toLowerCase().trim()
+  if (!query) {
+    return []
+  }
+  const candidates: { name: string; aliasKey: string[] }[] = []
+  for (const command of commands) {
+    const name = safeCommandName(command)
+    if (name === null || safeIsHidden(command)) {
+      continue
+    }
+    candidates.push({
+      name,
+      aliasKey:
+        safeCommandAliases(command, name)?.map(alias =>
+          alias.toLowerCase(),
+        ) ?? [],
+    })
+  }
+  const fuse = new Fuse(candidates, {
+    includeScore: true,
+    threshold: 0.45,
+    location: 0,
+    distance: 100,
+    keys: [
+      { name: 'name', weight: 3 },
+      { name: 'aliasKey', weight: 2 },
+    ],
+  })
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const { item } of fuse.search(query)) {
+    if (seen.has(item.name)) {
+      continue
+    }
+    seen.add(item.name)
+    result.push(item.name)
+    if (result.length >= limit) {
+      break
+    }
+  }
+  return result
+}
+
 export function getCommandSuggestionForEnter(
   input: string,
   suggestion: SuggestionItem | undefined,

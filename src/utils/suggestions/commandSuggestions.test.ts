@@ -7,6 +7,7 @@ import {
 } from '../settings/settingsCache.js'
 import {
   applyCommandSuggestion,
+  findClosestSkillNames,
   findCommandByExactName,
   getBestCommandMatch,
   getCommandSuggestionForEnter,
@@ -1078,5 +1079,62 @@ describe('generateCommandSuggestions identifier filtering', () => {
     )
 
     expect(names).toEqual(['/help (sosextra)'])
+  })
+})
+
+describe('findClosestSkillNames', () => {
+  function skillCommands() {
+    return [
+      promptCommand({
+        name: 'human-like-writer',
+        getDescription: () => 'Write like a human',
+      }),
+      promptCommand({
+        name: 'antislop-human',
+        getDescription: () => 'Remove AI slop',
+      }),
+      promptCommand({
+        name: 'commit',
+        getDescription: () => 'Create a git commit',
+      }),
+      promptCommand({
+        name: 'hidden-skill',
+        getDescription: () => 'Hidden',
+        isHidden: true,
+      }),
+    ]
+  }
+
+  test('suggests the closest skill for a mistyped name', () => {
+    // The user typed "human-writer"; the nearest installed skills are
+    // human-like-writer and antislop-human.
+    const names = findClosestSkillNames('human-writer', skillCommands())
+    expect(names).toContain('human-like-writer')
+  })
+
+  test('deduplicates names and respects the limit', () => {
+    const names = findClosestSkillNames('human', skillCommands(), 1)
+    expect(names.length).toBeLessThanOrEqual(1)
+    expect(new Set(names).size).toBe(names.length)
+  })
+
+  test('excludes hidden commands from suggestions', () => {
+    const names = findClosestSkillNames('hidden', skillCommands())
+    expect(names).not.toContain('hidden-skill')
+  })
+
+  test('returns empty for a query with no near match', () => {
+    expect(findClosestSkillNames('zzzzqqqx', skillCommands())).toEqual([])
+  })
+
+  test('matches against aliases too', () => {
+    const commands = [
+      promptCommand({
+        name: 'documentation',
+        aliases: ['docs'],
+        getDescription: () => 'Show the docs',
+      }),
+    ]
+    expect(findClosestSkillNames('doc', commands)).toEqual(['documentation'])
   })
 })

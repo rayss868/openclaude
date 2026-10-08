@@ -58,6 +58,7 @@ import { lazySchema } from '../../utils/lazySchema.js'
 import { createUserMessage, normalizeMessages } from '../../utils/messages.js'
 import type { ModelAlias } from '../../utils/model/aliases.js'
 import { resolveSkillModelOverride } from '../../utils/model/model.js'
+import { findClosestSkillNames } from '../../utils/suggestions/commandSuggestions.js'
 import { recordSkillUsage } from '../../utils/suggestions/skillUsageTracking.js'
 import { createAgentId } from '../../utils/uuid.js'
 import { runAgent } from '../AgentTool/runAgent.js'
@@ -413,9 +414,14 @@ export const SkillTool: Tool<InputSchema, Output, Progress> = buildTool({
     // Check if command exists
     const foundCommand = findCommand(normalizedCommandName, commands)
     if (!foundCommand) {
+      const closest = findClosestSkillNames(normalizedCommandName, commands)
       return {
         result: false,
-        message: `Unknown skill: ${normalizedCommandName}`,
+        message:
+          `Unknown skill: ${normalizedCommandName}` +
+          (closest.length > 0
+            ? `. Did you mean: ${closest.map(name => `/${name}`).join(', ')}?`
+            : ''),
         errorCode: 2,
       }
     }

@@ -37,6 +37,7 @@ import { isOfficialMarketplaceName, parsePluginIdentifier } from '../plugins/plu
 import { isRestrictedToPluginOnly, isSourceAdminTrusted } from '../settings/pluginOnlyPolicy.js';
 import { parseSlashCommand } from '../slashCommandParsing.js';
 import { sleep } from '../sleep.js';
+import { findClosestSkillNames } from '../suggestions/commandSuggestions.js';
 import { recordSkillUsage } from '../suggestions/skillUsageTracking.js';
 import { logOTelEvent, redactIfDisabled } from '../telemetry/events.js';
 import { buildPluginCommandTelemetryFields } from '../telemetry/pluginTelemetry.js';
@@ -351,7 +352,8 @@ export async function processSlashCommand(inputString: string, precedingInputBlo
       logEvent('tengu_input_slash_invalid', {
         input: commandName as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
       });
-      const unknownMessage = `Unknown skill: ${commandName}`;
+      const closest = findClosestSkillNames(commandName, context.options.commands);
+      const unknownMessage = `Unknown skill: ${commandName}` + (closest.length > 0 ? `. Did you mean: ${closest.map(name => `/${name}`).join(', ')}?` : '');
       return {
         messages: [createSyntheticUserCaveatMessage(), ...attachmentMessages, createUserMessage({
           content: prepareUserContent({
