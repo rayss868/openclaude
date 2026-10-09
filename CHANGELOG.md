@@ -7,6 +7,17 @@
 * **skills:** suggest the closest skill names when an unknown skill is invoked ("Unknown skill: human-writer. Did you mean: /human-like-writer?").
 * **update:** check npm for a newer version on startup and every 30 minutes and show an "Update available" notification with the manual update command. No auto-install — the user decides when to update.
 
+### Upstream sync (cherry-picked from upstream/main)
+
+* Honor session context windows and cancel stalled MCP calls (upstream #2250).
+* **read:** dedup touched-but-identical files and covered sub-ranges (upstream #2259).
+
+### Bug Fixes
+
+* **openai-shim:** keep terminal usage from a repeated `finish_reason` (upstream #2252).
+* **openai-shim:** strip `store` for Anthropic models on OpenAI-compatible routes (upstream #2247).
+* **hooks:** match the `.sh` suffix case-insensitively on Windows (upstream #2254).
+
 ## [0.31.1-by-rayss](https://github.com/rayss868/openclaude/compare/v0.31.0-by-rayss...v0.31.1-by-rayss) (2026-10-02)
 
 ### Features
