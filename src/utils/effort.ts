@@ -95,8 +95,6 @@ export type ReasoningControlContext = OpenAIShimReasoningSupportContext & {
 
 const DEFAULT_REASONING_LEVELS: EffortLevel[] = ['low', 'medium', 'high']
 const OPENAI_SHIM_COMPAT_LEVELS: EffortLevel[] = ['low', 'medium', 'high', 'xhigh']
-const DEEPSEEK_METADATA_COMPAT_LEVELS: EffortLevel[] = ['high', 'xhigh']
-const ZAI_METADATA_COMPAT_LEVELS: EffortLevel[] = ['low', 'medium', 'high', 'xhigh']
 // Every effort level — including the meta-level 'ultracode' — is exposed
 // globally for any effort-capable model. The provider accepts or rejects the
 // selected level; the request-level self-heal retry drops the field when it
@@ -132,20 +130,6 @@ function normalizeReasoningLevels(
     isSupportedEffortLevel,
   )
   return normalized.length > 0 ? normalized : [...DEFAULT_REASONING_LEVELS]
-}
-
-function normalizeMetadataReasoningLevels(
-  wireFormat: ReasoningWireFormat | undefined,
-  levels: ReasoningControlMetadata['levels'] | undefined,
-): EffortLevel[] {
-  const normalized = normalizeReasoningLevels(levels)
-  if (wireFormat === 'deepseek_compatible') {
-    return normalized.filter(level => DEEPSEEK_METADATA_COMPAT_LEVELS.includes(level))
-  }
-  if (wireFormat === 'zai_compatible') {
-    return normalized.filter(level => ZAI_METADATA_COMPAT_LEVELS.includes(level))
-  }
-  return normalized
 }
 
 function normalizeReasoningDefaultLevel(
@@ -212,20 +196,6 @@ function normalizeReasoningThinkingType(
     return 'enabled'
   }
   return undefined
-}
-
-function normalizeDeepSeekReasoningEffort(
-  effort: OpenAIShimEffortLevel,
-): 'high' | 'max' {
-  return effort === 'xhigh' || effort === 'max' ? 'max' : 'high'
-}
-
-function normalizeZaiReasoningEffort(
-  effort: OpenAIShimEffortLevel,
-  supportsLowEffort = false,
-): 'low' | 'high' | 'max' {
-  if (supportsLowEffort && effort === 'low') return 'low'
-  return effort === 'xhigh' || effort === 'max' ? 'max' : 'high'
 }
 
 function resolveCompatibilityWireFormat(
@@ -419,7 +389,7 @@ function resolveMetadataReasoningControl(
 
   const wireFormat = reasoning.wireFormat
   const levels = reasoning.mode === 'levels'
-    ? normalizeMetadataReasoningLevels(wireFormat, reasoning.levels)
+    ? normalizeReasoningLevels(reasoning.levels)
     : []
   const controllable = Boolean(
     capabilities?.supportsReasoning !== false &&
@@ -737,7 +707,7 @@ export function resolveOpenAIShimReasoningRequestPlan(options: {
       (thinkingType === 'enabled' || options.requestedEffort !== undefined)
     const reasoningEffort =
       shouldEnableThinking && options.requestedEffort
-        ? normalizeDeepSeekReasoningEffort(options.requestedEffort)
+        ? options.requestedEffort
         : undefined
     return {
       // Keep an explicit param-level disable; only drop the field when the
@@ -762,7 +732,7 @@ export function resolveOpenAIShimReasoningRequestPlan(options: {
         options.reasoningControl?.levels.includes('low') === true &&
         options.reasoningControl.disableFormat !== 'thinking_type_disabled'
       const translatedEffort = supportsLowEffort && options.requestedEffort
-        ? normalizeZaiReasoningEffort(options.requestedEffort, true)
+        ? options.requestedEffort
         : 'low'
       return {
         thinkingType: supportsLowEffort ? 'enabled' : 'disabled',
@@ -781,10 +751,7 @@ export function resolveOpenAIShimReasoningRequestPlan(options: {
         metadataWireFormat !== 'zai_compatible' &&
         supportsZaiReasoningEffort(options.model)
       ))
-      ? normalizeZaiReasoningEffort(
-        options.requestedEffort,
-        options.reasoningControl?.levels.includes('low') === true,
-      )
+      ? options.requestedEffort
       : undefined
     return {
       thinkingType: shouldEnableThinking ? 'enabled' : undefined,
