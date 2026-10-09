@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.3-by-rayss](https://github.com/rayss868/openclaude/compare/v0.31.2-by-rayss...v0.31.3-by-rayss) (2026-10-09)
+
+
+### Bug Fixes
+
+* **effort:** send the selected effort level unchanged on OpenAI-compatible routes ([1001748](https://github.com/rayss868/openclaude/commit/1001748f25f9ad11b5f1868d955468063ffb9184))
+
 ## [0.31.2-by-rayss](https://github.com/rayss868/openclaude/compare/v0.31.1-by-rayss...v0.31.2-by-rayss) (2026-10-08)
 
 ### Features
