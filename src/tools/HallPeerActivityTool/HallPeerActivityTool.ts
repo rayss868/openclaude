@@ -18,9 +18,9 @@ const inputSchema = lazySchema(() =>
       .number()
       .int()
       .min(1)
-      .max(30)
+      .max(100)
       .optional()
-      .describe('Recent messages per peer (default 8, max 30)'),
+      .describe('Recent activity events per peer (default 50, max 100)'),
   }),
 )
 type InputSchema = ReturnType<typeof inputSchema>
@@ -89,7 +89,7 @@ export const HallPeerActivityTool = buildTool({
     if (!client || !client.isConnected) {
       return { data: { connected: false, peers: [] } }
     }
-    const limit = input.limit ?? 8
+    const limit = input.limit ?? 50
 
     let targets: { session_id: string; agent_name: string }[]
     if (input.session_id) {
@@ -139,7 +139,11 @@ export const HallPeerActivityTool = buildTool({
       if (peer.messages.length === 0) {
         return `${header}\nNo recent messages.`
       }
-      const lines = peer.messages.map(m => `[${m.role}] ${m.text}`)
+      const lines = peer.messages.map(m => {
+        if (m.role === 'tool_use') return `  [→] ${m.text}`
+        if (m.role === 'tool_result') return `  [←] ${m.text}`
+        return `[${m.role}] ${m.text}`
+      })
       return `${header}\n${lines.join('\n')}`
     })
     return {
