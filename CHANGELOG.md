@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.33.0-by-rayss](https://github.com/rayss868/openclaude/compare/v0.31.2-by-rayss...v0.33.0-by-rayss) (2026-10-15)
+
+### Upstream sync (cherry-picked from upstream/main, base v0.33.0)
+
+* **sessions:** add `/sessions` command to list, resume, or delete saved conversations; add `sessionDeletion.ts` and deleted-session guards in `sessionStorage.ts` (upstream #2262). Preserves local `/resume` deep search, preview, liteTag, and archive features.
+* **statusline:** reset context usage after full compaction (upstream #2275).
+* **api:** validate retry count environment values (upstream #2172).
+* **prompt:** fix color-only banner layout regression (upstream #2239).
+
 ## [0.31.2-by-rayss](https://github.com/rayss868/openclaude/compare/v0.31.1-by-rayss...v0.31.2-by-rayss) (2026-10-08)
 
 ### Features
