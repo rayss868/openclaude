@@ -1070,8 +1070,10 @@ function validateRetryAttemptsEnvVar(
   if (!value) {
     return DEFAULT_MAX_RETRIES
   }
-  const parsed = parseInt(value, 10)
-  if (isNaN(parsed) || parsed < 0) {
+  const normalized = value.trim()
+  const isDecimalInteger = /^\d+$/.test(normalized)
+  const parsed = isDecimalInteger ? Number(normalized) : Number.NaN
+  if (!Number.isFinite(parsed)) {
     logForDebugging(
       `${envVarName} Invalid value "${value}" (using default: ${DEFAULT_MAX_RETRIES})`,
     )

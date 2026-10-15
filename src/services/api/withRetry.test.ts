@@ -160,10 +160,54 @@ describe('retry configuration', () => {
     expect(getDefaultMaxRetries()).toBe(3)
   })
 
-  test('falls back to default retry attempts for invalid values', async () => {
-    process.env.OPENCLAUDE_MAX_RETRIES = 'nope'
+  test('falls back to default retry attempts for malformed values', async () => {
     const { getDefaultMaxRetries } = await importFreshWithRetryModule()
+    const malformedValues = [
+      'nope',
+      '   ',
+      '5abc',
+      '2.5',
+      '-1',
+      'Infinity',
+      '9'.repeat(400),
+    ]
+    for (const value of malformedValues) {
+      process.env.OPENCLAUDE_MAX_RETRIES = value
+      expect(getDefaultMaxRetries()).toBe(10)
+    }
+  })
+
+  test('uses default retries for a whitespace-only legacy setting', async () => {
+    process.env.CLAUDE_CODE_MAX_RETRIES = '   '
+    process.env.OPENCLAUDE_RETRY_DELAY_MS = '1'
+    const { getDefaultMaxRetries, withRetry } =
+      await importFreshWithRetryModule()
+    const retryableError = APIError.generate(
+      500,
+      undefined,
+      'internal server error',
+      new Headers(),
+    )
+    let attempts = 0
+
     expect(getDefaultMaxRetries()).toBe(10)
+    const result = await drainAsyncGenerator(
+      withRetry(
+        async () => ({} as Anthropic),
+        async () => {
+          attempts++
+          if (attempts === 1) throw retryableError
+          return { ok: true }
+        },
+        {
+          model: 'test-model',
+          thinkingConfig: { type: 'disabled' },
+        },
+      ),
+    )
+
+    expect(result).toEqual({ ok: true })
+    expect(attempts).toBe(2)
   })
 
   test('caps retry attempts to a bounded value', async () => {
