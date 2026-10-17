@@ -33,12 +33,21 @@ export function getMaxActiveMessagesHardCap(
 export function resolveMaxActiveMessagesLimit(
   configSetting: string | undefined,
   envSetting: string | undefined,
+  hardCap: number = getMaxActiveMessagesHardCap(),
 ): number {
+  if (configSetting === 'off') {
+    // `off` disables the message-count guard entirely. The hard cap is a
+    // subset of that same guard, so honoring it here made `off` an ineffective
+    // escape hatch: a long session with cheap messages still compacted at the
+    // cap while token headroom was untouched. Token-threshold auto-compact is
+    // unaffected and remains the backstop. Use
+    // OPENCLAUDE_MAX_ACTIVE_MESSAGES_HARD_CAP only for the unset/legacy path.
+    return parseMaxActiveMessagesLimit(envSetting)
+  }
   const configuredLimit =
-    configSetting !== undefined && configSetting !== 'off'
+    configSetting !== undefined
       ? parseMaxActiveMessagesLimit(configSetting)
       : parseMaxActiveMessagesLimit(envSetting)
-  const hardCap = getMaxActiveMessagesHardCap()
   if (configuredLimit > 0 && hardCap > 0) {
     return Math.min(configuredLimit, hardCap)
   }

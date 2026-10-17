@@ -48,6 +48,29 @@ test('configured and hard cap combine by choosing the tighter positive limit', (
   expect(isAboveMaxActiveMessagesLimit(500)).toBe(false)
 })
 
+test('off disables the message-count guard including the hard cap', () => {
+  // Regression: `off` fell through to the 1000-message hard cap, so a long
+  // session with cheap messages compacted at the cap (~120k tokens) while the
+  // 450k token threshold was never consulted.
+  expect(resolveMaxActiveMessagesLimit('off', undefined)).toBe(0)
+
+  const limit = resolveMaxActiveMessagesLimit('off', undefined)
+  expect(isAboveMaxActiveMessagesLimit(1250, limit)).toBe(false)
+  expect(isAboveMaxActiveMessagesLimit(1001, limit)).toBe(false)
+})
+
+test('off still honors an explicit legacy env limit', () => {
+  expect(resolveMaxActiveMessagesLimit('off', '300')).toBe(300)
+  expect(resolveMaxActiveMessagesLimit('off', '0')).toBe(0)
+})
+
+test('numeric setting still combines with the hard cap', () => {
+  // Unchanged behavior for every value except `off`.
+  expect(resolveMaxActiveMessagesLimit('200', undefined)).toBe(200)
+  expect(resolveMaxActiveMessagesLimit('1000', undefined)).toBe(1000)
+  expect(resolveMaxActiveMessagesLimit('5000', undefined)).toBe(1000)
+})
+
 test('teammate transcript compaction triggers on message count before token pressure', () => {
   expect(
     shouldCompactActiveMessageHistory({
