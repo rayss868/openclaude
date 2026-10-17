@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.33.1-by-rayss](https://github.com/rayss868/openclaude/compare/v0.31.2-by-rayss...v0.33.1-by-rayss) (2026-10-17)
+
+Covers every change since the previous GitHub release (`v0.31.2-by-rayss`),
+including the work that shipped under the `v0.33.0-by-rayss` tag.
+
+### Features
+
+* **sessions:** add a `/sessions` command to list, resume, or delete saved conversations; add `sessionDeletion.ts` plus deleted-session guards in `sessionStorage.ts` (upstream #2262). Preserves the local `/resume` deep search, preview, liteTag, and archive features.
+
+### Upstream sync (cherry-picked from upstream/main, base v0.33.0)
+
+* **statusline:** reset context usage after full compaction (upstream #2275).
+* **api:** validate retry count environment values (upstream #2172).
+* **prompt:** fix color-only banner layout regression (upstream #2239).
+
+### Bug Fixes
+
+* **compact:** setting `maxMessagesCompactionThreshold` to `off` no longer falls through to the 1000-message hard cap. The cap is part of the message-count guard, so a long session with many cheap messages compacted at the cap while the token threshold was never consulted, firing compaction repeatedly with most of the context window still free. `off` now disables the guard including the cap; token-based auto-compaction remains the backstop. Numeric settings and the unset/legacy path are unchanged.
+* **effort:** send the selected `/effort` level unchanged on OpenAI-compatible routes. Removed the wire-level clamps that collapsed `low`/`medium`/`high` to `high` for deepseek- and zai-compatible models, and the metadata filter that hid `medium`/`low` from the picker.
+* **hall:** surface peer tool activity in `HallPeerActivity`. `readPeerMessages` kept only `text` blocks and dropped every `tool_use`/`tool_result` block, so a peer session could see another session's opening messages but never its live progress. Tool calls are now summarized per tool and results labeled by tool name.
+
 ## [0.33.0-by-rayss](https://github.com/rayss868/openclaude/compare/v0.31.2-by-rayss...v0.33.0-by-rayss) (2026-10-15)
 
 ### Upstream sync (cherry-picked from upstream/main, base v0.33.0)
