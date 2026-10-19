@@ -3006,11 +3006,19 @@ async function getSkillListingAttachments(
       ? uniqBy([...localCommands, ...mcpSkills], 'name')
       : localCommands
 
-  // The static listing is always the small always-on core (bundled + MCP).
-  // User/project/plugin skills stay invocable by name but are left out of the
-  // turn-0 dump so the initial context never lists every installed skill; when
-  // skill search is on they are surfaced on demand via discovery instead.
-  allCommands = filterToBundledAndMcp(allCommands)
+  // When skill search is active, filter to bundled + MCP instead of full
+  // suppression. Resolves the turn-0 gap: main thread gets turn-0 discovery
+  // via getTurnZeroSkillDiscovery (blocking), but subagents use the async
+  // subagent_spawn signal (collected post-tools, visible turn 1). Bundled +
+  // MCP are small and intent-signaled; user/project/plugin skills go through
+  // discovery. feature() first for DCE — the property-access string leaks
+  // otherwise even with ?. on null.
+  if (
+    feature('EXPERIMENTAL_SKILL_SEARCH') &&
+    skillSearchModules?.featureCheck.isSkillSearchEnabled()
+  ) {
+    allCommands = filterToBundledAndMcp(allCommands)
+  }
 
   const agentKey = toolUseContext.agentId ?? ''
   let sent = sentSkillNames.get(agentKey)
