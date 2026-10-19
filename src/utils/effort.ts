@@ -509,6 +509,17 @@ function legacyModelSupportsEffort(
   ) {
     return true
   }
+  // On an explicitly-resolved custom compatible route the model name is an
+  // upstream alias (`gemini-*`, `claude-*`, …), not evidence of a native
+  // transport, so the native-name veto below must not apply there. Ambient
+  // env inference deliberately does not opt in: it would advertise effort on
+  // gateways whose native transport rejects the field.
+  if (
+    context?.routeId === 'custom' &&
+    getReasoningApiProvider(context) === 'openai'
+  ) {
+    return true
+  }
   if (
     modelUsesOpenAIEffort(model, context) &&
     modelSupportsCodexReasoningEffort(model, context)
