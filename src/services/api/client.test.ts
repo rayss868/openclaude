@@ -2008,6 +2008,43 @@ test('universal effort sends the selected level for an unknown model', async () 
 
   expect(requestBody?.reasoning_effort).toBe('high')
 })
+test('custom OpenAI-compatible Gemini requests send the selected effort', async () => {
+  let requestBody: Record<string, unknown> | undefined
+  delete process.env.CLAUDE_CODE_USE_GEMINI
+  delete process.env.GEMINI_API_KEY
+  process.env.CLAUDE_CODE_USE_OPENAI = '1'
+  process.env.OPENAI_BASE_URL = 'https://custom.example.test/v1'
+  process.env.OPENAI_API_KEY = 'test-key'
+
+  globalThis.fetch = (async (_input, init) => {
+    requestBody = JSON.parse(String(init?.body))
+    return new Response(JSON.stringify({
+      id: 'chatcmpl-gemini-effort',
+      model: 'gemini-3.8-flash-high',
+      choices: [{
+        message: { role: 'assistant', content: 'ok' },
+        finish_reason: 'stop',
+      }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    }), { headers: { 'Content-Type': 'application/json' } })
+  }) as FetchType
+
+  const client = (await getAnthropicClient({
+    maxRetries: 0,
+    model: 'gemini-3.8-flash-high',
+    effortValue: 'high',
+  })) as unknown as ShimClient
+
+  await client.beta.messages.create({
+    model: 'gemini-3.8-flash-high',
+    messages: [{ role: 'user', content: 'hello' }],
+    max_tokens: 64,
+    stream: false,
+  })
+
+  expect(requestBody?.reasoning_effort).toBe('high')
+})
+
 test('auto-routed Azure gpt-5.4 and gpt-5.5 requests preserve selected effort', async () => {
   const requestBodies: Record<string, unknown>[] = []
   delete process.env.GEMINI_API_KEY

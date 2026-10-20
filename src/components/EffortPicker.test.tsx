@@ -58,7 +58,10 @@ async function waitForCondition(
   throw new Error('Timed out waiting for EffortPicker output')
 }
 
-async function renderPicker(effortValue: EffortLevel | undefined) {
+async function renderPicker(
+  effortValue: EffortLevel | undefined,
+  model = 'gpt-6-luna',
+) {
   const { EffortPicker } = await import(
     `./EffortPicker.js?ts=${Date.now()}-${Math.random()}`
   )
@@ -83,7 +86,7 @@ async function renderPicker(effortValue: EffortLevel | undefined) {
     <AppStateProvider
       initialState={{
         ...getDefaultAppState(),
-        mainLoopModelForSession: 'gpt-6-luna',
+        mainLoopModelForSession: model,
         effortValue,
       }}
     >
@@ -110,6 +113,25 @@ test('marks Max (not Extra High) as current when max is selected', async () => {
     const frame = stripAnsi(getOutput())
     expect(frame).toContain('Max (current)')
     expect(frame).not.toContain('Extra High (current)')
+  } finally {
+    instance.unmount()
+    stdin.end()
+    stdout.end()
+  }
+})
+
+test('offers effort levels for Gemini aliases on a custom OpenAI-compatible route', async () => {
+  const { instance, stdin, stdout, getOutput } = await renderPicker(
+    undefined,
+    'gemini-3.8-flash-high',
+  )
+  try {
+    await waitForCondition(() => stripAnsi(getOutput()).includes('Set effort level'))
+    const frame = stripAnsi(getOutput())
+    expect(frame).not.toContain('Effort not supported for this model')
+    expect(frame).toContain('Low')
+    expect(frame).toContain('Medium')
+    expect(frame).toContain('High')
   } finally {
     instance.unmount()
     stdin.end()

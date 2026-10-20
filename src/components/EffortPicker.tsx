@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { Box, Text } from '../ink.js'
 import { useMainLoopModel } from '../hooks/useMainLoopModel.js'
 import { useAppState, useSetAppState } from '../state/AppState.js'
-import type { EffortLevel } from '../utils/effort.js'
+import type { EffortLevel, ReasoningControlContext } from '../utils/effort.js'
 import {
   getAvailableEffortLevels,
   getDisplayedEffortLevel,
@@ -14,6 +14,7 @@ import {
   openAIEffortToStandard,
 } from '../utils/effort.js'
 import { getAPIProvider } from '../utils/model/providers.js'
+import { resolveActiveRouteIdFromEnv } from '../integrations/routeMetadata.js'
 import { getReasoningEffortForModel } from '../services/api/providerConfig.js'
 import { Select } from './CustomSelect/select.js'
 import { effortLevelToSymbol } from './EffortIndicator.js'
@@ -37,9 +38,13 @@ export function EffortPicker({ onSelect, onCancel }: Props) {
   const appStateEffort = useAppState((s) => s.effortValue)
   const setAppState = useSetAppState()
   const provider = getAPIProvider()
-  const usesOpenAIEffort = modelUsesOpenAIEffort(model)
-  const availableLevels = getAvailableEffortLevels(model)
-  const currentDisplayedLevel = getDisplayedEffortLevel(model, appStateEffort)
+  const routeId = resolveActiveRouteIdFromEnv(process.env)
+  const effortContext: ReasoningControlContext | undefined = routeId
+    ? { apiProvider: provider, routeId }
+    : undefined
+  const usesOpenAIEffort = modelUsesOpenAIEffort(model, effortContext)
+  const availableLevels = getAvailableEffortLevels(model, effortContext)
+  const currentDisplayedLevel = getDisplayedEffortLevel(model, appStateEffort, effortContext)
 
   // For OpenAI/Codex, get the model's default reasoning effort
   const modelReasoningEffort = usesOpenAIEffort ? getReasoningEffortForModel(model) : undefined
@@ -95,7 +100,7 @@ export function EffortPicker({ onSelect, onCancel }: Props) {
     onCancel?.()
   }
 
-  const supportsEffort = modelSupportsEffort(model)
+  const supportsEffort = modelSupportsEffort(model, effortContext)
   // For OpenAI/Codex: prefer the user's current selection, otherwise the
   // model's alias default, otherwise auto. For Claude: user's current
   // selection or auto.
