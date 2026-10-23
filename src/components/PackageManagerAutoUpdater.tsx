@@ -49,7 +49,8 @@ export function PackageManagerAutoUpdater(t0) {
         }
         latest = maxVersion;
       }
-      const hasUpdate = latest && !gte(MACRO.VERSION, latest) && !shouldSkipVersion(latest);
+      const currentVersion = MACRO.DISPLAY_VERSION ?? MACRO.VERSION;
+      const hasUpdate = latest && !gte(currentVersion, latest) && !shouldSkipVersion(latest);
       setUpdateAvailable(!!hasUpdate);
       if (hasUpdate) {
         logForDebugging(`PackageManagerAutoUpdater: Update available ${MACRO.VERSION} -> ${latest}`);

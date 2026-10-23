@@ -162,6 +162,34 @@ test('cleanup removes temporary state without removing the target', async () => 
   expect(await tempFiles(target)).toEqual([])
 })
 
+test('restarting the same target discards the previous temporary file', async () => {
+  const target = await tempTarget()
+  const first = await startChunkedWrite(target, 'first', snapshot(null))
+  expect((await tempFiles(target)).length).toBe(1)
+
+  const second = await startChunkedWrite(target, 'second', snapshot(null))
+
+  expect(second.writeId).not.toBe(first.writeId)
+  expect((await tempFiles(target)).length).toBe(1)
+  await expect(
+    appendChunkedWrite(target, first.writeId, 1, 'stale', 'resp-1'),
+  ).rejects.toThrow(/unknown/i)
+  await appendChunkedWrite(target, second.writeId, 1, '-done', 'resp-1')
+  await commitChunkedWrite(target, second.writeId)
+  expect(await readFile(target, 'utf8')).toBe('second-done')
+})
+
+test('start creates a missing parent directory', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'openclaude-write-chunk-'))
+  tempDirs.push(dir)
+  const target = join(dir, 'nested', 'deeper', 'target.txt')
+
+  const started = await startChunkedWrite(target, 'content', snapshot(null))
+  await commitChunkedWrite(target, started.writeId)
+
+  expect(await readFile(target, 'utf8')).toBe('content')
+})
+
 test('missing temporary file clears the active state', async () => {
   const target = await tempTarget()
   const started = await startChunkedWrite(target, 'new', snapshot(null))

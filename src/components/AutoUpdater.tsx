@@ -44,7 +44,10 @@ export function AutoUpdater({
       logForDebugging('AutoUpdater: Skipping update check in test/dev environment');
       return;
     }
-    const currentVersion = MACRO.VERSION;
+    // Compare against the user-facing package version. MACRO.VERSION is pinned
+    // to 99.0.0 to satisfy first-party minimum-version guards, so using it here
+    // makes every npm release look older and hides update notifications.
+    const currentVersion = MACRO.DISPLAY_VERSION ?? MACRO.VERSION;
     const channel = getInitialSettings()?.autoUpdatesChannel ?? 'latest';
     let latestVersion = await getLatestVersion(channel);
 

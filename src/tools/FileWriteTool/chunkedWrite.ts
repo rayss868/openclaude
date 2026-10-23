@@ -83,6 +83,27 @@ function tempPathFor(targetPath: string, writeId: string): string {
   )
 }
 
+function unknownWriteIdError(
+  writeId: string,
+  targetPath: string,
+): ChunkedWriteError {
+  const resolved = resolve(targetPath)
+  const active = [...states.values()].find(
+    state => state.targetPath === resolved,
+  )
+  const recovery = active
+    ? ` An active chunked write for this path uses write_id ` +
+      `${active.writeId} and expects chunk index ${active.nextChunkIndex}; ` +
+      `retry with that write_id.`
+    : ` Restart with write_mode "start" and reuse the write_id returned in ` +
+      `that tool result for the following append calls.`
+  return new ChunkedWriteError(
+    `Unknown writeId: ${writeId}. The chunked write is no longer active — it ` +
+      `may have been started in a different process, already finished, or ` +
+      `discarded.${recovery}`,
+  )
+}
+
 function enforceChunkLimit(content: string): void {
   if (content.length > MAX_FILE_WRITE_CHUNK_CHARS) {
     throw new ChunkedWriteError(
@@ -111,6 +132,15 @@ export async function startChunkedWrite(
 
   const fs = getFsImplementation()
   const resolvedTarget = resolve(targetPath)
+
+  // A restart for the same target supersedes any in-progress write there;
+  // otherwise its temporary file would be orphaned and never committed.
+  for (const [existingId, existing] of states) {
+    if (existing.targetPath === resolvedTarget) {
+      await clearChunkedWrite(existingId).catch(() => {})
+    }
+  }
+
   const writeId = randomUUID()
   const tempPath = tempPathFor(resolvedTarget, writeId)
 
@@ -143,6 +173,9 @@ export async function startChunkedWrite(
   }
 
   try {
+    // `start` runs before the replace path's pre-write effects, so the target
+    // directory may not exist yet when writing into a new location.
+    await fs.mkdir(dirname(resolvedTarget))
     await fs.writeFile(tempPath, content, { encoding: snapshot.encoding })
   } catch (error) {
     await fs.unlink(tempPath).catch(() => {})
@@ -186,7 +219,7 @@ export async function appendChunkedWrite(
 
   const state = states.get(writeId)
   if (!state) {
-    throw new ChunkedWriteError(`Unknown writeId: ${writeId}`)
+    throw unknownWriteIdError(writeId, targetPath)
   }
   if (resolve(targetPath) !== state.targetPath) {
     throw new ChunkedWriteError(
@@ -242,7 +275,7 @@ export async function commitChunkedWrite(
 ): Promise<ChunkedWriteFinalization> {
   const state = states.get(writeId)
   if (!state) {
-    throw new ChunkedWriteError(`Unknown writeId: ${writeId}`)
+    throw unknownWriteIdError(writeId, targetPath)
   }
   if (resolve(targetPath) !== state.targetPath) {
     throw new ChunkedWriteError(

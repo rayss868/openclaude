@@ -81,7 +81,9 @@ export const inputSchema = lazySchema(() =>
         .int()
         .nonnegative()
         .optional()
-        .describe('Zero-based chunk sequence index'),
+        .describe(
+          'Chunk sequence index; the first append after start must be 1',
+        ),
       content: z.string().optional().describe('Content to write to the file'),
     })
     .superRefine((value, ctx) => {
@@ -668,14 +670,18 @@ export const FileWriteTool = buildTool({
       return {
         tool_use_id: toolUseID,
         type: 'tool_result',
-        content: `Started chunked write for ${output.filePath}; next chunk index is ${output.nextChunkIndex}.`,
+        content:
+          `Started chunked write for ${output.filePath}; write_id is ` +
+          `${output.writeId}; next chunk index is ${output.nextChunkIndex}.`,
       }
     }
     if (output.type === 'chunked_append') {
       return {
         tool_use_id: toolUseID,
         type: 'tool_result',
-        content: `Appended chunk to ${output.filePath}; next chunk index is ${output.nextChunkIndex}.`,
+        content:
+          `Appended chunk to ${output.filePath}; write_id is ` +
+          `${output.writeId}; next chunk index is ${output.nextChunkIndex}.`,
       }
     }
     if (output.type === 'chunked_finish') {

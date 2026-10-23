@@ -90,7 +90,7 @@ export function NativeAutoUpdater({
     logEvent('tengu_native_auto_updater_start', {});
     try {
       const result = await installLatest(channel);
-      const currentVersion = MACRO.VERSION;
+      const currentVersion = MACRO.DISPLAY_VERSION ?? MACRO.VERSION;
       const latencyMs = Date.now() - startTime;
 
       // Handle lock contention gracefully - just return without treating as error

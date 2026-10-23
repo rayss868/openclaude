@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { inputSchema } from './FileWriteTool.js'
+import { FileWriteTool, inputSchema } from './FileWriteTool.js'
 import { MAX_FILE_WRITE_CHUNK_CHARS } from './chunkedWrite.js'
 
 const filePath = 'C:/tmp/openclaude-write.txt'
@@ -112,4 +112,30 @@ test('start mode rejects chunk metadata at the schema level', () => {
   })
 
   expect(result.success).toBe(false)
+})
+
+test('chunked results expose the write_id the model must echo back', () => {
+  const started = FileWriteTool.mapToolResultToToolResultBlockParam(
+    {
+      type: 'chunked_start',
+      filePath: filePath,
+      writeId: 'write-abc',
+      nextChunkIndex: 1,
+    },
+    'tool-1',
+  )
+  expect(started.content).toContain('write_id is write-abc')
+  expect(started.content).toContain('next chunk index is 1')
+
+  const appended = FileWriteTool.mapToolResultToToolResultBlockParam(
+    {
+      type: 'chunked_append',
+      filePath: filePath,
+      writeId: 'write-abc',
+      nextChunkIndex: 2,
+    },
+    'tool-2',
+  )
+  expect(appended.content).toContain('write_id is write-abc')
+  expect(appended.content).toContain('next chunk index is 2')
 })
