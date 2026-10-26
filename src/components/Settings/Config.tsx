@@ -735,6 +735,22 @@ export function Config({
       });
     }
   }, {
+    id: 'toolUseSummariesEnabled',
+    description: 'Generate a short label after completed tool batches using an auxiliary model request.',
+    label: 'Tool-use summaries',
+    searchText: 'tool use summary summaries model request auxiliary',
+    value: settingsData?.toolUseSummariesEnabled ?? false,
+    type: 'boolean' as const,
+    onChange(enabled: boolean) {
+      updateSettingsForSource('userSettings', {
+        toolUseSummariesEnabled: enabled,
+      });
+      setSettingsData(prev => ({
+        ...prev,
+        toolUseSummariesEnabled: enabled,
+      }));
+    },
+  }, {
     // How many times to retry transient API errors (429/529/5xx) before
     // giving up. 'unlimited' keeps retrying until success. 'default' = unset.
     id: 'apiRetryMaxRetries',

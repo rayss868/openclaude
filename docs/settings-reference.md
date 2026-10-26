@@ -80,6 +80,18 @@ Per-model overrides for `contextWindow` and `maxOutputTokens`. Used for OpenAI-c
 }
 ```
 
+### `toolUseSummariesEnabled` (boolean)
+
+When `true`, generate a short label after completed tool batches using an auxiliary model request. Defaults to `false` when unset. This can also be changed in `/config` under **Tool-use summaries**.
+
+```json
+{
+  "toolUseSummariesEnabled": true
+}
+```
+
+An explicit setting takes precedence over `CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES`; the environment variable is used only when this field is unset.
+
 ### `apiRetry` (object)
 
 Network retry policy for transient errors (rate limits `429`, capacity `529`, `5xx`, and brief network failure). Use it to control both how many times a `429` is retried and how long to wait between attempts. Both sub-fields can also be edited interactively from `/config`.

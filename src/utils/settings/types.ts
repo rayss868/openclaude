@@ -1006,6 +1006,12 @@ modelPricing: ModelPricingSchema.optional()
             'All four token fields are required. Keys are exact, case-sensitive resolved model ids. ' +
             'Shared project settings are ignored for personal USD accounting.',
         ),
+      toolUseSummariesEnabled: z
+        .boolean()
+        .optional()
+        .describe(
+          'When true, generate a short summary after completed tool batches. Defaults to false.',
+        ),
       apiRetry: z
         .object({
           maxRetries: z

@@ -334,7 +334,13 @@ export function ModelPicker(t0) {
     "modelPicker:decreaseEffort": () => handleCycleEffort("left"),
     "modelPicker:increaseEffort": () => handleCycleEffort("right"),
     ...(onRefresh ? {
-      "modelPicker:refresh": () => onRefresh()
+      "modelPicker:refresh": () => {
+        if (viewMode === 'search') {
+          onRefresh();
+          return false;
+        }
+        onRefresh();
+      }
     } : {})
   };
   let t13;

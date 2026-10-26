@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
 import React from 'react'
 
 import { render } from '../ink.js'
+import { KeybindingSetup } from '../keybindings/KeybindingProviderSetup.js'
 import { AppStateProvider, getDefaultAppState } from '../state/AppState.js'
 import {
   acquireSharedMutationLock,
@@ -237,6 +238,58 @@ function makeStdio(): {
   })
   return { stdin, stdout, getOutput: () => output }
 }
+
+test('r searches in search mode and refreshes in list mode', async () => {
+  const { ModelPicker } = await import(
+    `./ModelPicker.js?refresh-search-${Date.now()}-${Math.random()}`
+  )
+  const { stdin, stdout, getOutput } = makeStdio()
+  let refreshCount = 0
+
+  const instance = await render(
+    <AppStateProvider initialState={getDefaultAppState()}>
+      <KeybindingSetup>
+        <ModelPicker
+          initial="alpha-model"
+          onSelect={() => {}}
+          onRefresh={() => {
+            refreshCount += 1
+          }}
+          optionsOverride={[
+            { value: 'alpha-model', label: 'Alpha Model', description: '' },
+            { value: 'bravo-model', label: 'Bravo Model', description: '' },
+            { value: 'charlie-model', label: 'Charlie Model', description: '' },
+          ]}
+        />
+      </KeybindingSetup>
+    </AppStateProvider>,
+    {
+      stdin: stdin as unknown as NodeJS.ReadStream,
+      stdout: stdout as unknown as NodeJS.WriteStream,
+      exitOnCtrlC: false,
+    },
+  )
+
+  try {
+    await waitForCondition(() => stripAnsi(getOutput()).includes('Alpha Model'))
+    stdin.write('qzx')
+    await waitForCondition(() => stripAnsi(getOutput()).includes('qzx'))
+    stdin.write('r')
+    await waitForCondition(() => refreshCount === 1)
+    expect(stripAnsi(getOutput())).toContain('qzxr')
+
+    stdin.write('\r')
+    await waitForCondition(() => stripAnsi(getOutput()).includes('Press / to search'))
+    stdin.write('r')
+    await waitForCondition(() => refreshCount === 2)
+
+    expect(refreshCount).toBe(2)
+  } finally {
+    instance.unmount()
+    stdin.end()
+    stdout.end()
+  }
+})
 
 const CROSS_PROFILE_OPTIONS = [
   {

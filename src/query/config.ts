@@ -2,6 +2,7 @@ import { getSessionId } from '../bootstrap/state.js'
 import { checkStatsigFeatureGate_CACHED_MAY_BE_STALE } from '../services/analytics/growthbook.js'
 import type { SessionId } from '../types/ids.js'
 import { isEnvTruthy } from '../utils/envUtils.js'
+import { getSettingsForSource } from '../utils/settings/settings.js'
 
 // -- config
 
@@ -33,9 +34,9 @@ export function buildQueryConfig(): QueryConfig {
       streamingToolExecution: checkStatsigFeatureGate_CACHED_MAY_BE_STALE(
         'tengu_streaming_tool_execution2',
       ),
-      emitToolUseSummaries: isEnvTruthy(
-        process.env.CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES,
-      ),
+      emitToolUseSummaries:
+        getSettingsForSource('userSettings')?.toolUseSummariesEnabled ??
+        isEnvTruthy(process.env.CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES),
       isAnt: false,
       // Inlined from fastMode.ts to avoid pulling its heavy module graph
       // (axios, settings, auth, model, oauth, config) into test shards that
