@@ -198,6 +198,31 @@ export function isRunningOnHomespace(): boolean {
 }
 
 /**
+ * Parse an environment variable as a positive integer.
+ *
+ * Returns defaultValue when the variable is unset or its value is not a
+ * complete decimal representation of a positive safe integer. Partially
+ * parsed, fractional, scientific-notation, and oversized values (for
+ * example "15turns", "1.5", "1e2", or a value above Number.MAX_SAFE_INTEGER)
+ * fall back to defaultValue rather than being truncated.
+ */
+export function getEnvNumber(key: string, defaultValue: number): number {
+  const value = process.env[key]
+  if (value === undefined) {
+    return defaultValue
+  }
+  const trimmed = value.trim()
+  if (!/^(0|[1-9]\d*)$/.test(trimmed)) {
+    return defaultValue
+  }
+  const parsed = Number.parseInt(trimmed, 10)
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    return defaultValue
+  }
+  return parsed
+}
+
+/**
  * Conservative check for whether Claude Code is running inside a protected
  * (privileged or ASL3+) COO namespace or cluster.
  *
