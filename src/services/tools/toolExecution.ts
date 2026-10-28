@@ -73,6 +73,10 @@ import {
 import { logForDebugging } from '../../utils/debug.js'
 import { checkDoomLoop } from '../../utils/doomLoop.js'
 import {
+  recordRepeatedToolError,
+  resetToolErrorRepeats,
+} from '../../utils/toolErrorRepeats.js'
+import {
   AbortError,
   errorMessage,
   getErrnoCode,
@@ -997,13 +1001,18 @@ export async function checkPermissionsAndCallTool(
       }),
       ...mcpToolDetailsForAnalytics(tool.name, mcpServerType, mcpServerBaseUrl),
     })
+    const repeatedError = recordRepeatedToolError(
+      toolUseContext.agentId ?? 'main',
+      tool.name,
+      errorContent,
+    )
     return [
       {
         message: createUserMessage({
           content: [
             {
               type: 'tool_result',
-              content: `<tool_use_error>InputValidationError: ${errorContent}</tool_use_error>`,
+              content: `<tool_use_error>InputValidationError: ${errorContent}</tool_use_error>${repeatedError.nudge ?? ''}`,
               is_error: true,
               tool_use_id: toolUseID,
             },
@@ -1763,6 +1772,8 @@ export async function checkPermissionsAndCallTool(
       toolUseResult: unknown,
       preMappedBlock?: ToolResultBlockParam,
     ) {
+      // A successful call breaks any run of identical failures for this tool.
+      resetToolErrorRepeats(toolUseContext.agentId ?? 'main', tool.name)
       // Use the pre-mapped block when available (non-MCP tools where hooks
       // don't modify the output), otherwise map from scratch.
       const toolResultBlock = preMappedBlock
@@ -2089,13 +2100,18 @@ export async function checkPermissionsAndCallTool(
       }
     }
 
+    const repeatedError = recordRepeatedToolError(
+      toolUseContext.agentId ?? 'main',
+      tool.name,
+      content,
+    )
     return [
       {
         message: createUserMessage({
           content: [
             {
               type: 'tool_result',
-              content,
+              content: `${content}${repeatedError.nudge ?? ''}`,
               is_error: true,
               tool_use_id: toolUseID,
             },

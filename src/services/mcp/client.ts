@@ -52,6 +52,7 @@ import { ListMcpResourcesTool } from '../../tools/ListMcpResourcesTool/ListMcpRe
 import { type MCPProgress, MCPTool } from '../../tools/MCPTool/MCPTool.js'
 import { createMcpAuthTool } from '../../tools/McpAuthTool/McpAuthTool.js'
 import { ReadMcpResourceTool } from '../../tools/ReadMcpResourceTool/ReadMcpResourceTool.js'
+import { coerceArgsToInputSchema } from './argCoercion.js'
 import { createAbortController } from '../../utils/abortController.js'
 import { createCombinedAbortSignal } from '../../utils/combinedAbortSignal.js'
 import { AbortError, isAbortError } from '../../utils/errors.js'
@@ -2138,6 +2139,11 @@ export const fetchToolsForClient = memoizeWithLRU(
                 ? { 'claudecode/toolUseId': toolUseId }
                 : {}
 
+              // Models occasionally emit schema-typed arguments as strings (e.g.
+              // `limit: "2000"` for a number field), which MCP servers reject.
+              // Coerce those against the tool's input schema before sending.
+              const normalizedArgs = coerceArgsToInputSchema(args, tool.inputSchema)
+
               // Emit progress when tool starts
               if (onProgress && toolUseId) {
                 try {
@@ -2204,7 +2210,7 @@ export const fetchToolsForClient = memoizeWithLRU(
                     client: connectedClient,
                     clientConnection: client,
                     tool: tool.name,
-                    args,
+                    args: normalizedArgs,
                     meta,
                     signal: context.abortController.signal,
                     setAppState: context.setAppState,
