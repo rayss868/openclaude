@@ -15,7 +15,7 @@ import { hostname, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { Readable } from 'node:stream'
 import { expect, spyOn, test } from 'bun:test'
-import { getOriginalCwd, setOriginalCwd } from '../../bootstrap/state.js'
+import { getOriginalCwd, getProjectRoot, setOriginalCwd, setProjectRoot } from '../../bootstrap/state.js'
 import {
   getClaudeConfigHomeDirOverrideForTesting,
   setClaudeConfigHomeDirForTesting,
@@ -1238,6 +1238,7 @@ test('repository settings sources arrange their global gitignore rules', () => {
   const root = mkdtempSync(join(tmpdir(), 'openclaude-settings-gitignore-'))
   const project = join(root, 'project')
   const previousOriginalCwd = getOriginalCwd()
+  const previousProjectRoot = getProjectRoot()
   const previousOverride = getClaudeConfigHomeDirOverrideForTesting()
   const addRule = spyOn(
     gitignore,
@@ -1246,6 +1247,7 @@ test('repository settings sources arrange their global gitignore rules', () => {
   try {
     mkdirSync(project)
     setOriginalCwd(project)
+    setProjectRoot(project)
     setClaudeConfigHomeDirForTesting(join(root, 'config'))
     resetSettingsCache()
 
@@ -1274,6 +1276,7 @@ test('repository settings sources arrange their global gitignore rules', () => {
   } finally {
     addRule.mockRestore()
     setOriginalCwd(previousOriginalCwd)
+    setProjectRoot(previousProjectRoot)
     setClaudeConfigHomeDirForTesting(previousOverride)
     resetSettingsCache()
     rmSync(root, { recursive: true, force: true })

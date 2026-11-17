@@ -359,6 +359,13 @@ export async function resetForTesting(overrides?: {
   testOverrides = overrides ?? null
 }
 
+export async function reloadAfterSkillSourceSettingsChange(): Promise<void> {
+  if (disposed) return
+  dependencies.clearCommandsCache()
+  dependencies.resetSentSkillNames()
+  skillsChanged.emit()
+}
+
 export const _scheduleReloadForTesting = scheduleReload
 
 export function _setDependenciesForTesting(
@@ -371,5 +378,6 @@ export const skillChangeDetector = {
   initialize,
   dispose,
   subscribe,
+  reloadAfterSkillSourceSettingsChange,
   resetForTesting,
 }

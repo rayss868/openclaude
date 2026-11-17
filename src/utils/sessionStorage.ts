@@ -24,6 +24,7 @@ import {
 import {
   getOriginalCwd,
   getPlanSlugCache,
+  getProjectRoot,
   getPromptId,
   getReplayIndexBuilder,
   getSessionId,
@@ -565,7 +566,7 @@ export function isEphemeralToolProgress(dataType: unknown): boolean {
 }
 
 export function getTranscriptPath(): string {
-  const projectDir = getSessionProjectDir() ?? getProjectDir(getOriginalCwd())
+  const projectDir = getSessionProjectDir() ?? getProjectDir(getProjectRoot())
   return join(projectDir, `${getSessionId()}.jsonl`)
 }
 
@@ -585,7 +586,7 @@ export function getTranscriptPathForSession(sessionId: string): string {
   if (sessionId === getSessionId()) {
     return getTranscriptPath()
   }
-  const projectDir = getProjectDir(getOriginalCwd())
+  const projectDir = getProjectDir(getProjectRoot())
   return join(projectDir, `${sessionId}.jsonl`)
 }
 
@@ -613,7 +614,7 @@ export function getAgentTranscriptPath(agentId: AgentId): string {
   // Same sessionProjectDir consistency as getTranscriptPathForSession —
   // subagent transcripts live under the session dir, so if the session
   // transcript is at sessionProjectDir, subagent transcripts are too.
-  const projectDir = getSessionProjectDir() ?? getProjectDir(getOriginalCwd())
+  const projectDir = getSessionProjectDir() ?? getProjectDir(getProjectRoot())
   const sessionId = getSessionId()
   const subdir = agentTranscriptSubdirs.get(agentId)
   const base = subdir
@@ -692,7 +693,7 @@ export type RemoteAgentMetadata = {
 function getRemoteAgentsDir(): string {
   // Same sessionProjectDir fallback as getAgentTranscriptPath — the project
   // dir (containing the .jsonl), not the session dir, so sessionId is joined.
-  const projectDir = getSessionProjectDir() ?? getProjectDir(getOriginalCwd())
+  const projectDir = getSessionProjectDir() ?? getProjectDir(getProjectRoot())
   return join(projectDir, getSessionId(), 'remote-agents')
 }
 
@@ -771,7 +772,7 @@ export async function listRemoteAgentMetadata(): Promise<
 }
 
 export function sessionIdExists(sessionId: string): boolean {
-  const projectDir = getProjectDir(getOriginalCwd())
+  const projectDir = getProjectDir(getProjectRoot())
   const sessionFile = join(projectDir, `${sessionId}.jsonl`)
   const fs = getFsImplementation()
   try {
@@ -2504,7 +2505,7 @@ export async function hydrateRemoteSession(
     }
 
     // Ensure the project directory and session file exist
-    const projectDir = getProjectDir(getOriginalCwd())
+    const projectDir = getProjectDir(getProjectRoot())
     await mkdir(projectDir, { recursive: true, mode: 0o700 })
 
     const sessionFile = getTranscriptPathForSession(sessionId)
@@ -2558,7 +2559,7 @@ export async function hydrateFromCCRv2InternalEvents(
       return false
     }
 
-    const projectDir = getProjectDir(getOriginalCwd())
+    const projectDir = getProjectDir(getProjectRoot())
     await mkdir(projectDir, { recursive: true, mode: 0o700 })
 
     // Commit the foreground transcript before reporting hydration success.
@@ -3749,8 +3750,8 @@ async function trackSessionBranchingAnalytics(
 }
 
 export async function fetchLogs(limit?: number): Promise<LogOption[]> {
-  const projectDir = getProjectDir(getOriginalCwd())
-  const logs = await getSessionFilesLite(projectDir, limit, getOriginalCwd())
+  const projectDir = getProjectDir(getProjectRoot())
+  const logs = await getSessionFilesLite(projectDir, limit, getProjectRoot())
 
   await trackSessionBranchingAnalytics(logs)
 
@@ -4093,6 +4094,7 @@ export function saveWorktreeState(
         sessionId: worktreeSession.sessionId,
         tmuxSessionName: worktreeSession.tmuxSessionName,
         hookBased: worktreeSession.hookBased,
+        projectRootIsWorktree: worktreeSession.projectRootIsWorktree,
       }
     : null
   const project = getProject()
@@ -4430,7 +4432,7 @@ export async function searchSessionsByCustomTitle(
 ): Promise<LogOption[]> {
   const { limit, exact } = options || {}
   // Use worktree-aware loading to search across same-repo sessions
-  const worktreePaths = await getWorktreePaths(getOriginalCwd())
+  const worktreePaths = await getWorktreePaths(getProjectRoot())
   const allStatLogs = await getStatOnlyLogsForWorktrees(worktreePaths)
   // Enrich all logs to access customTitle metadata
   const { logs } = await enrichLogs(allStatLogs, 0, allStatLogs.length)
@@ -5214,7 +5216,7 @@ async function loadSessionFile(sessionId: UUID): Promise<{
   contextCollapseSnapshot: ContextCollapseSnapshotEntry | undefined
 }> {
   const sessionFile = join(
-    getSessionProjectDir() ?? getProjectDir(getOriginalCwd()),
+    getSessionProjectDir() ?? getProjectDir(getProjectRoot()),
     `${sessionId}.jsonl`,
   )
   return loadTranscriptFile(sessionFile)
@@ -5509,7 +5511,7 @@ async function getStatOnlyLogsForWorktrees(
   const projectsDir = getProjectsDir()
 
   if (worktreePaths.length <= 1) {
-    const cwd = getOriginalCwd()
+    const cwd = getProjectRoot()
     const projectDir = getProjectDir(cwd)
     return getSessionFilesLite(projectDir, undefined, cwd)
   }
@@ -5543,8 +5545,8 @@ async function getStatOnlyLogsForWorktrees(
     logForDebugging(
       `Failed to read projects dir ${projectsDir}, falling back to current project: ${e}`,
     )
-    const projectDir = getProjectDir(getOriginalCwd())
-    return getSessionFilesLite(projectDir, limit, getOriginalCwd())
+    const projectDir = getProjectDir(getProjectRoot())
+    return getSessionFilesLite(projectDir, limit, getProjectRoot())
   }
 
   for (const dirent of allDirents) {
@@ -5718,7 +5720,7 @@ export async function loadAllSubagentTranscriptsFromDisk(): Promise<{
   [agentId: string]: Message[]
 }> {
   const subagentsDir = join(
-    getSessionProjectDir() ?? getProjectDir(getOriginalCwd()),
+    getSessionProjectDir() ?? getProjectDir(getProjectRoot()),
     getSessionId(),
     'subagents',
   )

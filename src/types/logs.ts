@@ -184,6 +184,8 @@ export type PersistedWorktreeSession = {
   sessionId: string
   tmuxSessionName?: string
   hookBased?: boolean
+  /** True when entering this worktree also moved projectRoot (--worktree startup). */
+  projectRootIsWorktree?: boolean
 }
 
 /**

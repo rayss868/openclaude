@@ -543,6 +543,40 @@ for that profile. Query options such as `?reasoning=high` or `?thinking=disabled
 remain in the selected model, but context-limit keys use the model name before
 `?`. For example, `gpt-5.4?reasoning=high` uses the `gpt-5.4` context limit.
 
+### Session behavior
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `CLAUDE_CODE_DISABLE_ULTRATHINK` | No | Set truthy to stop the `ultrathink` keyword from raising the turn to high effort |
+| `CLAUDE_CODE_DISABLE_AGENT_PROGRESS_SUMMARIES` | No | Set truthy to stop periodic forked-agent progress-summary requests for running agents |
+| `CLAUDE_CODE_DISABLE_FILE_MENTIONS` | No | Set truthy so `@`-mentioned files pass their path only; contents are not read into context |
+| `CLAUDE_CODE_RESUME_HINT_COMMAND` | No | Override the program name printed in the exit-time resume hint (default: `openclaude`) |
+
+### Web search
+
+[Exa](https://exa.ai) is the default web search backend. With no setup, searches
+on non-Anthropic models use Exa's keyless free tier, which has per-second and
+daily limits. Run `/search` to pick a backend, add or remove an API key in a
+hidden input, check which backend is active (`/search status`), or run a test
+search (`/search test`). `/search` saves its choices to the `env` block of
+`~/.openclaude.json`; an `env` entry for the same variable in any
+`settings.json` takes precedence, and `/search` says so when that happens.
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `WEB_SEARCH_PROVIDER` | No | `auto` (default): keyed Exa first, then other configured backends in the auto chain, then the Exa free tier, then DuckDuckGo. Anthropic first-party, Vertex, Foundry, and Codex keep their built-in search in `auto`. Set one backend (`exa`, `anysearch`, `keenable`, `aimlapi`, `tavily`, `brave`, `firecrawl`, `you`, `jina`, `bing`, `mojeek`, `linkup`, `ollama`, `ddg`, `custom`, or `native`) to use only that backend and fail instead of falling back. AnySearch, Keenable and AI/ML API (`aimlapi`, billed per search, uses `AIMLAPI_API_KEY`) are explicit-only and do not join `auto`. |
+| `ANYSEARCH_API_KEY` | No | Optional AnySearch API key. Without one, `/search anysearch` sends anonymous requests without an Authorization header. Add or remove a saved key with `/search key anysearch` or `/search remove-key anysearch`. |
+| `ANYSEARCH_MAX_RESULTS` | No | Requested AnySearch results, integer 1–10 (default `10`; invalid values use the default). |
+| `KEENABLE_API_KEY` | No | Optional Keenable API key for higher rate limits. Without one, `/search keenable` uses the keyless endpoint. Add or remove a saved key with `/search key keenable` or `/search remove-key keenable`. |
+| `EXA_API_KEY` | No | Exa API key for higher limits than the free tier. Free keys: https://dashboard.exa.ai/api-keys |
+| `EXA_SEARCH_TYPE` | No | Exa search type with a key: `auto` (default), `instant`, `fast`, `deep-lite`, `deep`, or `deep-reasoning`. The deep types can need a higher `WEB_SEARCH_TIMEOUT_SEC`. |
+| `EXA_NUM_RESULTS` | No | Results per Exa search, 1–50 (default `15`). |
+| `EXA_FREE_TIER` | No | Set to `0` so searches never go to Exa without a key. |
+| `WEB_SEARCH_TIMEOUT_SEC` | No | Timeout for built-in search backends in seconds (default `15`). |
+
+See [Web Search Providers](../src/tools/WebSearchTool/README_SEARCH_PROVIDERS.md)
+for every backend, its key, and the custom-API options.
+
 ### Per-model limit overrides (`settings.json`)
 
 When a custom OpenAI-compatible provider does not expose context metadata from

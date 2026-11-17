@@ -16,9 +16,11 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
   getOriginalCwd,
+  getProjectRoot,
   getSessionId,
   isSessionPersistenceDisabled,
   setOriginalCwd,
+  setProjectRoot,
   setSessionPersistenceDisabled,
   switchSession,
 } from '../bootstrap/state.js'
@@ -71,6 +73,7 @@ let originalCwd = ''
 let originalSessionId = ''
 let originalConfigOverride: string | undefined
 let originalPersistenceDisabled = false
+let originalProjectRoot = ''
 let originalNodeEnv: string | undefined
 let originalTestPersistence: string | undefined
 let originalPersistence: string | undefined
@@ -108,6 +111,9 @@ async function prepareHydration(): Promise<string> {
   await mkdir(workspaceDir, { recursive: true })
   setClaudeConfigHomeDirForTesting(configDir)
   setOriginalCwd(workspaceDir)
+  // Session-record paths anchor to the project root, so the fixture must
+  // pin it alongside originalCwd or transcripts resolve to the real repo.
+  setProjectRoot(workspaceDir)
   switchSession(SESSION_ID as never)
   resetProjectForTesting()
   const transcriptPath = getTranscriptPathForSession(SESSION_ID)
@@ -119,6 +125,7 @@ beforeEach(async () => {
   await acquireSharedMutationLock('utils/sessionStorage.atomicReplace.test.ts')
   testRoot = await mkdtemp(join(tmpdir(), 'openclaude-atomic-session-'))
   originalCwd = getOriginalCwd()
+  originalProjectRoot = getProjectRoot()
   originalSessionId = getSessionId()
   originalConfigOverride = getClaudeConfigHomeDirOverrideForTesting()
   originalPersistenceDisabled = isSessionPersistenceDisabled()
@@ -140,6 +147,7 @@ afterEach(async () => {
     resetProjectForTesting()
     switchSession(originalSessionId as never)
     setOriginalCwd(originalCwd)
+    setProjectRoot(originalProjectRoot)
     setClaudeConfigHomeDirForTesting(originalConfigOverride)
     setSessionPersistenceDisabled(originalPersistenceDisabled)
     if (originalNodeEnv === undefined) delete process.env.NODE_ENV

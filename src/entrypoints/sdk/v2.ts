@@ -266,6 +266,7 @@ class SDKSessionImpl implements SDKSession {
       sessionProjectDir: this._sessionProjectDir,
       cwd: this.options.cwd,
       originalCwd: this.options.cwd,
+      projectRoot: this.options.cwd,
     }
 
     const self = this
