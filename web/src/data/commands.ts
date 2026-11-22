@@ -141,6 +141,7 @@ export const commands: SlashCommand[] = [
   { name: 'vim', description: 'Toggle between Vim and Normal editing modes', category: 'customization' },
   { name: 'statusline', description: "Set up OpenClaude's status line UI", category: 'customization' },
   { name: 'terminal-setup', description: 'Install the Shift+Enter key binding for newlines', category: 'customization' },
+  { name: 'focus', description: 'Toggle focus view, fullscreen only (see /tui fullscreen). Hides earlier turns; keeps the latest prompt, tool summary, failures and response', category: 'customization' },
   { name: 'commit-message', description: 'Configure commit attribution text', category: 'customization', args: '[status|off|default|set "text"|co-author <name> <email>]' },
   { name: 'buddy', description: 'Hatch, pet, and manage your OpenClaude companion', category: 'customization', args: '[status|mute|unmute|set <form>|name <name>|help]' },
   { name: 'ads', description: 'Earn opengateway credits from sponsored tips (ads.gitlawb.com)', category: 'customization', args: 'on | off' },
