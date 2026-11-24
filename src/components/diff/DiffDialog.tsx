@@ -24,6 +24,7 @@ import { DiffFileList } from './DiffFileList.js'
 import {
   getDiffSplitLayout,
   MIN_DIFF_PREVIEW_COLUMNS,
+  narrowHintVisible,
 } from './diffLayout.js'
 
 type Props = {
@@ -272,22 +273,17 @@ export function DiffDialog({ messages, onDone }: Props) {
       )
     ) : viewMode === 'list' ? (
       <Box flexDirection="column" marginTop={1}>
-        {splitLayout.showPreview ? (
-          <Box flexDirection="row" gap={2}>
+        {narrowHintVisible(terminalSize.columns) ? (
+          <Box marginTop={1}>
+            <Text dimColor>
+              Resize your terminal to at least {MIN_DIFF_PREVIEW_COLUMNS}{' '}
+              columns to show the diff panel
+            </Text>
+          </Box>
+        ) : (
+          <>
             <Box
               flexDirection="column"
-              flexShrink={0}
-              width={splitLayout.listWidth}
-            >
-              <DiffFileList
-                files={diffData.files}
-                selectedIndex={selectedIndex}
-                width={splitLayout.listWidth}
-              />
-            </Box>
-            <Box
-              flexDirection="column"
-              width={splitLayout.previewWidth}
               height={splitLayout.previewHeight}
               borderStyle="round"
               borderDimColor
@@ -301,18 +297,14 @@ export function DiffDialog({ messages, onDone }: Props) {
                 isBinary={selectedFile?.isBinary}
                 isTruncated={selectedFile?.isTruncated}
                 isUntracked={selectedFile?.isUntracked}
-                width={Math.max(20, splitLayout.previewWidth - 4)}
+                width={Math.max(20, terminalSize.columns - 12)}
               />
             </Box>
-          </Box>
-        ) : (
-          <>
-            <DiffFileList files={diffData.files} selectedIndex={selectedIndex} />
-            <Box marginTop={1}>
-              <Text dimColor>
-                Resize your terminal to at least {MIN_DIFF_PREVIEW_COLUMNS}{' '}
-                columns to show the diff panel
-              </Text>
+            <Box flexDirection="column" marginTop={1}>
+              <DiffFileList
+                files={diffData.files}
+                selectedIndex={selectedIndex}
+              />
             </Box>
           </>
         )}
