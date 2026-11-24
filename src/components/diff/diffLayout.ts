@@ -1,10 +1,12 @@
 /**
  * Layout math for the /diff split preview.
  *
- * The 110-column floor matches Claude Code's diff panel: below it the panel
- * shows "Resize your terminal to at least 110 columns to show the diff panel".
- * Claude also auto-opens its panel at 144 columns; OpenClaude's /diff is always
- * opened manually, so only the manual floor applies here.
+ * Mirrors Claude Code's diff panel: its sidebar is docked only when the
+ * terminal is at least 110 columns wide (144 for auto-open, which OpenClaude
+ * never does because /diff is always invoked manually), and below that the
+ * panel is replaced by "Resize your terminal to at least 110 columns to show
+ * the diff panel". Inside the dialog the diff body and the file list share
+ * one column stack, so there is no separate narrow-screen file list.
  */
 export const MIN_DIFF_PREVIEW_COLUMNS = 110
 
@@ -48,6 +50,11 @@ export function getDiffSplitLayout({
     PREVIEW_MAX_HEIGHT,
   )
   return { showPreview, listWidth, previewWidth, previewHeight }
+}
+
+/** Claude shows its resize prompt only while the panel cannot be drawn. */
+export function narrowHintVisible(columns: number): boolean {
+  return columns < MIN_DIFF_PREVIEW_COLUMNS
 }
 
 function clamp(value: number, min: number, max: number): number {

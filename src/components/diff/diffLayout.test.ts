@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   getDiffSplitLayout,
   MIN_DIFF_PREVIEW_COLUMNS,
+  narrowHintVisible,
 } from './diffLayout.js'
 
 describe('getDiffSplitLayout', () => {
@@ -34,5 +35,10 @@ describe('getDiffSplitLayout', () => {
 
   test('uses 110 as the manual diff-panel floor', () => {
     expect(MIN_DIFF_PREVIEW_COLUMNS).toBe(110)
+  })
+
+  test('hides the narrow-terminal hint once the split is shown', () => {
+    expect(narrowHintVisible(109)).toBe(true)
+    expect(narrowHintVisible(110)).toBe(false)
   })
 })
