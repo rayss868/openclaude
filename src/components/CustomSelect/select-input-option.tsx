@@ -74,9 +74,17 @@ type Props<T> = {
    * Callback to change the selected image index.
    */
   onSelectedImageIndexChange?: (index: number) => void;
+  /**
+   * Called when the pointer enters the row (fullscreen mouse support).
+   */
+  onMouseEnter?: () => void;
+  /**
+   * Called when the row is clicked.
+   */
+  onClick?: () => void;
 };
 export function SelectInputOption(t0) {
-  const $ = _c(100);
+  const $ = _c(102);
   const {
     option,
     isFocused,
@@ -100,7 +108,9 @@ export function SelectInputOption(t0) {
     imagesSelected,
     selectedImageIndex: t3,
     onImagesSelectedChange,
-    onSelectedImageIndexChange
+    onSelectedImageIndexChange,
+    onMouseEnter,
+    onClick
   } = t0;
   const showLabelProp = t1 === undefined ? false : t1;
   const resetCursorOnUpdate = t2 === undefined ? false : t2;
@@ -428,13 +438,15 @@ export function SelectInputOption(t0) {
     t33 = $[74];
   }
   let t34;
-  if ($[75] !== isFocused || $[76] !== isSelected || $[77] !== shouldShowDownArrow || $[78] !== shouldShowUpArrow || $[79] !== t33) {
-    t34 = <SelectOption isFocused={isFocused} isSelected={isSelected} shouldShowDownArrow={shouldShowDownArrow} shouldShowUpArrow={shouldShowUpArrow} declareCursor={false}>{t33}</SelectOption>;
+  if ($[75] !== isFocused || $[76] !== isSelected || $[77] !== shouldShowDownArrow || $[78] !== shouldShowUpArrow || $[79] !== t33 || $[100] !== onMouseEnter || $[101] !== onClick) {
+    t34 = <SelectOption isFocused={isFocused} isSelected={isSelected} shouldShowDownArrow={shouldShowDownArrow} shouldShowUpArrow={shouldShowUpArrow} declareCursor={false} onMouseEnter={onMouseEnter} onClick={onClick}>{t33}</SelectOption>;
     $[75] = isFocused;
     $[76] = isSelected;
     $[77] = shouldShowDownArrow;
     $[78] = shouldShowUpArrow;
     $[79] = t33;
+    $[100] = onMouseEnter;
+    $[101] = onClick;
     $[80] = t34;
   } else {
     t34 = $[80];

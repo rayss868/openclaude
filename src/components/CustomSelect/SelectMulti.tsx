@@ -56,7 +56,7 @@ export type SelectMultiProps<T> = {
   readonly onRemoveImage?: (id: number) => void;
 };
 export function SelectMulti(t0) {
-  const $ = _c(44);
+  const $ = _c(47);
   const {
     isDisabled: t1,
     visibleOptionCount: t2,
@@ -151,9 +151,27 @@ export function SelectMulti(t0) {
             state.updateInputValue(option.value, value);
           }} onSubmit={_temp} onExit={() => {
             onCancel();
-          }} layout="compact" onOpenEditor={onOpenEditor} onImagePaste={onImagePaste} pastedContents={pastedContents} onRemoveImage={onRemoveImage}><Text color={isSelected ? "success" : undefined}>[{isSelected ? figures.tick : " "}]{" "}</Text></SelectInputOption></Box>;
+          }} layout="compact" onOpenEditor={onOpenEditor} onImagePaste={onImagePaste} pastedContents={pastedContents} onRemoveImage={onRemoveImage} onMouseEnter={() => {
+            if (!isDisabled) {
+              state.focusOption(option.value);
+            }
+          }} onClick={() => {
+            if (!isDisabled) {
+              state.focusOption(option.value);
+            }
+          }}><Text color={isSelected ? "success" : undefined}>[{isSelected ? figures.tick : " "}]{" "}</Text></SelectInputOption></Box>;
       }
-      return <Box key={String(option.value)} gap={1}><SelectOption isFocused={isOptionFocused} isSelected={false} shouldShowDownArrow={areMoreOptionsBelow && isLastVisibleOption} shouldShowUpArrow={areMoreOptionsAbove && isFirstVisibleOption} description={option.description}>{!hideIndexes && <Text dimColor={true}>{`${i}.`.padEnd(maxIndexWidth)}</Text>}<Text color={isSelected ? "success" : undefined}>[{isSelected ? figures.tick : " "}]</Text><Text color={isOptionFocused ? "suggestion" : undefined}>{option.label}</Text></SelectOption></Box>;
+      return <Box key={String(option.value)} gap={1}><SelectOption isFocused={isOptionFocused} isSelected={false} shouldShowDownArrow={areMoreOptionsBelow && isLastVisibleOption} shouldShowUpArrow={areMoreOptionsAbove && isFirstVisibleOption} description={option.description} onMouseEnter={() => {
+          if (!isDisabled) {
+            state.focusOption(option.value);
+          }
+        }} onClick={() => {
+          if (isDisabled || option.disabled === true) {
+            return;
+          }
+          state.focusOption(option.value);
+          state.toggleValue(option.value);
+        }}>{!hideIndexes && <Text dimColor={true}>{`${i}.`.padEnd(maxIndexWidth)}</Text>}<Text color={isSelected ? "success" : undefined}>[{isSelected ? figures.tick : " "}]</Text><Text color={isOptionFocused ? "suggestion" : undefined}>{option.label}</Text></SelectOption></Box>;
     });
     $[17] = hideIndexes;
     $[18] = isDisabled;
@@ -187,11 +205,20 @@ export function SelectMulti(t0) {
     t10 = $[34];
   }
   let t11;
-  if ($[35] !== onSubmit || $[36] !== state.isSubmitFocused || $[37] !== submitButtonText) {
-    t11 = submitButtonText && onSubmit && <Box marginTop={0} gap={1}>{state.isSubmitFocused ? <Text color="suggestion">{figures.pointer}</Text> : <Text> </Text>}<Box marginLeft={3}><Text color={state.isSubmitFocused ? "suggestion" : undefined} bold={true}>{submitButtonText}</Text></Box></Box>;
+  if ($[35] !== onSubmit || $[36] !== state.isSubmitFocused || $[37] !== submitButtonText || $[44] !== state.focusSubmit || $[45] !== state.unfocusSubmit || $[46] !== state.selectedValues) {
+    t11 = submitButtonText && onSubmit && <Box marginTop={0} gap={1} onMouseEnter={() => {
+        state.focusSubmit();
+      }} onMouseLeave={() => {
+        state.unfocusSubmit();
+      }} onClick={() => {
+        onSubmit(state.selectedValues);
+      }}>{state.isSubmitFocused ? <Text color="suggestion">{figures.pointer}</Text> : <Text> </Text>}<Box marginLeft={3}><Text color={state.isSubmitFocused ? "suggestion" : undefined} bold={true}>{submitButtonText}</Text></Box></Box>;
     $[35] = onSubmit;
     $[36] = state.isSubmitFocused;
     $[37] = submitButtonText;
+    $[44] = state.focusSubmit;
+    $[45] = state.unfocusSubmit;
+    $[46] = state.selectedValues;
     $[38] = t11;
   } else {
     t11 = $[38];

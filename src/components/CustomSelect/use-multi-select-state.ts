@@ -200,6 +200,27 @@ export function useMultiSelectState<T>({
     [selectedValues, onChange],
   )
 
+  // Mouse support: a click toggles the row exactly like Space does on the
+  // keyboard-focused option.
+  const toggleValue = useCallback(
+    (value: T) => {
+      updateSelectedValues(prev =>
+        prev.includes(value)
+          ? prev.filter(v => v !== value)
+          : [...prev, value],
+      )
+    },
+    [updateSelectedValues],
+  )
+
+  const focusSubmit = useCallback(() => {
+    setIsSubmitFocused(true)
+  }, [])
+
+  const unfocusSubmit = useCallback(() => {
+    setIsSubmitFocused(false)
+  }, [])
+
   const navigation = useSelectNavigation<T>({
     visibleOptionCount,
     options,
@@ -409,6 +430,9 @@ export function useMultiSelectState<T>({
     inputValues,
     isSubmitFocused,
     updateInputValue,
+    toggleValue,
+    focusSubmit,
+    unfocusSubmit,
     onCancel,
   }
 }

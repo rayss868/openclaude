@@ -93,6 +93,8 @@ export function Tabs(t0) {
   const selectedTabIndex = isControlled ? controlledTabIndex !== -1 ? controlledTabIndex : 0 : internalSelectedTab;
   const modalScrollRef = useModalScrollRef();
   const [headerFocused, setHeaderFocused] = useState(initialHeaderFocused);
+  // Fullscreen mouse support: hover previews a tab, click switches to it.
+  const [hoveredTabIndex, setHoveredTabIndex] = useState(-1);
   let t3;
   if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
     t3 = () => setHeaderFocused(true);
@@ -202,8 +204,15 @@ export function Tabs(t0) {
   const t15 = !hidden && <Box key={`${selectedTabIndex}-${headerFocused ? "focused" : "blurred"}`} flexDirection="row" gap={1} flexShrink={modalScrollRef ? 0 : undefined}>{title !== undefined && <Text bold={true} color={color}>{title}</Text>}{tabs.map((t16, i) => {
       const [id, title_0] = t16;
       const isCurrent = selectedTabIndex === i;
-      const hasColorCursor = color && isCurrent && headerFocused;
-      return <Text key={id} backgroundColor={hasColorCursor ? color : undefined} color={hasColorCursor ? "inverseText" : undefined} inverse={isCurrent && !hasColorCursor} bold={isCurrent}>{" "}{title_0}{" "}</Text>;
+      const isHovered = hoveredTabIndex === i;
+      const hasColorCursor = (color && isCurrent && headerFocused) || (color && isHovered && !isCurrent);
+      return <Box key={id} onClick={() => {
+        if (i !== selectedTabIndex) {
+          handleTabChange(i - selectedTabIndex);
+        } else {
+          setHeaderFocused(true);
+        }
+      }} onMouseEnter={() => setHoveredTabIndex(i)} onMouseLeave={() => setHoveredTabIndex(current => current === i ? -1 : current)}><Text backgroundColor={hasColorCursor ? color : undefined} color={hasColorCursor ? "inverseText" : undefined} inverse={(isCurrent && !hasColorCursor) || (isHovered && !hasColorCursor)} bold={isCurrent || isHovered}>{" "}{title_0}{" "}</Text></Box>;
     })}{spacerWidth > 0 && <Text>{" ".repeat(spacerWidth)}</Text>}</Box>;
   let t17;
   if ($[11] !== children || $[12] !== contentHeight || $[13] !== contentWidth || $[14] !== hidden || $[15] !== modalScrollRef || $[16] !== selectedTabIndex) {
