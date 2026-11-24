@@ -140,6 +140,26 @@ export type MultiSelectState<T> = {
   isSubmitFocused: boolean
 
   /**
+   * Focus an option by value.
+   */
+  focusOption: (value: T | undefined) => void
+
+  /**
+   * Toggle a value's selected state, used by mouse clicks.
+   */
+  toggleValue: (value: T) => void
+
+  /**
+   * Focus the submit button, used by mouse hover.
+   */
+  focusSubmit: () => void
+
+  /**
+   * Unfocus the submit button.
+   */
+  unfocusSubmit: () => void
+
+  /**
    * Update an input field value.
    */
   updateInputValue: (value: T, inputValue: string) => void
