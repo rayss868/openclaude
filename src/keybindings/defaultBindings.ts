@@ -293,11 +293,10 @@ export const DEFAULT_BINDINGS: KeybindingBlock[] = [
         },
       ]
     : []),
-  // Diff dialog navigation
+  // Diff pane navigation
   {
-    context: 'DiffDialog',
+    context: 'DiffPane',
     bindings: {
-      escape: 'diff:dismiss',
       left: 'diff:previousSource',
       right: 'diff:nextSource',
       up: 'diff:previousFile',

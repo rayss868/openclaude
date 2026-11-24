@@ -5,6 +5,8 @@ import { fileURLToPath } from 'url';
 import { ModalContext } from '../context/modalContext.js';
 import { PromptOverlayProvider, usePromptOverlay, usePromptOverlayDialog } from '../context/promptOverlayContext.js';
 import { useTerminalSize } from '../hooks/useTerminalSize.js';
+import { TerminalSizeContext } from '../ink/components/TerminalSizeContext.js';
+import { DIFF_PANE_RIGHT_PADDING, getDiffPaneWidth, MIN_DIFF_PREVIEW_COLUMNS } from './diff/diffLayout.js';
 import ScrollBox, { type ScrollBoxHandle } from '../ink/components/ScrollBox.js';
 import instances from '../ink/instances.js';
 import { Box, Text } from '../ink.js';
@@ -49,6 +51,11 @@ type Props = {
   /** Ref passed via ModalContext so Tabs (or any scroll-owning descendant)
    *  can attach it to their own ScrollBox for tall content. */
   modalScrollRef?: React.RefObject<ScrollBoxHandle | null>;
+  /** Right-docked pane beside the transcript (the /diff panel). Takes its
+   *  own width; the transcript column shrinks to make room. Fullscreen only —
+   *  inline rendering has no stable right edge to dock against, so the pane
+   *  is appended below the transcript instead. */
+  sidePane?: ReactNode;
   /** Ref to the scroll box for keyboard scrolling. RefObject (not Ref) so
    *  pillVisible's useSyncExternalStore can subscribe to scroll changes. */
   scrollRef?: RefObject<ScrollBoxHandle | null>;
@@ -268,7 +275,7 @@ export function computeUnseenDivider(messages: readonly Message[], dividerIndex:
  * so nothing can accidentally render outside it.
  */
 export function FullscreenLayout(t0) {
-  const $ = _c(47);
+  const $ = _c(51);
   const {
     scrollable,
     bottom,
@@ -276,6 +283,7 @@ export function FullscreenLayout(t0) {
     bottomFloat,
     modal,
     modalScrollRef,
+    sidePane,
     scrollRef,
     dividerYRef,
     hidePill: t1,
@@ -356,14 +364,21 @@ export function FullscreenLayout(t0) {
     } else {
       t10 = $[10];
     }
+    const paneWidth = sidePane == null ? 0 : getDiffPaneWidth(columns);
+    const dockWidth = paneWidth;
+    const transcriptColumns = columns - dockWidth;
+    const transcript = <TerminalSizeContext.Provider value={{ columns: transcriptColumns, rows: terminalRows }}><ScrollBox ref={scrollRef} flexGrow={1} flexDirection="column" paddingTop={t9} stickyScroll={true}>{t10}{overlay}</ScrollBox></TerminalSizeContext.Provider>;
     let t11;
-    if ($[11] !== overlay || $[12] !== scrollRef || $[13] !== t10 || $[14] !== t9) {
-      t11 = <ScrollBox ref={scrollRef} flexGrow={1} flexDirection="column" paddingTop={t9} stickyScroll={true}>{t10}{overlay}</ScrollBox>;
+    if ($[11] !== overlay || $[12] !== scrollRef || $[13] !== t10 || $[14] !== t9 || $[48] !== sidePane || $[49] !== columns || $[50] !== terminalRows) {
+      t11 = sidePane == null ? transcript : paneWidth > 0 ? <Box flexDirection="row" flexGrow={1} overflow="hidden"><Box flexGrow={1} overflow="hidden">{transcript}</Box><Box width={dockWidth} flexShrink={0}><TerminalSizeContext.Provider value={{ columns: paneWidth, rows: terminalRows }}>{sidePane}<Box width={DIFF_PANE_RIGHT_PADDING} /></TerminalSizeContext.Provider></Box></Box> : <Box flexDirection="column" flexGrow={1} overflow="hidden">{transcript}<Text dimColor>Resize your terminal to at least {MIN_DIFF_PREVIEW_COLUMNS} columns to show the diff panel</Text></Box>;
       $[11] = overlay;
       $[12] = scrollRef;
       $[13] = t10;
       $[14] = t9;
       $[15] = t11;
+      $[48] = sidePane;
+      $[49] = columns;
+      $[50] = terminalRows;
     } else {
       t11 = $[15];
     }
@@ -445,13 +460,14 @@ export function FullscreenLayout(t0) {
     return t19;
   }
   let t8;
-  if ($[42] !== bottom || $[43] !== modal || $[44] !== overlay || $[45] !== scrollable) {
-    t8 = <>{scrollable}{bottom}{overlay}{modal}</>;
+  if ($[42] !== bottom || $[43] !== modal || $[44] !== overlay || $[45] !== scrollable || $[48] !== sidePane) {
+    t8 = <>{sidePane != null ? <Box flexDirection="row" flexGrow={1} overflow="hidden">{scrollable}<Box flexShrink={0}>{sidePane}</Box></Box> : scrollable}{bottom}{overlay}{modal}</>;
     $[42] = bottom;
     $[43] = modal;
     $[44] = overlay;
     $[45] = scrollable;
     $[46] = t8;
+    $[48] = sidePane;
   } else {
     t8 = $[46];
   }

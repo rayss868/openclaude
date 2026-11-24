@@ -89,7 +89,7 @@ function inferContextFromAction(action: string): string {
     attachments: 'Attachments',
     footer: 'Footer',
     messageSelector: 'MessageSelector',
-    diff: 'DiffDialog',
+    diff: 'DiffPane',
     modelPicker: 'ModelPicker',
     select: 'Select',
     permission: 'Confirmation',

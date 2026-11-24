@@ -1275,7 +1275,7 @@ export function useTypeahead({
   // This allows Chat's resolver to see Autocomplete and defer to its bindings for up/down.
   useRegisterKeybindingContext('Autocomplete', isAutocompleteActive);
 
-  // Disable autocomplete keybindings when a modal overlay (e.g., DiffDialog) is active,
+  // Disable autocomplete keybindings when a modal overlay (e.g., the diff pane) is active,
   // so escape reaches the overlay's handler instead of dismissing autocomplete
   useKeybindings(autocompleteHandlers, {
     context: 'Autocomplete',

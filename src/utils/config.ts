@@ -571,6 +571,12 @@ export type GlobalConfig = {
   // Mouse wheel scroll speed multiplier (rows per wheel event, baseline 1).
   // Set via /scroll-speed. CLAUDE_CODE_SCROLL_SPEED env var takes precedence.
   scrollSpeed?: number
+
+  // Whether the right-docked diff pane is open. /diff toggles it; the pane
+  // itself requires a terminal at least 110 columns wide (same gate as
+  // Claude Code's diff sidebar).
+  diffSidebarOpen?: boolean
+
   // GitHub repo path mapping for teleport directory switching
   // Key: "owner/repo" (lowercase), Value: array of absolute paths where repo is cloned
   githubRepoPaths?: Record<string, string[]>
@@ -832,6 +838,7 @@ export const GLOBAL_CONFIG_KEYS = [
   'flickerFreeMode',
   'focusView',
   'scrollSpeed',
+  'diffSidebarOpen',
   'permissionExplainerEnabled',
   'prStatusFooterEnabled',
   'defaultStatusLineEnabled',
