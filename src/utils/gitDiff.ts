@@ -108,7 +108,7 @@ export async function fetchGitDiff(): Promise<GitDiffResult | null> {
 }
 
 /**
- * Fetch git diff hunks on-demand (for DiffDialog).
+ * Fetch git diff hunks on-demand for the diff pane.
  * Separated from fetchGitDiff() to avoid expensive calls during polling.
  */
 export async function fetchGitDiffHunks(): Promise<

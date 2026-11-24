@@ -1,43 +1,36 @@
 import { describe, expect, test } from 'bun:test'
-
 import {
-  getDiffSplitLayout,
+  AUTO_OPEN_DIFF_COLUMNS,
+  DIFF_PANE_RIGHT_PADDING,
+  getDiffPaneWidth,
   MIN_DIFF_PREVIEW_COLUMNS,
   narrowHintVisible,
 } from './diffLayout.js'
 
-describe('getDiffSplitLayout', () => {
-  test('hides the preview below the Claude-compatible 110 columns', () => {
-    expect(getDiffSplitLayout({ columns: 109, rows: 40 }).showPreview).toBe(
-      false,
-    )
+describe('getDiffPaneWidth', () => {
+  test('does not dock below the minimum terminal width', () => {
+    expect(getDiffPaneWidth(109)).toBe(0)
   })
 
-  test('shows the preview at 110 columns', () => {
-    expect(getDiffSplitLayout({ columns: 110, rows: 40 }).showPreview).toBe(
-      true,
-    )
+  test('uses the 45% pane width at the dock threshold', () => {
+    expect(getDiffPaneWidth(MIN_DIFF_PREVIEW_COLUMNS)).toBe(49)
   })
 
-  test('leaves dialog chrome inside the terminal width', () => {
-    const layout = getDiffSplitLayout({ columns: 120, rows: 40 })
-    expect(layout.listWidth).toBe(43)
-    expect(layout.previewWidth).toBe(65)
-    expect(layout.listWidth + 2 + layout.previewWidth).toBe(110)
+  test('caps the pane while preserving the transcript on wide terminals', () => {
+    expect(getDiffPaneWidth(240)).toBe(90)
   })
 
-  test('clamps the preview height to the available modal rows', () => {
-    expect(getDiffSplitLayout({ columns: 120, rows: 12 }).previewHeight).toBe(8)
-    expect(getDiffSplitLayout({ columns: 120, rows: 80 }).previewHeight).toBe(
-      24,
-    )
+  test('matches the auto-open threshold used by Claude Code', () => {
+    expect(AUTO_OPEN_DIFF_COLUMNS).toBe(144)
   })
 
-  test('uses 110 as the manual diff-panel floor', () => {
-    expect(MIN_DIFF_PREVIEW_COLUMNS).toBe(110)
+  test('leaves the configured trailing padding outside the pane', () => {
+    expect(DIFF_PANE_RIGHT_PADDING).toBe(1)
   })
+})
 
-  test('hides the narrow-terminal hint once the split is shown', () => {
+describe('narrowHintVisible', () => {
+  test('shows the resize hint only below the dock threshold', () => {
     expect(narrowHintVisible(109)).toBe(true)
     expect(narrowHintVisible(110)).toBe(false)
   })

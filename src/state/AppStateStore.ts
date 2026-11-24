@@ -101,6 +101,12 @@ export type AppState = DeepImmutable<{
   // AppState (not local) so the panel can read it directly without prop-drilling
   // through PromptInput → PromptInputFooter.
   coordinatorTaskIndex: number
+  /**
+   * Right-docked diff pane visibility, toggled by /diff. Optional so the
+   * diff pane is simply absent from state shape in strips that never mount
+   * it; `getDefaultAppState()` seeds it to false.
+   */
+  diffPanelVisible?: boolean
   viewSelectionMode: 'none' | 'selecting-agent' | 'viewing-agent'
   // Which footer pill is focused (arrow-key navigation below the prompt).
   // Lives in AppState so pill components rendered outside PromptInput
@@ -479,6 +485,7 @@ export function getDefaultAppState(): AppState {
     expandedView: 'none',
     isBriefOnly: false,
     selectedIPAgentIndex: -1,
+    diffPanelVisible: false,
     coordinatorTaskIndex: -1,
     viewSelectionMode: 'none',
     footerSelection: null,

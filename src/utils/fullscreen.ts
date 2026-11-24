@@ -107,7 +107,7 @@ export function _resetTmuxControlModeProbeForTesting(): void {
 
 /**
  * Whether fullscreen (flicker-free) mode is enabled. Env var takes highest
- * precedence, then the `flickerFreeMode` config setting, then defaults to off.
+ * precedence, then the `flickerFreeMode` config setting, then defaults to on.
  * Users can enable via `/config` instead of setting the env.
  *
  * Priority order:
@@ -115,7 +115,16 @@ export function _resetTmuxControlModeProbeForTesting(): void {
  *   CLAUDE_CODE_NO_FLICKER=1  → always on (overrides tmux -CC guard too)
  *   tmux -CC detected         → off (corrupts terminal state)
  *   config flickerFreeMode    → on/off per user preference
- *   default                   → on (mouse hover/click needs alt-screen tracking)
+ *   default                   → on
+ *
+ * Mouse hover/click is not a separate toggle: it rides on alt-screen tracking.
+ * Claude Code 2.1.331 wires it the same way — `<AlternateScreen
+ * mouseTracking="full">` emits DEC 1000/1002/1003/1006 in the same mount effect
+ * that enters DEC 1049, and its hover dispatch is gated on
+ * `altScreenActive && altScreenMouseTracking === "full"`. Alt screen gives the
+ * renderer a fixed 1:1 cell grid, which is what makes hit-testing terminal row
+ * coordinates against node rects possible; inline rendering has no stable frame
+ * origin. So enabling fullscreen is what turns the mouse on.
  */
 export function isFullscreenEnvEnabled(): boolean {
   // Explicit env opt-out always wins.
