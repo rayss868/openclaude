@@ -10,12 +10,15 @@ const MAX_VISIBLE_FILES = 5;
 type Props = {
   files: DiffFile[];
   selectedIndex: number;
+  /** Available width when rendered inside a split pane. Defaults to the terminal width. */
+  width?: number;
 };
 export function DiffFileList(t0) {
-  const $ = _c(36);
+  const $ = _c(37);
   const {
     files,
-    selectedIndex
+    selectedIndex,
+    width
   } = t0;
   const {
     columns
@@ -77,12 +80,12 @@ export function DiffFileList(t0) {
   let t2;
   let t3;
   let t4;
-  if ($[6] !== columns || $[7] !== endIndex || $[8] !== files || $[9] !== selectedIndex || $[10] !== startIndex) {
+  if ($[6] !== columns || $[7] !== endIndex || $[8] !== files || $[9] !== selectedIndex || $[10] !== startIndex || $[36] !== width) {
     const visibleFiles = files.slice(startIndex, endIndex);
     const hasMoreAbove = startIndex > 0;
     hasMoreBelow = endIndex < files.length;
     needsPagination = files.length > MAX_VISIBLE_FILES;
-    const maxPathWidth = Math.max(20, columns - 16 - 3 - 4);
+    const maxPathWidth = width !== undefined ? Math.max(12, width - 26) : Math.max(20, columns - 16 - 3 - 4);
     T0 = Box;
     t2 = "column";
     if ($[17] !== hasMoreAbove || $[18] !== needsPagination || $[19] !== startIndex) {
@@ -110,6 +113,7 @@ export function DiffFileList(t0) {
     $[8] = files;
     $[9] = selectedIndex;
     $[10] = startIndex;
+    $[36] = width;
     $[11] = T0;
     $[12] = hasMoreBelow;
     $[13] = needsPagination;

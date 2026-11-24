@@ -15,6 +15,8 @@ type Props = {
   isBinary?: boolean;
   isTruncated?: boolean;
   isUntracked?: boolean;
+  /** Width available to the rendered diff, excluding the pane's own border and padding. */
+  width?: number;
 };
 
 /**
@@ -23,14 +25,15 @@ type Props = {
  * No scrolling - renders all lines (max 400 due to parsing limits).
  */
 export function DiffDetailView(t0) {
-  const $ = _c(53);
+  const $ = _c(54);
   const {
     filePath,
     hunks,
     isLargeFile,
     isBinary,
     isTruncated,
-    isUntracked
+    isUntracked,
+    width
   } = t0;
   const {
     columns
@@ -239,13 +242,14 @@ export function DiffDetailView(t0) {
     t5 = $[38];
   }
   let t6;
-  if ($[39] !== columns || $[40] !== fileContent || $[41] !== filePath || $[42] !== firstLine || $[43] !== hunks) {
-    t6 = hunks.length === 0 ? <Text dimColor={true}>No diff content</Text> : hunks.map((hunk, index) => <StructuredDiff key={index} patch={hunk} filePath={filePath} firstLine={firstLine} fileContent={fileContent} dim={false} width={columns - 2 - 2} />);
+  if ($[39] !== columns || $[40] !== fileContent || $[41] !== filePath || $[42] !== firstLine || $[43] !== hunks || $[53] !== width) {
+    t6 = hunks.length === 0 ? <Text dimColor={true}>No diff content</Text> : hunks.map((hunk, index) => <StructuredDiff key={index} patch={hunk} filePath={filePath} firstLine={firstLine} fileContent={fileContent} dim={false} width={width ?? columns - 2 - 2} />);
     $[39] = columns;
     $[40] = fileContent;
     $[41] = filePath;
     $[42] = firstLine;
     $[43] = hunks;
+    $[53] = width;
     $[44] = t6;
   } else {
     t6 = $[44];

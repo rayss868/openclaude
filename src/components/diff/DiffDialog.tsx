@@ -2,9 +2,13 @@ import type { StructuredPatchHunk } from 'diff'
 import React, { useEffect, useRef, useState } from 'react'
 
 import type { CommandResultDisplay } from '../../commands.js'
-import { useModalScrollRef } from '../../context/modalContext.js'
+import {
+  useModalOrTerminalSize,
+  useModalScrollRef,
+} from '../../context/modalContext.js'
 import { useRegisterOverlay } from '../../context/overlayContext.js'
 import { type DiffData, useDiffData } from '../../hooks/useDiffData.js'
+import { useTerminalSize } from '../../hooks/useTerminalSize.js'
 import { type TurnDiff, useTurnDiffs } from '../../hooks/useTurnDiffs.js'
 import { Box, Text } from '../../ink.js'
 import { useKeybindings } from '../../keybindings/useKeybinding.js'
@@ -17,6 +21,10 @@ import { LoadingState } from '../design-system/LoadingState.js'
 import { Tab, Tabs } from '../design-system/Tabs.js'
 import { DiffDetailView } from './DiffDetailView.js'
 import { DiffFileList } from './DiffFileList.js'
+import {
+  getDiffSplitLayout,
+  MIN_DIFF_PREVIEW_COLUMNS,
+} from './diffLayout.js'
 
 type Props = {
   messages: Message[]
@@ -74,6 +82,12 @@ export function DiffDialog({ messages, onDone }: Props) {
   const gitDiffData = useDiffData()
   const turnDiffs = useTurnDiffs(messages)
   const modalScrollRef = useModalScrollRef()
+  const terminalSize = useTerminalSize()
+  const { rows } = useModalOrTerminalSize(terminalSize)
+  const splitLayout = getDiffSplitLayout({
+    columns: terminalSize.columns,
+    rows,
+  })
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [sourceIndex, setSourceIndex] = useState(0)
@@ -258,7 +272,50 @@ export function DiffDialog({ messages, onDone }: Props) {
       )
     ) : viewMode === 'list' ? (
       <Box flexDirection="column" marginTop={1}>
-        <DiffFileList files={diffData.files} selectedIndex={selectedIndex} />
+        {splitLayout.showPreview ? (
+          <Box flexDirection="row" gap={2}>
+            <Box
+              flexDirection="column"
+              flexShrink={0}
+              width={splitLayout.listWidth}
+            >
+              <DiffFileList
+                files={diffData.files}
+                selectedIndex={selectedIndex}
+                width={splitLayout.listWidth}
+              />
+            </Box>
+            <Box
+              flexDirection="column"
+              width={splitLayout.previewWidth}
+              height={splitLayout.previewHeight}
+              borderStyle="round"
+              borderDimColor
+              paddingX={1}
+              overflow="hidden"
+            >
+              <DiffDetailView
+                filePath={selectedFile?.path || ''}
+                hunks={selectedHunks}
+                isLargeFile={selectedFile?.isLargeFile}
+                isBinary={selectedFile?.isBinary}
+                isTruncated={selectedFile?.isTruncated}
+                isUntracked={selectedFile?.isUntracked}
+                width={Math.max(20, splitLayout.previewWidth - 4)}
+              />
+            </Box>
+          </Box>
+        ) : (
+          <>
+            <DiffFileList files={diffData.files} selectedIndex={selectedIndex} />
+            <Box marginTop={1}>
+              <Text dimColor>
+                Resize your terminal to at least {MIN_DIFF_PREVIEW_COLUMNS}{' '}
+                columns to show the diff panel
+              </Text>
+            </Box>
+          </>
+        )}
       </Box>
     ) : (
       <Box flexDirection="column" marginTop={1}>
