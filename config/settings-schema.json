@@ -2327,7 +2327,7 @@
       }
     },
     "maxContextWindow": {
-      "description": "Global override for max context window (tokens). Applied to all models, taking the highest precedence over per-model settings, env vars, and catalog limits.",
+      "description": "Fallback context window (tokens) for models whose own limit is unknown. Model-specific values (env overrides, catalog/discovery cache, modelLimits, and descriptor defaults) always win; this applies only when none resolves.",
       "type": "integer",
       "exclusiveMinimum": 0,
       "maximum": 9007199254740991

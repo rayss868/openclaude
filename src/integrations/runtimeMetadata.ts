@@ -544,10 +544,7 @@ export function resolveModelRuntimeLimits(options: {
     runtimeEnv,
   )
 
-// Precedence (high → low):
-  // 0. settings.json global `maxContextWindow` (explicit user cap/raise; a
-  //    fork addition that wins over everything so users can both cap and raise
-  //    the effective context window for any model)
+  // Precedence (high → low):
   // 1. exact env override
   // 2. built-in route catalog (so `:cloud` variants keep their catalog cap over
   //    a broad base-model env *prefix*)
@@ -555,6 +552,8 @@ export function resolveModelRuntimeLimits(options: {
   // 4. settings.json `modelLimits` (explicit user pin)
   // 5. discovery cache
   // 6. model descriptor default
+  // 7. settings.json global `maxContextWindow` (fallback only: the model's own
+  //    window always wins; this applies when no per-model value is known)
   // Discovery stays authoritative over the descriptor: a gateway's advertised
   // `context_length` is the endpoint's real cap (it may legitimately be a
   // smaller deployment/tenant limit for a globally larger model), and the
@@ -569,14 +568,13 @@ export function resolveModelRuntimeLimits(options: {
   const settings = getInitialSettings()
   return {
     contextWindow:
-      settings.maxContextWindow !== undefined
-        ? settings.maxContextWindow
-        : (externalContextWindow.exact ??
-            catalogEntry?.contextWindow ??
-            externalContextWindow.prefix ??
-            externalContextWindow.settings ??
-            cachedCatalogEntry?.contextWindow ??
-            modelDescriptor?.contextWindow),
+      externalContextWindow.exact ??
+      catalogEntry?.contextWindow ??
+      externalContextWindow.prefix ??
+      externalContextWindow.settings ??
+      cachedCatalogEntry?.contextWindow ??
+      modelDescriptor?.contextWindow ??
+      settings.maxContextWindow,
     maxOutputTokens:
       externalMaxOutputTokens.exact ??
       catalogEntry?.maxOutputTokens ??
