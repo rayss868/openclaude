@@ -3694,7 +3694,7 @@ test('gateway-routed DeepSeek models inherit descriptor-backed reasoning and tok
 
   expect(assistantWithToolCall?.reasoning_content).toBe('thought')
   expect(requestBody?.thinking).toEqual({ type: 'enabled' })
-  expect(requestBody?.reasoning_effort).toBe('max')
+  expect(requestBody?.reasoning_effort).toBe('xhigh')
   expect(requestBody?.max_tokens).toBe(64)
   expect(requestBody?.max_completion_tokens).toBeUndefined()
   expect(requestBody?.store).toBeUndefined()
@@ -3866,7 +3866,7 @@ test('DeepSeek sends thinking toggle and normalized reasoning effort', async () 
   })
 
   expect(requestBody?.thinking).toEqual({ type: 'enabled' })
-  expect(requestBody?.reasoning_effort).toBe('max')
+  expect(requestBody?.reasoning_effort).toBe('xhigh')
   expect(requestBody?.max_tokens).toBe(64)
   expect(requestBody?.max_completion_tokens).toBeUndefined()
   expect(requestBody?.store).toBeUndefined()
@@ -4048,7 +4048,7 @@ test('Z.AI GLM-5.2: default request relies on provider thinking defaults', async
   expect(requestBody?.reasoning_effort).toBeUndefined()
 })
 
-test('Z.AI GLM-5.2: user-selected xhigh effort maps to provider max effort', async () => {
+test('Z.AI GLM-5.2: user-selected xhigh effort is forwarded unchanged', async () => {
   process.env.OPENAI_BASE_URL = 'https://api.z.ai/api/coding/paas/v4'
   process.env.OPENAI_API_KEY = 'sk-zai-test'
 
@@ -4079,19 +4079,19 @@ test('Z.AI GLM-5.2: user-selected xhigh effort maps to provider max effort', asy
 
   expect(requestBody?.model).toBe('glm-5.2')
   expect(requestBody?.thinking).toEqual({ type: 'enabled' })
-  expect(requestBody?.reasoning_effort).toBe('max')
+  expect(requestBody?.reasoning_effort).toBe('xhigh')
 })
 
 test.each([
-  ['glm-5.2?reasoning=low', 'high'],
-  ['glm-5.2?reasoning=medium', 'high'],
+  ['glm-5.2?reasoning=low', 'low'],
+  ['glm-5.2?reasoning=medium', 'medium'],
   ['glm-5.2?reasoning=high', 'high'],
-  ['glm-5.2?reasoning=xhigh', 'max'],
-  ['openrouter/zhipu/glm-5.2?reasoning=low', 'high'],
-  ['openrouter/zhipu/glm-5.2?reasoning=medium', 'high'],
+  ['glm-5.2?reasoning=xhigh', 'xhigh'],
+  ['openrouter/zhipu/glm-5.2?reasoning=low', 'low'],
+  ['openrouter/zhipu/glm-5.2?reasoning=medium', 'medium'],
   ['openrouter/zhipu/glm-5.2?reasoning=high', 'high'],
-  ['openrouter/zhipu/glm-5.2?reasoning=xhigh', 'max'],
-] as const)('Z.AI GLM-5.2: %s enables mapped reasoning effort', async (model, effort) => {
+  ['openrouter/zhipu/glm-5.2?reasoning=xhigh', 'xhigh'],
+] as const)('Z.AI GLM-5.2: %s forwards reasoning effort', async (model, effort) => {
   process.env.OPENAI_BASE_URL = 'https://api.z.ai/api/coding/paas/v4'
   process.env.OPENAI_API_KEY = 'sk-zai-test'
 
@@ -4380,7 +4380,7 @@ test('Hicap GLM-5.2: uses Z.AI-compatible request shaping', async () => {
   expect(requestBody?.max_tokens).toBe(64)
   expect(requestBody?.max_completion_tokens).toBeUndefined()
   expect(requestBody?.thinking).toEqual({ type: 'enabled' })
-  expect(requestBody?.reasoning_effort).toBe('max')
+  expect(requestBody?.reasoning_effort).toBe('xhigh')
   expect(requestBody?.tool_stream).toBe(true)
 })
 test('Z.AI GLM-5.2: remote tool incompatibility does not use local toolless retry', async () => {
