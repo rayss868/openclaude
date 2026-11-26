@@ -87,12 +87,41 @@ export async function* geminiSseToAnthropic(
     hasEmittedStart = true
   }
 
+  // Same visible notice as the OpenAI-compatible path for content_filter, so
+  // a blocked reply is not mistaken for a complete one.
+  const emitBlockedNotice = async function* () {
+    if (
+      hasToolUse ||
+      (finishReason !== 'SAFETY' && finishReason !== 'RECITATION')
+    ) {
+      return
+    }
+    if (!hasEmittedTextStart) {
+      throwIfStreamAborted(signal)
+      yield {
+        type: 'content_block_start' as const,
+        index: contentBlockIndex,
+        content_block: { type: 'text' as const, text: '' },
+      }
+      hasEmittedTextStart = true
+    }
+    throwIfStreamAborted(signal)
+    yield {
+      type: 'content_block_delta' as const,
+      index: contentBlockIndex,
+      delta: {
+        type: 'text_delta' as const,
+        text: '\n\n[Content blocked by provider safety filter]',
+      },
+    }
+  }
+
   const mapFinishReason = (
     reason: string | undefined,
     hasToolUse: boolean,
   ): 'tool_use' | 'max_tokens' | 'end_turn' => {
     if (hasToolUse) return 'tool_use'
-    if (reason === 'MAX_TOKENS' || reason === 'SAFETY' || reason === 'RECITATION') return 'max_tokens'
+    if (reason === 'MAX_TOKENS') return 'max_tokens'
     return 'end_turn'
   }
 
@@ -141,6 +170,7 @@ export async function* geminiSseToAnthropic(
           streamTrace.recordControl()
           protocolComplete = true
           yield* emitMessageStart()
+          yield* emitBlockedNotice()
           if (hasEmittedTextStart || hasEmittedCurrentTool) {
             throwIfStreamAborted(signal)
             yield { type: 'content_block_stop', index: contentBlockIndex }
@@ -184,6 +214,7 @@ export async function* geminiSseToAnthropic(
             output_tokens:
               (metadata.candidatesTokenCount ?? 0) +
               (metadata.thoughtsTokenCount ?? 0),
+            cached_content_token_count: metadata.cachedContentTokenCount ?? 0,
           })
         }
 
@@ -275,6 +306,7 @@ export async function* geminiSseToAnthropic(
     }
 
     yield* emitMessageStart()
+    yield* emitBlockedNotice()
     if (hasEmittedTextStart || hasEmittedCurrentTool) {
       throwIfStreamAborted(signal)
       yield { type: 'content_block_stop', index: contentBlockIndex }
