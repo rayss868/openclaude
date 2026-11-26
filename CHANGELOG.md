@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.37.0-by-rayss](https://github.com/rayss868/openclaude/compare/v0.33.3-by-rayss...v0.37.0-by-rayss) (2026-11-26)
+
+Syncs the fork with upstream `v0.37.0` plus post-release fixes from
+`upstream/main` (252 commits behind at the time of sync). Only modules that do
+not collide with the fork's custom branding, updater, and session code were
+applied; each one was cherry-picked and verified independently.
+
+### Features
+
+* **repo-map:** support Go, Rust, and Java source files, capture plain function calls as references, and report invalid arguments instead of ignoring them (upstream #2551, #2555, #2559, #2563).
+* **commands:** add `/focus` fullscreen focus view plus `/todos`, `/cd`, and `/reload-skills` (upstream #2546, #2521).
+* **env:** add four `CLAUDE_CODE_*` parity toggles: `DISABLE_ULTRATHINK`, `DISABLE_AGENT_PROGRESS_SUMMARIES`, `DISABLE_FILE_MENTIONS`, and `RESUME_HINT_COMMAND` (upstream #2521).
+* **permissions:** support `Bash(prompt: ...)` natural-language rules (upstream #2533).
+* **bash:** parse command structure for permission and safety checks with a pure-TS AST parser behind `TREE_SITTER_BASH` (upstream #2532).
+
+### Bug Fixes
+
+* **gemini:** show a blocked-reply notice for `SAFETY`/`RECITATION` instead of `max_tokens`, and report `cachedContentTokenCount` as `cache_read_input_tokens` (upstream #2548, #2494).
+* **openai-shim:** recover `<tool_call>` text calls from Ollama streams, keep reading native Ollama output until it is enqueued, and report length-truncated non-streaming replies consistently.
+* **ollama:** send `think: false` by default for hybrid-reasoning models.
+* **mcp:** use secure randomness for OAuth callback ports.
+* **proxy:** pass runtime CA and mTLS options through CONNECT proxies.
+* **session:** preserve startup metadata when SDK sessions switch.
+* **settings:** allow more time for Windows process identity lookup.
+* **attachments:** make TODO reminders configurable.
+* **utils:** follow Node's `NODE_OPTIONS` grammar when checking whether an option is present.
+
+### Tests
+
+* add `snapshotEnv`, `gitFixtureEnv`, and `tlsFixture` helpers with coverage (upstream #2335).
+* adapt the sandbox, settings, and LSP fixtures to the project-root migration introduced by `/cd`.
+
 ## [0.33.1-by-rayss](https://github.com/rayss868/openclaude/compare/v0.31.2-by-rayss...v0.33.1-by-rayss) (2026-10-17)
 
 Covers every change since the previous GitHub release (`v0.31.2-by-rayss`),

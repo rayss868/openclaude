@@ -32,4 +32,10 @@ test('coding system prompt includes the timing and wiring robustness guidance', 
     'derive timing-sensitive logic (animation, physics, timers) from actual elapsed time',
   )
   expect(prompt).toContain('Every element you introduce must be wired up')
+  expect(prompt).toContain(
+    'verify that the process has exited rather than assuming the final output means it has',
+  )
+  expect(prompt).toContain(
+    'Treat intentionally long-running commands such as servers and watchers as expected to remain alive',
+  )
 })

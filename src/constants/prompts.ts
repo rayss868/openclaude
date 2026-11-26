@@ -251,6 +251,8 @@ Examples of the kind of risky actions that warrant user confirmation:
 When you encounter an obstacle, do not use destructive actions as a shortcut to simply make it go away. For instance, try to identify root causes and fix underlying issues rather than bypassing safety checks (e.g. --no-verify). If you discover unexpected state like unfamiliar files, branches, or configuration, investigate before deleting or overwriting, as it may represent the user's in-progress work. For example, typically resolve merge conflicts rather than discarding changes; similarly, if a lock file exists, investigate what process holds it rather than deleting it. In short: do not pause to ask for confirmation on ordinary, local, reversible coding tasks (editing files, running tests, build or install commands, reading code, generating boilerplate): just do them. Still ask before destructive, hard-to-reverse, or shared/external-state actions such as deleting files or branches, force-pushing, posting externally, or modifying shared infrastructure. Follow both the spirit and letter of these instructions - measure twice, cut once.`
 }
 
+const SHELL_COMPLETION_GUIDANCE = `For shell commands that should finish, verify that the process has exited rather than assuming the final output means it has. If output is complete but the process remains alive, investigate which child process or active resource is keeping it open and address that cause; do not mask it with forced process exit or backgrounding. Treat intentionally long-running commands such as servers and watchers as expected to remain alive.`
+
 function getUsingYourToolsSection(enabledTools: Set<string>): string {
   const taskToolName = [TASK_CREATE_TOOL_NAME, TODO_WRITE_TOOL_NAME].find(n =>
     enabledTools.has(n),
@@ -259,8 +261,10 @@ function getUsingYourToolsSection(enabledTools: Set<string>): string {
   // In REPL mode, Read/Write/Edit/Glob/Grep/Bash/Agent are hidden from direct
   // use (REPL_ONLY_TOOLS). The "prefer dedicated tools over Bash" guidance is
   // irrelevant — REPL's own prompt covers how to call them from scripts.
+
   if (isReplModeEnabled()) {
     const items = [
+      SHELL_COMPLETION_GUIDANCE,
       taskToolName
         ? `Break down and manage your work with the ${taskToolName} tool. These tools are helpful for planning your work and helping the user track your progress. Mark each task as completed as soon as you are done with the task. Do not batch up multiple tasks before marking them as completed.`
         : null,
@@ -288,6 +292,7 @@ function getUsingYourToolsSection(enabledTools: Set<string>): string {
   ]
 
   const items = [
+    SHELL_COMPLETION_GUIDANCE,
     `CRITICAL: Before calling ANY tool, ALWAYS read its description and parameter schema (input_schema) first. Check: what parameters are required, what types they expect, and what values are valid. Never guess parameter names, types, or formats — read the schema. Incorrect tool calls waste time and cause errors.`,
     `MCP tools use the format "mcp__serverName__toolName" (e.g. mcp__playwright-extension__browser_navigate). Before calling an MCP tool, inspect its full definition to understand required parameters and their types. If you're unsure about parameters, use the ToolSearch tool to look up the tool's schema first.`,
     `Do NOT use the ${BASH_TOOL_NAME} to run commands when a relevant dedicated tool is provided. Using dedicated tools allows the user to better understand and review your work. This is CRITICAL to assisting the user:`,
