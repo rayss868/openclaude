@@ -195,16 +195,6 @@ export function GlobalKeybindingHandlers({
     });
   }
 
-  // Register teammate keybinding
-  useKeybinding('app:toggleTeammatePreview', () => {
-    setAppState(prev_3 => ({
-      ...prev_3,
-      showTeammateMessagePreview: !prev_3.showTeammateMessagePreview
-    }));
-  }, {
-    context: 'Global'
-  });
-
   // Toggle built-in terminal panel (meta+j).
   // toggle() blocks in spawnSync until the user detaches from tmux.
   const handleToggleTerminal = useCallback(() => {

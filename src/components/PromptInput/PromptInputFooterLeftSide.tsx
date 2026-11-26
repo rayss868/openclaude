@@ -519,12 +519,18 @@ function getSpinnerHintParts(isLoading: boolean, escShortcut: string, todosShort
   // Show the toggle hint only when there are task items to display or
   // teammates to cycle to
   const showToggleHint = hasTaskItems || hasTeammates;
+  // Claude Code appends `/tasks to see subagents` as its own footer item
+  // whenever subagents are running — it sits alongside the toggle hint, not
+  // instead of it (`Fi` gate: running subagents and no input overlay).
+  const showSubagentsHint = hasTeammates;
   return [...(isLoading ? [<Text dimColor key="esc">
             <KeyboardShortcutHint shortcut={escShortcut} action="interrupt" />
           </Text>] : []), ...(!isLoading && hasRunningAgentTasks && !isKillAgentsConfirmShowing ? [<Text dimColor key="kill-agents">
             <KeyboardShortcutHint shortcut={killAgentsShortcut} action="stop agents" />
           </Text>] : []), ...(showToggleHint ? [<Text dimColor key="toggle-tasks">
             <KeyboardShortcutHint shortcut={todosShortcut} action={toggleAction} />
+          </Text>] : []), ...(showSubagentsHint ? [<Text dimColor key="subagents-hint">
+            /tasks to see subagents
           </Text>] : [])];
 }
 function isPrStatusEnabled(): boolean {

@@ -6,6 +6,8 @@ import { useAppState } from '../../state/AppState.js';
 import { getRunningTeammatesSorted } from '../../tasks/InProcessTeammateTask/InProcessTeammateTask.js';
 import { formatNumber } from '../../utils/format.js';
 import { TeammateSpinnerLine } from './TeammateSpinnerLine.js';
+import { TEAM_LEAD_NAME } from '../../utils/swarm/constants.js';
+import { joinMeta, rowTimeMeta } from './teammateRowMeta.js';
 import { TEAMMATE_SELECT_HINT } from './teammateSelectHint.js';
 type Props = {
   selectedIndex?: number;
@@ -17,20 +19,32 @@ type Props = {
   leaderTokenCount?: number;
   /** Leader's idle status text (when leader is idle, e.g. "✻ Idle for 3s") */
   leaderIdleText?: string;
+  /** When the leader's current turn started, for the `started` meta. */
+  leaderStartedAt?: number;
+  /** Leader's last output time, for the `last active` meta. */
+  leaderLastActivityAt?: number;
+  /** Clock snapshot for relative times; keeps the memo cache pure. */
+  metaNow?: number;
 };
 export function TeammateSpinnerTree(t0) {
-  const $ = _c(61);
+  const $ = _c(62);
   const {
     selectedIndex,
     isInSelectionMode,
     allIdle,
     leaderVerb,
     leaderTokenCount,
-    leaderIdleText
+    leaderIdleText,
+    leaderStartedAt,
+    leaderLastActivityAt,
+    metaNow
   } = t0;
   const tasks = useAppState(_temp);
   const viewingAgentTaskId = useAppState(_temp2);
-  const showTeammateMessagePreview = useAppState(_temp3);
+  const leaderMeta = joinMeta(rowTimeMeta({
+    startedAt: leaderStartedAt,
+    lastActivityAt: leaderLastActivityAt
+  }, metaNow ?? Date.now()));
   let T0;
   let isHideSelected;
   let t1;
@@ -38,7 +52,7 @@ export function TeammateSpinnerTree(t0) {
   let t3;
   let t4;
   let t5;
-  if ($[0] !== allIdle || $[1] !== isInSelectionMode || $[2] !== leaderIdleText || $[3] !== leaderTokenCount || $[4] !== leaderVerb || $[5] !== selectedIndex || $[6] !== showTeammateMessagePreview || $[7] !== tasks || $[8] !== viewingAgentTaskId) {
+  if ($[0] !== allIdle || $[1] !== isInSelectionMode || $[2] !== leaderIdleText || $[3] !== leaderTokenCount || $[4] !== leaderVerb || $[5] !== selectedIndex || $[7] !== tasks || $[8] !== viewingAgentTaskId || $[61] !== leaderMeta) {
     t5 = Symbol.for("react.early_return_sentinel");
     bb0: {
       const teammateTasks = getRunningTeammatesSorted(tasks);
@@ -66,7 +80,9 @@ export function TeammateSpinnerTree(t0) {
         t8 = $[19];
       }
       const t9 = !isLeaderHighlighted;
-      const t10 = isLeaderHighlighted ? "\u2552\u2550" : "\u250C\u2500";
+      // Claude Code never swaps the tree glyph on highlight — only the text
+      // color and the pointer change. Heavy box variants are OpenClaude-only.
+      const t10 = "\u250C\u2500";
       let t11;
       if ($[20] !== isLeaderHighlighted || $[21] !== t10 || $[22] !== t9) {
         t11 = <Text dimColor={t9} bold={isLeaderHighlighted}>{t10}{" "}</Text>;
@@ -80,7 +96,7 @@ export function TeammateSpinnerTree(t0) {
       const t12 = isLeaderSelected ? "suggestion" : "cyan_FOR_SUBAGENTS_ONLY";
       let t13;
       if ($[24] !== isLeaderHighlighted || $[25] !== t12) {
-        t13 = <Text bold={isLeaderHighlighted} color={t12}>team-lead</Text>;
+        t13 = <Text bold={isLeaderHighlighted} color={t12}>{`@${TEAM_LEAD_NAME}`}</Text>;
         $[24] = isLeaderHighlighted;
         $[25] = t12;
         $[26] = t13;
@@ -132,8 +148,8 @@ export function TeammateSpinnerTree(t0) {
       } else {
         t18 = $[41];
       }
-      if ($[42] !== t11 || $[43] !== t13 || $[44] !== t14 || $[45] !== t15 || $[46] !== t16 || $[47] !== t17 || $[48] !== t18 || $[49] !== t8) {
-        t3 = <Box paddingLeft={3}>{t8}{t11}{t13}{t14}{t15}{t16}{t17}{t18}</Box>;
+      if ($[42] !== t11 || $[43] !== t13 || $[44] !== t14 || $[45] !== t15 || $[46] !== t16 || $[47] !== t17 || $[48] !== t18 || $[49] !== t8 || $[61] !== leaderMeta) {
+        t3 = <Box paddingLeft={3}>{t8}{t11}{t13}{t14}{t15}{leaderMeta && <Text dimColor={true}>{" "}· {leaderMeta}</Text>}{t16}{t17}{t18}</Box>;
         $[42] = t11;
         $[43] = t13;
         $[44] = t14;
@@ -146,7 +162,7 @@ export function TeammateSpinnerTree(t0) {
       } else {
         t3 = $[50];
       }
-      t4 = teammateTasks.map((teammate, index) => <TeammateSpinnerLine key={teammate.id} teammate={teammate} isLast={!isInSelectionMode && index === teammateTasks.length - 1} isSelected={isInSelectionMode && selectedIndex === index} isForegrounded={viewingAgentTaskId === teammate.id} allIdle={allIdle} showPreview={showTeammateMessagePreview} />);
+      t4 = teammateTasks.map((teammate, index) => <TeammateSpinnerLine key={teammate.id} teammate={teammate} isLast={index === teammateTasks.length - 1 && !isHideSelected} isSelected={isInSelectionMode && selectedIndex === index} isForegrounded={viewingAgentTaskId === teammate.id} />);
     }
     $[0] = allIdle;
     $[1] = isInSelectionMode;
@@ -154,7 +170,6 @@ export function TeammateSpinnerTree(t0) {
     $[3] = leaderTokenCount;
     $[4] = leaderVerb;
     $[5] = selectedIndex;
-    $[6] = showTeammateMessagePreview;
     $[7] = tasks;
     $[8] = viewingAgentTaskId;
     $[9] = T0;
@@ -164,6 +179,7 @@ export function TeammateSpinnerTree(t0) {
     $[13] = t3;
     $[14] = t4;
     $[15] = t5;
+    $[61] = leaderMeta;
   } else {
     T0 = $[9];
     isHideSelected = $[10];
@@ -200,9 +216,6 @@ export function TeammateSpinnerTree(t0) {
   }
   return t7;
 }
-function _temp3(s_1) {
-  return s_1.showTeammateMessagePreview;
-}
 function _temp2(s_0) {
   return s_0.viewingAgentTaskId;
 }
@@ -227,7 +240,7 @@ function HideRow(t0) {
     t3 = $[3];
   }
   const t4 = !isSelected;
-  const t5 = isSelected ? "\u2558\u2550" : "\u2514\u2500";
+  const t5 = "\u2514\u2500";
   let t6;
   if ($[4] !== isSelected || $[5] !== t4 || $[6] !== t5) {
     t6 = <Text dimColor={t4} bold={isSelected}>{t5}{" "}</Text>;

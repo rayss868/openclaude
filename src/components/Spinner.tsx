@@ -55,6 +55,8 @@ type Props = {
   hasActiveTools?: boolean;
   /** Leader's turn has completed (no active query). Used to suppress stall-red spinner when only teammates are running. */
   leaderIsIdle?: boolean;
+  /** Wall-clock of the leader's most recent streamed output, for `last active`. */
+  leaderLastActivityRef?: React.RefObject<number>;
 };
 
 // Thin wrapper: branches on isBriefOnly so the two variants have independent
@@ -94,7 +96,8 @@ function SpinnerWithVerbInner({
   spinnerSuffix,
   verbose,
   hasActiveTools = false,
-  leaderIsIdle = false
+  leaderIsIdle = false,
+  leaderLastActivityRef
 }: Props): React.ReactNode {
   const settings = useSettings();
   const reducedMotion = settings.prefersReducedMotion ?? false;
@@ -211,6 +214,19 @@ function SpinnerWithVerbInner({
   // the ref. The tree is only shown when teammates are running; teammate
   // progress updates to s.tasks trigger re-renders that keep this fresh.
   const leaderTokenCount = Math.round(responseLengthRef.current / 4);
+  // Claude Code's leader row carries `started`/`last active`. The leader's
+  // activity is its own turn: it started when the timer started and last moved
+  // when the response grew.
+  const leaderLastActivityAt = leaderLastActivityRef?.current || 0;
+  const leaderStartedAt = Math.max(
+    0,
+    loadingStartTimeRef.current || leaderLastActivityAt,
+  );
+  // `last active` is the leader's own last streamed output, so it must not be
+  // "now" — the row would claim activity on every render. The meta text is
+  // re-derived per render; teammate progress updates re-render the tree while
+  // subagents run, which is exactly when this row is visible.
+  const leaderMetaNow = Date.now();
   const defaultColor: keyof Theme = 'brand';
   const defaultShimmerColor = 'brandShimmer';
   const messageColor = overrideColor ?? defaultColor;
@@ -227,7 +243,7 @@ function SpinnerWithVerbInner({
             {!allIdle && ' · teammates running'}
           </Text>
         </Box>
-        {showSpinnerTree && <TeammateSpinnerTree selectedIndex={selectedIPAgentIndex} isInSelectionMode={viewSelectionMode === 'selecting-agent'} allIdle={allIdle} leaderTokenCount={leaderTokenCount} leaderIdleText="Idle" />}
+        {showSpinnerTree && <TeammateSpinnerTree selectedIndex={selectedIPAgentIndex} isInSelectionMode={viewSelectionMode === 'selecting-agent'} allIdle={allIdle} leaderTokenCount={leaderTokenCount} leaderIdleText="Idle" leaderStartedAt={leaderStartedAt} leaderLastActivityAt={leaderLastActivityAt} metaNow={leaderMetaNow} />}
       </Box>;
   }
 
@@ -238,7 +254,7 @@ function SpinnerWithVerbInner({
         <Box flexDirection="row" flexWrap="nowrap" marginTop={1} width="100%">
           <Text dimColor>{idleText}</Text>
         </Box>
-        {showSpinnerTree && hasRunningTeammates && <TeammateSpinnerTree selectedIndex={selectedIPAgentIndex} isInSelectionMode={viewSelectionMode === 'selecting-agent'} allIdle={allIdle} leaderVerb={leaderIsIdle ? undefined : leaderVerb} leaderIdleText={leaderIsIdle ? 'Idle' : undefined} leaderTokenCount={leaderTokenCount} />}
+        {showSpinnerTree && hasRunningTeammates && <TeammateSpinnerTree selectedIndex={selectedIPAgentIndex} isInSelectionMode={viewSelectionMode === 'selecting-agent'} allIdle={allIdle} leaderVerb={leaderIsIdle ? undefined : leaderVerb} leaderIdleText={leaderIsIdle ? 'Idle' : undefined} leaderTokenCount={leaderTokenCount} leaderStartedAt={leaderStartedAt} leaderLastActivityAt={leaderLastActivityAt} metaNow={leaderMetaNow} />}
       </Box>;
   }
 
@@ -272,7 +288,7 @@ function SpinnerWithVerbInner({
   }
   return <Box flexDirection="column" width="100%" alignItems="flex-start">
       <SpinnerAnimationRow mode={mode} reducedMotion={reducedMotion} hasActiveTools={hasActiveTools} responseLengthRef={responseLengthRef} responseLength={responseLength} message={message} messageColor={messageColor} shimmerColor={shimmerColor} overrideColor={overrideColor} loadingStartTimeRef={loadingStartTimeRef} totalPausedMsRef={totalPausedMsRef} pauseStartTimeRef={pauseStartTimeRef} spinnerSuffix={spinnerSuffix} verbose={verbose} columns={columns} hasRunningTeammates={hasRunningTeammates} teammateTokens={teammateTokens} foregroundedTeammate={foregroundedTeammate} leaderIsIdle={leaderIsIdle} thinkingStatus={thinkingStatus} effortSuffix={effortSuffix} />
-      {showSpinnerTree && hasRunningTeammates ? <TeammateSpinnerTree selectedIndex={selectedIPAgentIndex} isInSelectionMode={viewSelectionMode === 'selecting-agent'} allIdle={allIdle} leaderVerb={leaderIsIdle ? undefined : leaderVerb} leaderIdleText={leaderIsIdle ? 'Idle' : undefined} leaderTokenCount={leaderTokenCount} /> : showExpandedTodos && tasksV2 && tasksV2.length > 0 ? <Box width="100%" flexDirection="column">
+      {showSpinnerTree && hasRunningTeammates ? <TeammateSpinnerTree selectedIndex={selectedIPAgentIndex} isInSelectionMode={viewSelectionMode === 'selecting-agent'} allIdle={allIdle} leaderVerb={leaderIsIdle ? undefined : leaderVerb} leaderIdleText={leaderIsIdle ? 'Idle' : undefined} leaderTokenCount={leaderTokenCount} leaderStartedAt={leaderStartedAt} leaderLastActivityAt={leaderLastActivityAt} metaNow={leaderMetaNow} /> : showExpandedTodos && tasksV2 && tasksV2.length > 0 ? <Box width="100%" flexDirection="column">
           <MessageResponse>
             <TaskListV2 tasks={tasksV2} />
           </MessageResponse>

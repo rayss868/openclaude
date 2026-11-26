@@ -65,6 +65,12 @@ export type InProcessTeammateTaskState = TaskStateBase & {
   // Lifecycle
   isIdle: boolean
   shutdownRequested: boolean
+  /**
+   * Last time this teammate produced output, in ms. Drives the `last active`
+   * part of the task row, the same fact Claude Code reads from its entry's
+   * `lastActivityAt`.
+   */
+  lastActivityAt?: number
 
   // Callbacks to notify when teammate becomes idle (runtime only)
   // Used by leader to efficiently wait without polling

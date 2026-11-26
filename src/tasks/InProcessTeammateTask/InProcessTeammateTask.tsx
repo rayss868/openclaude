@@ -55,7 +55,8 @@ export function appendTeammateMessage(taskId: string, message: Message, setAppSt
     }
     return {
       ...task,
-      messages: appendCappedMessage(task.messages, message)
+      messages: appendCappedMessage(task.messages, message),
+      lastActivityAt: Date.now()
     };
   });
 }
@@ -78,7 +79,8 @@ export function injectUserMessageToTeammate(taskId: string, message: string, set
       pendingUserMessages: [...task.pendingUserMessages, message],
       messages: appendCappedMessage(task.messages, createUserMessage({
         content: message
-      }))
+      })),
+      lastActivityAt: Date.now()
     };
   });
 }

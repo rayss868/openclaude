@@ -26,7 +26,6 @@ export type KeybindingAction =
   | 'app:toggleTodos'
   | 'app:toggleTranscript'
   | 'app:toggleBrief'
-  | 'app:toggleTeammatePreview'
   | 'app:toggleTerminal'
   | 'app:redraw'
   | 'app:globalSearch'
