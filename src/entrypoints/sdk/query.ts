@@ -509,7 +509,6 @@ class QueryImpl implements Query {
       cwd: this.cwd,
       originalCwd: this.cwd,
       projectRoot: this.cwd,
-      registeredHooks: this.hookCallbacks,
     }
 
     const self = this

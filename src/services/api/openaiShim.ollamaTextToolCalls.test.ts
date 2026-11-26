@@ -10,8 +10,15 @@
  *   5. P1 context guard — bare JSON in explanatory prose is skipped
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { snapshotEnv } from '../../test/envSnapshot.js'
 import { createOpenAIShimClient } from './openaiShim.js'
 import { parseTextToolCalls } from './openaiShim/rawToolCallParsing.js'
+
+const ENV_KEYS = [
+  'OLLAMA_BASE_URL',
+  'OPENAI_API_KEY',
+  'OPENAI_BASE_URL',
+] as const
 
 type FetchType = typeof globalThis.fetch
 
