@@ -28,52 +28,13 @@ declare const MACRO: { VERSION: string; DISPLAY_VERSION?: string }
 const RESET = ANSI_RESET
 const DIM = ANSI_DIM
 
-function lerp(a: RGB, b: RGB, t: number): RGB {
-  return [
-    Math.round(a[0] + (b[0] - a[0]) * t),
-    Math.round(a[1] + (b[1] - a[1]) * t),
-    Math.round(a[2] + (b[2] - a[2]) * t),
-  ]
+function paint(text: string, color: RGB): string {
+  return `${ansiRgb(...color)}${text}${RESET}`
 }
 
-function gradAt(stops: readonly RGB[], t: number): RGB {
-  const c = Math.max(0, Math.min(1, t))
-  const s = c * (stops.length - 1)
-  const i = Math.floor(s)
-  if (i >= stops.length - 1) return stops[stops.length - 1]
-  return lerp(stops[i], stops[i + 1], s - i)
-}
+// ─── Letter Monogram ──────────────────────────────────────────────────────────
 
-export function paintLine(text: string, stops: readonly RGB[], lineT: number): string {
-  let out = ''
-  for (let i = 0; i < text.length; i++) {
-    const t = text.length > 1 ? lineT * 0.5 + (i / (text.length - 1)) * 0.5 : lineT
-    const [r, g, b] = gradAt(stops, t)
-    out += `${ansiRgb(r, g, b)}${text[i]}`
-  }
-  return out + RESET
-}
-
-// ─── Filled Block Text Logo ───────────────────────────────────────────────────
-
-// ANSI Shadow figlet letterforms, one space between letters.
-const LOGO_OPEN = [
-  ' \u2588\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2557   \u2588\u2588\u2557',
-  '\u2588\u2588\u2554\u2550\u2550\u2550\u2588\u2588\u2557 \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557 \u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d \u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2551',
-  '\u2588\u2588\u2551   \u2588\u2588\u2551 \u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d \u2588\u2588\u2588\u2588\u2588\u2557   \u2588\u2588\u2554\u2588\u2588\u2557 \u2588\u2588\u2551',
-  '\u2588\u2588\u2551   \u2588\u2588\u2551 \u2588\u2588\u2554\u2550\u2550\u2550\u255d  \u2588\u2588\u2554\u2550\u2550\u255d   \u2588\u2588\u2551\u255a\u2588\u2588\u2557\u2588\u2588\u2551',
-  '\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d \u2588\u2588\u2551      \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2551 \u255a\u2588\u2588\u2588\u2588\u2551',
-  ' \u255a\u2550\u2550\u2550\u2550\u2550\u255d  \u255a\u2550\u255d      \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u255d  \u255a\u2550\u2550\u2550\u255d',
-]
-
-const LOGO_CLAUDE = [
-  ' \u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2557       \u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2557   \u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557',
-  '\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d \u2588\u2588\u2551      \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557 \u2588\u2588\u2551   \u2588\u2588\u2551 \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557 \u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d',
-  '\u2588\u2588\u2551      \u2588\u2588\u2551      \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2551 \u2588\u2588\u2551   \u2588\u2588\u2551 \u2588\u2588\u2551  \u2588\u2588\u2551 \u2588\u2588\u2588\u2588\u2588\u2557  ',
-  '\u2588\u2588\u2551      \u2588\u2588\u2551      \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2551 \u2588\u2588\u2551   \u2588\u2588\u2551 \u2588\u2588\u2551  \u2588\u2588\u2551 \u2588\u2588\u2554\u2550\u2550\u255d  ',
-  '\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2551  \u2588\u2588\u2551 \u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d \u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557',
-  ' \u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u255d  \u255a\u2550\u255d  \u255a\u2550\u2550\u2550\u2550\u2550\u255d  \u255a\u2550\u2550\u2550\u2550\u2550\u255d  \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u255d',
-]
+const OC_MONOGRAM = ['  \u2584\u2580\u2580\u2580\u2584  ', ' \u2588 O C \u2588 ', '  \u2580\u2584\u2584\u2584\u2580  ']
 
 // ─── Provider detection ───────────────────────────────────────────────────────
 
@@ -170,13 +131,6 @@ export function detectProvider(modelOverride?: string): { name: string; model: s
   return { name, model: resolvedModel, baseUrl, isLocal }
 }
 
-// ─── Box drawing ──────────────────────────────────────────────────────────────
-
-function boxRow(content: string, width: number, rawLen: number, border: RGB): string {
-  const pad = Math.max(0, width - 2 - rawLen)
-  return `${ansiRgb(...border)}\u2502${RESET}${content}${' '.repeat(pad)}${ansiRgb(...border)}\u2502${RESET}`
-}
-
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export function printStartupScreen(modelOverride?: string): void {
@@ -188,82 +142,103 @@ export function printStartupScreen(modelOverride?: string): void {
   const CREAM = palette.cream
   const DIMCOL = palette.dim
   const BORDER = palette.border
-  const GRAD = palette.gradient
 
   const p = detectProvider(modelOverride)
-  const W = 62
+  const border = (s: string): string => paint(s, BORDER)
+  const monoW = Math.max(...OC_MONOGRAM.map(row => row.length))
+  const gap = 2
+  const labelW = 9
   const columns = process.stdout.columns || 80
-  const centerPad = (visibleLen: number): string =>
-    ' '.repeat(Math.max(0, Math.floor((columns - visibleLen) / 2)))
-  const out: string[] = []
+  const maxValue = Math.min(48, Math.max(16, columns - (monoW + gap + 4 + labelW + 2)))
+  const fit = (value: string): string =>
+    value.length > maxValue ? `${value.slice(0, maxValue - 1)}\u2026` : value
 
-  out.push('')
-
-  // Gradient logo \u2014 OPEN and CLAUDE side by side on one centered row; falls
-  // back to the stacked two-block layout when the terminal is too narrow.
-  // Each block is centered as a unit (one pad per block) so rows stay aligned.
-  const open = LOGO_OPEN
-  const claude = LOGO_CLAUDE
-  const openWidth = Math.max(...open.map(row => row.length))
-  const claudeWidth = Math.max(...claude.map(row => row.length))
-  const oneRowWidth = openWidth + 2 + claudeWidth
-  const fitsOneRow = columns >= oneRowWidth
-  const logoLines = fitsOneRow
-    ? open.map((row, i) => ({
-        pad: centerPad(oneRowWidth),
-        text: `${row.padEnd(openWidth)}  ${claude[i]}`.trimEnd(),
-      }))
-    : [
-        ...open.map(row => ({ pad: centerPad(openWidth), text: row })),
-        { pad: '', text: '' },
-        ...claude.map(row => ({ pad: centerPad(claudeWidth), text: row.trimEnd() })),
-      ]
-  const total = logoLines.length
-  for (let i = 0; i < total; i++) {
-    const t = total > 1 ? i / (total - 1) : 0
-    if (logoLines[i].text === '') {
-      out.push('')
-    } else {
-      out.push(logoLines[i].pad + paintLine(logoLines[i].text, GRAD, t))
-    }
-  }
-
-  out.push('')
-
-  // Tagline
-  out.push(`${centerPad(BRAND_TAGLINE.length + 4)}${ansiRgb(...ACCENT)}\u2726${RESET} ${ansiRgb(...CREAM)}${BRAND_TAGLINE}${RESET} ${ansiRgb(...ACCENT)}\u2726${RESET}`)
-  out.push('')
-
-  // Provider info box
-  const boxPad = centerPad(W)
-  out.push(`${boxPad}${ansiRgb(...BORDER)}\u2554${'\u2550'.repeat(W - 2)}\u2557${RESET}`)
-
-  const lbl = (k: string, v: string, c: RGB = CREAM): [string, number] => {
-    const padK = k.padEnd(9)
-    return [` ${DIM}${ansiRgb(...DIMCOL)}${padK}${RESET} ${ansiRgb(...c)}${v}${RESET}`, ` ${padK} ${v}`.length]
-  }
+  const label = (k: string): string => `${k.padEnd(labelW)} `
+  const field = (k: string, v: string, c: RGB = CREAM): [string, string] => [
+    ` ${DIM}${ansiRgb(...DIMCOL)}${label(k)}${RESET}${ansiRgb(...c)}${v}${RESET}`,
+    ` ${label(k)}${v}`,
+  ]
 
   const provC: RGB = p.isLocal ? [130, 175, 130] : ACCENT
-  let [r, l] = lbl('Provider', p.name, provC)
-  out.push(boxPad + boxRow(r, W, l, BORDER))
-  ;[r, l] = lbl('Model', p.model)
-  out.push(boxPad + boxRow(r, W, l, BORDER))
-  const ep = p.baseUrl.length > 38 ? p.baseUrl.slice(0, 35) + '...' : p.baseUrl
-  ;[r, l] = lbl('Endpoint', ep)
-  out.push(boxPad + boxRow(r, W, l, BORDER))
-
-  out.push(`${boxPad}${ansiRgb(...BORDER)}\u2560${'\u2550'.repeat(W - 2)}\u2563${RESET}`)
+  const [provider, providerPlain] = field('Provider', fit(p.name), provC)
+  const [model, modelPlain] = field('Model', fit(p.model))
+  const [endpoint, endpointPlain] = field('Endpoint', fit(p.baseUrl))
 
   const sC: RGB = p.isLocal ? [130, 175, 130] : ACCENT
   const sL = p.isLocal ? 'local' : 'cloud'
-  const sRow = ` ${ansiRgb(...sC)}\u25cf${RESET} ${DIM}${ansiRgb(...DIMCOL)}${sL}${RESET}    ${DIM}${ansiRgb(...DIMCOL)}Ready \u2014 type ${RESET}${ansiRgb(...ACCENT)}/help${RESET}${DIM}${ansiRgb(...DIMCOL)} to begin${RESET}`
-  const sLen = ` \u25cf ${sL}    Ready \u2014 type /help to begin`.length
-  out.push(boxPad + boxRow(sRow, W, sLen, BORDER))
+  const status = ` ${ansiRgb(...sC)}\u25cf${RESET} ${DIM}${ansiRgb(...DIMCOL)}${sL}${RESET}    ${DIM}${ansiRgb(...DIMCOL)}Ready \u2014 type ${RESET}${ansiRgb(...ACCENT)}/help${RESET}${DIM}${ansiRgb(...DIMCOL)} to begin${RESET}`
+  const statusPlain = ` \u25cf ${sL}    Ready \u2014 type /help to begin`
 
-  out.push(`${boxPad}${ansiRgb(...BORDER)}\u255a${'\u2550'.repeat(W - 2)}\u255d${RESET}`)
+  const tagline = `${ansiRgb(...ACCENT)}\u2726${RESET} ${ansiRgb(...CREAM)}${BRAND_TAGLINE}${RESET} ${ansiRgb(...ACCENT)}\u2726${RESET}`
+  const taglinePlain = `\u2726 ${BRAND_TAGLINE} \u2726`
   const versionText = `openclaude v${MACRO.DISPLAY_VERSION ?? MACRO.VERSION}`
-  out.push(`${centerPad(versionText.length)}${DIM}${ansiRgb(...DIMCOL)}openclaude ${RESET}${ansiRgb(...ACCENT)}v${MACRO.DISPLAY_VERSION ?? MACRO.VERSION}${RESET}`)
-  out.push('')
+  const contentW = Math.max(
+    taglinePlain.length,
+    providerPlain.length,
+    modelPlain.length,
+    endpointPlain.length,
+    statusPlain.length,
+    versionText.length + 3,
+  )
+  const W = monoW + gap + contentW + 4
+  const pad = W < columns ? Math.floor((columns - W) / 2) : 0
+  const indent = ' '.repeat(pad)
+  const out: string[] = []
+
+  // Top rule stays quiet; the version rides on the bottom rule.
+  out.push(indent + border('\u256d' + '\u2500'.repeat(W - 2) + '\u256e'))
+
+  // Monogram sits in the left column; every detail stays on the right.
+  const rows: Array<[string, string, string]> = [
+    [OC_MONOGRAM[0]!, tagline, taglinePlain],
+    [OC_MONOGRAM[1]!, provider, providerPlain],
+    [OC_MONOGRAM[2]!, model, modelPlain],
+    ['', endpoint, endpointPlain],
+  ]
+  for (const [art, styled, plain] of rows) {
+    const artCell = art ? ansiRgb(...ACCENT) + art.padEnd(monoW) + RESET : ' '.repeat(monoW)
+    out.push(
+      indent +
+        border('\u2502') +
+        ' ' +
+        artCell +
+        ' '.repeat(gap) +
+        styled +
+        ' '.repeat(contentW - plain.length) +
+        ' ' +
+        border('\u2502'),
+    )
+  }
+
+  out.push(
+    indent +
+      border(
+        '\u251c' +
+          '\u2500'.repeat(monoW + gap + 1) +
+          '\u253c' +
+          '\u2500'.repeat(contentW) +
+          '\u2524',
+      ),
+  )
+  out.push(
+    indent +
+      border('\u2502') +
+      ' '.repeat(1 + monoW + gap) +
+      status +
+      ' '.repeat(contentW - statusPlain.length) +
+      ' ' +
+      border('\u2502'),
+  )
+  const versionStem = '\u2500'.repeat(monoW + gap + 4)
+  out.push(
+    indent +
+      border('\u2570') +
+      versionStem +
+      ' ' +
+      paint(versionText, ACCENT) +
+      ' ' +
+      border('\u2500'.repeat(Math.max(0, W - versionStem.length - versionText.length - 4)) + '\u256f'),
+  )
 
   process.stdout.write(out.join('\n') + '\n')
 }
