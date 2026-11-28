@@ -60,11 +60,11 @@ Optional tuning fields: `simpleMaxChars`, `simpleMaxWords`.
 
 ### `maxContextWindow` (number)
 
-Global override for the max context window in tokens, applied to all models. This is an explicit override: it wins over env vars, the catalog/discovery cache, and descriptor defaults, and can raise or lower the effective limit. If unset, the normal resolution chain applies.
+Fallback context window in tokens for models whose own limit is unknown. Model-specific values always win: an exact env override, the catalog/discovery cache, a `modelLimits` entry, or a descriptor default is used first, and `maxContextWindow` only applies when none of them resolves. It does not cap or raise a known model limit. If unset, the normal resolution chain applies.
 
 ```json
 {
-  "maxContextWindow": 1048576
+  "maxContextWindow": 500000
 }
 ```
 

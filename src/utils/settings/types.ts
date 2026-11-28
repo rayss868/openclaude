@@ -992,8 +992,9 @@ export const SettingsSchema = lazySchema(() =>
         .positive()
         .optional()
         .describe(
-          'Global override for max context window (tokens). Applied to all models, ' +
-            'taking the highest precedence over per-model settings, env vars, and catalog limits.',
+          'Fallback context window (tokens) for models whose own limit is unknown. ' +
+            'Model-specific values (env overrides, catalog/discovery cache, modelLimits, ' +
+            'and descriptor defaults) always win; this applies only when none resolves.',
         ),
       modelLimits: z
         .record(

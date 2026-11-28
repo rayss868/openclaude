@@ -376,7 +376,8 @@ This fork adds reliability, UX, and agent-loop improvements on top of upstream O
 - Inline search/filter in `/model` plus a "Press / to search" hint
 - Enables model discovery for remote custom OpenAI-compatible endpoints
 - Model discovery loads in the background when opening `/model`
-- `maxContextWindow` is a true override — it wins over env vars, the catalog/discovery cache, and descriptor limits for every model (can raise as well as cap); custom-route (`routeId === 'custom'`) fallback restored
+- Custom-route (`routeId === 'custom'`) fallback restored for non-local custom routes
+- `maxContextWindow` is a fallback — a model's own context window (env override, catalog/discovery cache, `modelLimits`, or descriptor default) always wins; the global value applies only when the model's limit is unknown
 
 ### API resilience
 - Retries transport failures, truncated streams, and connections terminated by server or proxy

@@ -27,6 +27,7 @@ type SettingsShape = {
     string,
     { contextWindow?: number; maxOutputTokens?: number }
   >
+  maxContextWindow?: number
 }
 
 let mockSettings: SettingsShape = {}
@@ -113,6 +114,31 @@ test('resolveModelRuntimeLimits resolves a prefix settings key', async () => {
   })
 
   expect(limits.contextWindow).toBe(333_333)
+})
+
+test('resolveModelRuntimeLimits keeps the model context window over settings maxContextWindow', async () => {
+  mockSettings = { maxContextWindow: 500_000 }
+  const { resolveModelRuntimeLimits } = await importFresh()
+
+  const limits = resolveModelRuntimeLimits({
+    model: 'gpt-4o',
+    baseUrl: 'https://api.openai.com/v1',
+    processEnv: { OPENAI_BASE_URL: 'https://api.openai.com/v1' },
+  })
+
+  expect(limits.contextWindow).toBe(128_000)
+})
+
+test('resolveModelRuntimeLimits falls back to settings maxContextWindow for an unknown model', async () => {
+  mockSettings = { maxContextWindow: 300_000 }
+  const { resolveModelRuntimeLimits } = await importFresh()
+
+  const limits = resolveModelRuntimeLimits({
+    model: 'totally-unknown-model-xyz',
+    processEnv: {},
+  })
+
+  expect(limits.contextWindow).toBe(300_000)
 })
 
 test('resolveModelRuntimeLimits lets an env override win over settings modelLimits', async () => {

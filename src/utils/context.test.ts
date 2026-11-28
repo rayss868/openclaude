@@ -11,6 +11,16 @@ import {
   clearSessionContextWindowOverride,
 } from './context.ts'
 
+// @ts-expect-error -- query-string cache-buster: keep a genuine reference to the
+// settings module so this suite's mock can fall through to real settings while
+// other suites are running (mock.module is process-global).
+import * as realSettingsModule from './settings/settings.js?contextTestRealSettings'
+
+// The developer's own settings.json must not influence these assertions: a
+// global `maxContextWindow` would otherwise replace every model's context
+// window and hide the catalog defaults under test.
+let settingsOverrideActive = false
+
 const originalEnv = {
   CLAUDE_CODE_USE_OPENAI: process.env.CLAUDE_CODE_USE_OPENAI,
   CLAUDE_CODE_MAX_OUTPUT_TOKENS: process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS,
@@ -38,6 +48,12 @@ const originalEnv = {
 
 beforeEach(async () => {
   await acquireSharedMutationLock('context.test.ts')
+  mock.module('./settings/settings.js', () => ({
+    ...realSettingsModule,
+    getInitialSettings: () =>
+      settingsOverrideActive ? {} : realSettingsModule.getInitialSettings(),
+  }))
+  settingsOverrideActive = true
   clearSessionContextWindowOverride()
   delete process.env.CLAUDE_CODE_USE_OPENAI
   delete process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS
@@ -61,6 +77,8 @@ beforeEach(async () => {
 
 afterEach(() => {
   try {
+    mock.restore()
+    settingsOverrideActive = false
     if (originalEnv.CLAUDE_CODE_USE_OPENAI === undefined) {
       delete process.env.CLAUDE_CODE_USE_OPENAI
     } else {
