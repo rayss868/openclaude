@@ -1,4 +1,5 @@
 import { createInterface } from 'node:readline'
+import { init } from './init.js'
 import {
   unstable_v2_createSession,
   unstable_v2_resumeSession,
@@ -182,6 +183,10 @@ export function createAcpServer(
     }
 
     if (message.method === 'session/new') {
+      // init() must run before the session engine is built: createEngineFromOptions
+      // reads config synchronously, and config access is gated until enableConfigs()
+      // runs inside init().
+      await init()
       const cwd = typeof message.params?.cwd === 'string' ? message.params.cwd : process.cwd()
       let session: SDKSession
       const onPermissionRequest = (permission: SDKPermissionRequestMessage): void => {
@@ -194,6 +199,7 @@ export function createAcpServer(
     }
 
     if (message.method === 'session/load') {
+      await init()
       const sessionId = typeof message.params?.sessionId === 'string' ? message.params.sessionId : ''
       const cwd = typeof message.params?.cwd === 'string' ? message.params.cwd : process.cwd()
       if (!sessionId) {
