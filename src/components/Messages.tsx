@@ -43,6 +43,8 @@ import { isNullRenderingAttachment } from './messages/nullRenderingAttachments.j
 import { OffscreenFreeze } from './OffscreenFreeze.js';
 import type { ToolUseConfirm } from './permissions/PermissionRequest.js';
 import { StatusNotices } from './StatusNotices.js';
+import { StartupScreenBanner } from './StartupScreen.js';
+import { isFullscreenEnvEnabled } from '../utils/fullscreen.js';
 import type { JumpHandle } from './VirtualMessageList.js';
 
 // Memoed logo header: this box is the FIRST sibling before all MessageRows
@@ -56,26 +58,19 @@ import type { JumpHandle } from './VirtualMessageList.js';
 const LogoHeader = React.memo(function LogoHeader(t0: {
   agentDefinitions?: AgentDefinitionsResult;
 }) {
-  const $ = _c(3);
   const {
     agentDefinitions
   } = t0;
-  let t1;
-  if ($[0] === Symbol.for("react.memo_cache_sentinel")) {
-    t1 = null;
-    $[0] = t1;
-  } else {
-    t1 = $[0];
-  }
-  let t2;
-  if ($[1] !== agentDefinitions) {
-    t2 = <OffscreenFreeze><Box flexDirection="column" gap={1}>{t1}<React.Suspense fallback={null}><StatusNotices agentDefinitions={agentDefinitions} /></React.Suspense></Box></OffscreenFreeze>;
-    $[1] = agentDefinitions;
-    $[2] = t2;
-  } else {
-    t2 = $[2];
-  }
-  return t2;
+  return (
+    <OffscreenFreeze>
+      <Box flexDirection="column" gap={1}>
+        {isFullscreenEnvEnabled() ? <StartupScreenBanner /> : null}
+        <React.Suspense fallback={null}>
+          <StatusNotices agentDefinitions={agentDefinitions} />
+        </React.Suspense>
+      </Box>
+    </OffscreenFreeze>
+  );
 });
 
 // Dead code elimination: conditional import for proactive mode

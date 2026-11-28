@@ -5,6 +5,7 @@
  * Addresses: https://github.com/rayss868/openclaude/issues/55
  */
 
+import * as React from 'react'
 import { isLocalProviderUrl, resolveProviderRequest } from '../services/api/providerConfig.js'
 import {
   getRouteLabel,
@@ -18,6 +19,9 @@ import { DEFAULT_GEMINI_MODEL } from '../utils/providerProfile.js'
 import { BRAND_TAGLINE } from '../constants/brand.js'
 import { getGlobalConfig } from '../utils/config.js'
 import { ANSI_DIM, ANSI_RESET, ansiRgb } from '../utils/terminalAnsi.js'
+import { isFullscreenEnvEnabled } from '../utils/fullscreen.js'
+import { useTerminalSize } from '../hooks/useTerminalSize.js'
+import { Ansi, Box } from '../ink.js'
 import {
   resolveLogoPalette,
   type RGB,
@@ -163,10 +167,7 @@ export function detectProvider(modelOverride?: string): { name: string; model: s
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-export function printStartupScreen(modelOverride?: string): void {
-  // Skip in non-interactive / CI / print mode
-  if (process.env.CI || !process.stdout.isTTY) return
-
+export function getStartupScreenLines(modelOverride?: string, cols?: number): string[] {
   const palette = resolveLogoPalette(getGlobalConfig().logoColor)
   const ACCENT = palette.accent
   const CREAM = palette.cream
@@ -175,7 +176,7 @@ export function printStartupScreen(modelOverride?: string): void {
   const GRAD = palette.gradient
 
   const p = detectProvider(modelOverride)
-  const columns = process.stdout.columns || 80
+  const columns = cols || process.stdout.columns || 80
   const centerPad = (visibleLen: number): string =>
     ' '.repeat(Math.max(0, Math.floor((columns - visibleLen) / 2)))
 
@@ -270,5 +271,24 @@ export function printStartupScreen(modelOverride?: string): void {
   out.push(cardPad + paint('\u2500'.repeat(cardW), BORDER))
   out.push('')
 
-  process.stdout.write(out.join('\n') + '\n')
+  return out
 }
+
+export function printStartupScreen(modelOverride?: string): void {
+  // Skip in non-interactive / CI / print mode, or when fullscreen is enabled
+  // (fullscreen mode renders StartupScreenBanner inside the layout).
+  if (process.env.CI || !process.stdout.isTTY) return
+  if (isFullscreenEnvEnabled() && process.env.NODE_ENV !== 'test') return
+  const lines = getStartupScreenLines(modelOverride)
+  process.stdout.write(lines.join('\n') + '\n')
+}
+
+export const StartupScreenBanner = React.memo(function StartupScreenBanner(): React.ReactElement {
+  const { columns } = useTerminalSize()
+  const lines = React.useMemo(() => getStartupScreenLines(undefined, columns), [columns])
+  return React.createElement(
+    Box,
+    { flexDirection: 'column' },
+    lines.map((line, i) => React.createElement(Ansi, { key: i }, line)),
+  )
+})
