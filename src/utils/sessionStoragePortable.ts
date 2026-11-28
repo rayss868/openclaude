@@ -110,6 +110,39 @@ export function extractLastJsonStringField(
   return lastValue
 }
 
+/**
+ * Returns the fork parent recorded on the transcript's `{"type":"fork"}` line.
+ * Type-scoped so unrelated tool inputs cannot masquerade as fork metadata.
+ * The entry is written at file materialization (near the head) and re-appended
+ * on exit (near the tail), so check both windows.
+ */
+export function extractForkParentSessionId(
+  head: string,
+  tail: string,
+): string | undefined {
+  return (
+    extractForkParentSessionIdFromChunk(tail) ??
+    (head === tail ? undefined : extractForkParentSessionIdFromChunk(head))
+  )
+}
+
+function extractForkParentSessionIdFromChunk(
+  chunk: string,
+): string | undefined {
+  for (const line of chunk.split('\n')) {
+    const trimmed = line.trim()
+    if (
+      !trimmed.startsWith('{"type":"fork"') &&
+      !trimmed.startsWith('{"type": "fork"')
+    ) {
+      continue
+    }
+    const value = extractLastJsonStringField(trimmed, 'forkParentSessionId')
+    if (value) return value
+  }
+  return undefined
+}
+
 // ---------------------------------------------------------------------------
 // First prompt extraction from head chunk
 // ---------------------------------------------------------------------------

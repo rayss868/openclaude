@@ -48,6 +48,7 @@ function toSDKSessionInfo(info: SessionInfo): SDKSessionInfo {
     gitBranch: info.gitBranch,
     cwd: info.cwd,
     tag: info.tag,
+    forkParentSessionId: info.forkParentSessionId,
     createdAt: info.createdAt,
   }
 }
@@ -320,7 +321,7 @@ export async function deleteSession(
  *
  * @param sessionId - UUID of the source session
  * @param options - Optional dir, upToMessageId, title
- * @returns Object with the new sessionId
+ * @returns Object with the new sessionId and its forkParentSessionId
  */
 export async function forkSession(
   sessionId: string,
@@ -390,11 +391,25 @@ export async function forkSession(
     )
   }
 
-  // Build forked entries — metadata first, then conversational
+  // Build forked entries — fork lineage first, metadata, then conversational.
+  // The source's own fork line describes the source's parent, not this fork,
+  // so it must not be copied forward.
   const lines: string[] = []
+  lines.push(
+    JSON.stringify({
+      type: 'fork',
+      sessionId: forkSessionId,
+      forkParentSessionId: sessionId,
+      forkedAt: new Date().toISOString(),
+      ...(options?.upToMessageId
+        ? { forkBoundaryMessageId: options.upToMessageId }
+        : {}),
+    }),
+  )
 
   // Metadata entries: copy with new sessionId, no UUID remapping
   for (const entry of metadataEntries) {
+    if (entry.type === 'fork') continue
     lines.push(JSON.stringify({ ...entry, sessionId: forkSessionId }))
   }
 
@@ -438,5 +453,5 @@ export async function forkSession(
     })
   }
 
-  return { sessionId: forkSessionId }
+  return { sessionId: forkSessionId, forkParentSessionId: sessionId }
 }

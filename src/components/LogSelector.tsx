@@ -137,21 +137,26 @@ function extractSnippet(text: string, query: string, contextChars: number): Snip
 function buildLogLabel(log: LogOption, maxLabelWidth: number, options?: {
   isGroupHeader?: boolean;
   isChild?: boolean;
-  forkCount?: number;
+  isFork?: boolean;
+  childCount?: number;
+  allChildrenAreForks?: boolean;
 }): string {
   const {
     isGroupHeader = false,
     isChild = false,
-    forkCount = 0
+    isFork = false,
+    childCount = 0,
+    allChildrenAreForks = false
   } = options || {};
 
   // TreeSelect will add the prefix, so we just need to account for its width
-  const prefixWidth = isGroupHeader && forkCount > 0 ? PARENT_PREFIX_WIDTH : isChild ? CHILD_PREFIX_WIDTH : 0;
-  const sessionCountSuffix = isGroupHeader && forkCount > 0 ? ` (+${forkCount} other ${forkCount === 1 ? 'session' : 'sessions'})` : '';
+  const prefixWidth = isGroupHeader && childCount > 0 ? PARENT_PREFIX_WIDTH : isChild ? CHILD_PREFIX_WIDTH : 0;
+  const sessionCountSuffix = isGroupHeader && childCount > 0 ? allChildrenAreForks ? ` (+${childCount} ${childCount === 1 ? 'fork' : 'forks'})` : ` (+${childCount} other ${childCount === 1 ? 'session' : 'sessions'})` : '';
+  const forkSuffix = !isGroupHeader && isChild && isFork ? ' (fork)' : '';
   const sidechainSuffix = log.isSidechain ? ' (sidechain)' : '';
-  const maxSummaryWidth = maxLabelWidth - prefixWidth - sidechainSuffix.length - sessionCountSuffix.length;
+  const maxSummaryWidth = maxLabelWidth - prefixWidth - sidechainSuffix.length - sessionCountSuffix.length - forkSuffix.length;
   const truncatedSummary = normalizeAndTruncateToWidth(getResumeLogDisplayTitle(log), maxSummaryWidth);
-  return `${truncatedSummary}${sidechainSuffix}${sessionCountSuffix}`;
+  return `${truncatedSummary}${sidechainSuffix}${forkSuffix}${sessionCountSuffix}`;
 }
 function buildLogMetadata(log: LogOption, options?: {
   isChild?: boolean;
@@ -691,7 +696,8 @@ export function LogSelector(t0: LogSelectorProps) {
             dimDescription: true
           };
         }
-        const forkCount = group.childLogs.length;
+        const childCount = group.childLogs.length;
+        const allChildrenAreForks = group.childLogs.every(log_8 => Boolean(log_8.forkParentSessionId));
         const children = group.childLogs.map((log_8, index) => {
           const childIndexInFiltered = displayedLogs.indexOf(log_8);
           const childSnippet = snippets.get(log_8);
@@ -707,7 +713,8 @@ export function LogSelector(t0: LogSelectorProps) {
               indexInFiltered: childIndexInFiltered
             },
             label: buildLogLabel(log_8, maxLabelWidth, {
-              isChild: true
+              isChild: true,
+              isFork: Boolean(log_8.forkParentSessionId)
             }),
             description: childSnippetStr ? `${childMetadata}\n      ${childSnippetStr}` : childMetadata,
             dimDescription: true
@@ -724,7 +731,8 @@ export function LogSelector(t0: LogSelectorProps) {
           },
           label: buildLogLabel(latestLog, maxLabelWidth, {
             isGroupHeader: true,
-            forkCount
+            childCount,
+            allChildrenAreForks
           }),
           description: snippetStr ? `${parentMetadata}\n  ${snippetStr}` : parentMetadata,
           dimDescription: true,
@@ -1670,33 +1678,58 @@ export function groupLogsByResumeBranch(filteredLogs: LogOption[]): ResumeLogGro
   };
 
   const visibleSessionIds = new Set<string>();
+  const logsBySessionId = new Map<string, LogOption>();
   for (const log of filteredLogs) {
     const sessionId = getSessionIdFromLog(log);
-    if (sessionId) visibleSessionIds.add(sessionId);
+    if (!sessionId) continue;
+    visibleSessionIds.add(sessionId);
+    logsBySessionId.set(sessionId, log);
   }
 
   const groups = new Map<string, MutableGroup>();
+  const branchHeaderSessionId = (log: LogOption): string | null => {
+    const branch = log.sessionBranch;
+    if (branch?.rootSessionId && visibleSessionIds.has(branch.rootSessionId)) {
+      return branch.rootSessionId;
+    }
+    if (branch?.parentSessionId && visibleSessionIds.has(branch.parentSessionId)) {
+      return branch.parentSessionId;
+    }
+    return null;
+  };
+
+  // Follow branch and fork lineage to the top-most visible session so nested
+  // branches/forks attach to one group instead of nesting or duplicating.
+  const resolveHeaderSessionId = (sessionId: string, seen: Set<string>): string => {
+    if (seen.has(sessionId)) return sessionId;
+    seen.add(sessionId);
+    const log = logsBySessionId.get(sessionId);
+    if (!log) return sessionId;
+    const forkParentSessionId = log.forkParentSessionId;
+    const candidate =
+      branchHeaderSessionId(log) ??
+      (forkParentSessionId && logsBySessionId.has(forkParentSessionId)
+        ? forkParentSessionId
+        : null);
+    if (!candidate || candidate === sessionId) return sessionId;
+    return resolveHeaderSessionId(candidate, seen);
+  };
+
   for (const [index, log] of filteredLogs.entries()) {
     const sessionId = getSessionIdFromLog(log);
     if (!sessionId) continue;
 
-    const branch = log.sessionBranch;
-    let headerSessionId = sessionId;
-    if (branch?.rootSessionId && visibleSessionIds.has(branch.rootSessionId)) {
-      headerSessionId = branch.rootSessionId;
-    } else if (branch?.parentSessionId && visibleSessionIds.has(branch.parentSessionId)) {
-      headerSessionId = branch.parentSessionId;
-    }
+    const groupSessionId = resolveHeaderSessionId(sessionId, new Set<string>());
 
-    let group = groups.get(headerSessionId);
+    let group = groups.get(groupSessionId);
     if (!group) {
       group = {
-        id: headerSessionId,
-        headerSessionId,
+        id: groupSessionId,
+        headerSessionId: groupSessionId,
         logs: [],
         firstIndex: index,
       };
-      groups.set(headerSessionId, group);
+      groups.set(groupSessionId, group);
     } else {
       group.firstIndex = Math.min(group.firstIndex, index);
     }

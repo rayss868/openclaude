@@ -105,6 +105,7 @@ describe('forkSession metadata preservation (COR-2)', () => {
 
     expect(result.sessionId).toBeDefined()
     expect(result.sessionId).not.toBe(sourceId)
+    expect(result.forkParentSessionId).toBe(sourceId)
 
     const forkedPath = join(sessionDir, `${result.sessionId}.jsonl`)
     const forkedEntries = await readJSONLFile<any>(forkedPath)
@@ -119,6 +120,107 @@ describe('forkSession metadata preservation (COR-2)', () => {
     expect(tagEntry).toBeDefined()
     expect(tagEntry.tag).toBe('important')
     expect(tagEntry.sessionId).toBe(result.sessionId)
+
+    const forkEntry = forkedEntries.find(e => e.type === 'fork')
+    expect(forkEntry).toBeDefined()
+    expect(forkEntry.sessionId).toBe(result.sessionId)
+    expect(forkEntry.forkParentSessionId).toBe(sourceId)
+    expect(forkEntry.forkedAt).toBeDefined()
+  })
+
+  test('forking a fork records the direct parent and drops inherited lineage', async () => {
+    const rootId = randomUUID()
+    const sourceId = randomUUID()
+    const sourcePath = join(sessionDir, `${sourceId}.jsonl`)
+    const userUuid = randomUUID()
+
+    const entries = [
+      JSON.stringify({
+        type: 'fork',
+        sessionId: sourceId,
+        forkParentSessionId: rootId,
+        forkedAt: '2026-01-01T00:00:00.000Z',
+      }),
+      JSON.stringify({
+        type: 'user',
+        message: { role: 'user', content: 'fork of a fork' },
+        uuid: userUuid,
+        parentUuid: null,
+        sessionId: sourceId,
+        isSidechain: false,
+      }),
+    ]
+    writeFileSync(sourcePath, entries.join('\n') + '\n', { encoding: 'utf8' })
+
+    const result = await forkSession(sourceId, { dir: testProjectDir })
+
+    expect(result.forkParentSessionId).toBe(sourceId)
+
+    const forkedPath = join(sessionDir, `${result.sessionId}.jsonl`)
+    const forkedEntries = await readJSONLFile<any>(forkedPath)
+    const forkEntries = forkedEntries.filter((e: any) => e.type === 'fork')
+
+    expect(forkEntries).toHaveLength(1)
+    expect(forkEntries[0].sessionId).toBe(result.sessionId)
+    expect(forkEntries[0].forkParentSessionId).toBe(sourceId)
+  })
+
+  test('fork upToMessageId records the boundary message id', async () => {
+    const sourceId = randomUUID()
+    const sourcePath = join(sessionDir, `${sourceId}.jsonl`)
+    const firstUuid = randomUUID()
+    const secondUuid = randomUUID()
+
+    const entries = [
+      JSON.stringify({
+        type: 'user',
+        message: { role: 'user', content: 'first' },
+        uuid: firstUuid,
+        parentUuid: null,
+        sessionId: sourceId,
+        isSidechain: false,
+      }),
+      JSON.stringify({
+        type: 'assistant',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'one' }] },
+        uuid: secondUuid,
+        parentUuid: firstUuid,
+        sessionId: sourceId,
+        isSidechain: false,
+      }),
+    ]
+    writeFileSync(sourcePath, entries.join('\n') + '\n', { encoding: 'utf8' })
+
+    const result = await forkSession(sourceId, {
+      dir: testProjectDir,
+      upToMessageId: secondUuid,
+    })
+
+    const forkedPath = join(sessionDir, `${result.sessionId}.jsonl`)
+    const forkedEntries = await readJSONLFile<any>(forkedPath)
+    const forkEntry = forkedEntries.find((e: any) => e.type === 'fork')
+
+    expect(forkEntry.forkBoundaryMessageId).toBe(secondUuid)
+  })
+
+  test('listSessions reports forkParentSessionId for a forked session', async () => {
+    const sourceId = randomUUID()
+    const sourcePath = join(sessionDir, `${sourceId}.jsonl`)
+    writeFileSync(sourcePath, JSON.stringify({
+      type: 'user',
+      message: { role: 'user', content: 'fork me' },
+      uuid: randomUUID(),
+      parentUuid: null,
+      sessionId: sourceId,
+      isSidechain: false,
+    }) + '\n', { encoding: 'utf8' })
+
+    const result = await forkSession(sourceId, { dir: testProjectDir })
+    const sessions = await listSessions({ dir: testProjectDir })
+    const forked = sessions.find(s => s.sessionId === result.sessionId)
+
+    expect(forked).toBeDefined()
+    expect(forked?.forkParentSessionId).toBe(sourceId)
   })
 })
 

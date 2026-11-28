@@ -206,6 +206,72 @@ test('shows branches with missing parents as standalone sessions', () => {
   expect(groups[0]?.childLogs).toEqual([])
 })
 
+test('groups forked sessions under their fork parent', () => {
+  const parentId = id(40)
+  const forkId = id(41)
+  const forkOfForkId = id(42)
+  const parent = log(parentId, 'Parent session', 10)
+  const fork = log(forkId, 'Forked prompt', 20, {
+    forkParentSessionId: parentId,
+  })
+  const forkOfFork = log(forkOfForkId, 'Fork of fork prompt', 30, {
+    forkParentSessionId: forkId,
+  })
+
+  const groups = groupLogsByResumeBranch([forkOfFork, fork, parent])
+
+  // The resume tree is two levels deep, so a fork of a fork attaches to the
+  // top-most visible ancestor instead of nesting a third level.
+  expect(groups.map(group => group.headerLog.sessionId)).toEqual([parentId])
+  expect(groups[0]?.childLogs.map(child => child.sessionId)).toEqual([
+    forkOfForkId,
+    forkId,
+  ])
+})
+
+test('groups forked sessions under their fork parent regardless of log order', () => {
+  const parentId = id(43)
+  const forkId = id(44)
+  const parent = log(parentId, 'Parent session', 30)
+  const fork = log(forkId, 'Forked prompt', 20, {
+    forkParentSessionId: parentId,
+  })
+
+  const groups = groupLogsByResumeBranch([fork, parent])
+
+  expect(groups.map(group => group.headerLog.sessionId)).toEqual([parentId])
+  expect(groups[0]?.childLogs.map(child => child.sessionId)).toEqual([forkId])
+})
+
+test('branch lineage wins over fork lineage when both are present', () => {
+  const rootId = id(45)
+  const branchId = id(46)
+  const forkOutsideId = id(47)
+  const root = log(rootId, 'Root session', 10)
+  const branch = log(branchId, 'Branched prompt', 20, {
+    sessionBranch: branchMeta(branchId, rootId, rootId, 'Branch A'),
+    forkParentSessionId: forkOutsideId,
+  })
+
+  const groups = groupLogsByResumeBranch([branch, root])
+
+  expect(groups.map(group => group.headerLog.sessionId)).toEqual([rootId])
+  expect(groups[0]?.childLogs.map(child => child.sessionId)).toEqual([branchId])
+})
+
+test('shows forks with missing parents as standalone sessions', () => {
+  const forkId = id(50)
+  const fork = log(forkId, 'Orphan fork prompt', 10, {
+    forkParentSessionId: id(51),
+  })
+
+  const groups = groupLogsByResumeBranch([fork])
+
+  expect(groups).toHaveLength(1)
+  expect(groups[0]?.headerLog.sessionId).toBe(forkId)
+  expect(groups[0]?.childLogs).toEqual([])
+})
+
 test('search and display include branch names and session titles', () => {
   const rootId = id(30)
   const branchId = id(31)

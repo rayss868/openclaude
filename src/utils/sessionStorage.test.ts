@@ -22,12 +22,14 @@ import {
   recordGoalState,
   recordTranscript,
   flushSessionStorage,
+  readLiteMetadata,
   readLogFileTextForSearch,
   resetProjectForTesting,
   resetSessionFilePointer,
   setSessionFileForTesting,
   restoreSessionMetadata,
   stripPersistedToolUseResultsFromJSONLBuffer,
+  cacheForkParentSessionId,
 } from './sessionStorage.ts'
 import { createGoalState } from '../services/goal/state.js'
 import {
@@ -38,7 +40,11 @@ import {
   switchSession,
 } from '../bootstrap/state.js'
 import type { GoalState } from '../services/goal/types.js'
-import type { LogOption, SessionBranchEntry } from '../types/logs.js'
+import type {
+  ForkMetadataEntry,
+  LogOption,
+  SessionBranchEntry,
+} from '../types/logs.js'
 import {
   getClaudeConfigHomeDir,
   setClaudeConfigHomeDirForTesting,
@@ -188,6 +194,14 @@ function readSessionBranchEntries(text: string): SessionBranchEntry[] {
     .filter(Boolean)
     .map(line => JSON.parse(line) as SessionBranchEntry)
     .filter(entry => entry.type === 'session-branch')
+}
+
+function readForkEntries(text: string): ForkMetadataEntry[] {
+  return text
+    .split('\n')
+    .filter(Boolean)
+    .map(line => JSON.parse(line) as ForkMetadataEntry)
+    .filter(entry => entry.type === 'fork')
 }
 
 async function withSessionPersistence<T>(fn: () => Promise<T>): Promise<T> {
@@ -646,6 +660,135 @@ test('restoreSessionMetadata clears cached branch when resumed transcript has no
 
     const text = await readFile(filePath, 'utf8')
     expect(readSessionBranchEntries(text)).toEqual([])
+  })
+})
+
+test('loadTranscriptFile collects the fork metadata entry', async () => {
+  const parentId = id(56)
+  const filePath = await writeJsonl([
+    {
+      type: 'fork',
+      sessionId,
+      forkParentSessionId: parentId,
+      forkedAt: ts,
+      forkBoundaryMessageId: id(57),
+    },
+  ])
+
+  const { forks } = await loadTranscriptFile(filePath)
+
+  expect(forks.get(sessionId as never)).toMatchObject({
+    type: 'fork',
+    forkParentSessionId: parentId,
+    forkBoundaryMessageId: id(57),
+  })
+})
+
+test('readLiteMetadata reads forkParentSessionId from the transcript tail', async () => {
+  const parentId = id(58)
+  const filePath = await writeJsonl([
+    user(id(59), null, 'forked conversation'),
+    {
+      type: 'fork',
+      sessionId,
+      forkParentSessionId: parentId,
+      forkedAt: ts,
+    },
+  ])
+  const text = await readFile(filePath, 'utf8')
+
+  const meta = await readLiteMetadata(
+    filePath,
+    Buffer.byteLength(text),
+    Buffer.allocUnsafe(64 * 1024),
+    sessionId,
+  )
+
+  expect(meta.forkParentSessionId).toBe(parentId)
+})
+
+test('cacheForkParentSessionId re-appends fork metadata on adopt', async () => {
+  await withSessionPersistence(async () => {
+    const parentId = id(60)
+    const dir = await mkdtemp(join(tmpdir(), 'openclaude-session-storage-'))
+    tempDirs.push(dir)
+    const filePath = join(dir, `${sessionId}.jsonl`)
+    await writeFile(
+      filePath,
+      `${JSON.stringify(user(id(61), null, 'forked session'))}\n`,
+    )
+
+    switchSession(sessionId as never, dir)
+    await resetSessionFilePointer()
+    restoreSessionMetadata({})
+    cacheForkParentSessionId(parentId)
+    adoptResumedSessionFile()
+
+    const text = await readFile(filePath, 'utf8')
+    const forkEntries = readForkEntries(text)
+    expect(forkEntries).toHaveLength(1)
+    expect(forkEntries[0]?.forkParentSessionId).toBe(parentId)
+    expect(forkEntries[0]?.sessionId).toBe(sessionId)
+  })
+})
+
+test('restoreSessionMetadata rebuilds fork lineage from lite fields', async () => {
+  await withSessionPersistence(async () => {
+    const parentId = id(64)
+    const dir = await mkdtemp(join(tmpdir(), 'openclaude-session-storage-'))
+    tempDirs.push(dir)
+    const filePath = join(dir, `${sessionId}.jsonl`)
+    await writeFile(
+      filePath,
+      `${JSON.stringify(user(id(65), null, 'resumed fork'))}\n`,
+    )
+
+    switchSession(sessionId as never, dir)
+    await resetSessionFilePointer()
+    restoreSessionMetadata({
+      forkParentSessionId: parentId,
+      forkedAt: '2026-01-02T03:04:05.000Z',
+      forkBoundaryMessageId: id(66),
+    })
+    adoptResumedSessionFile()
+
+    const forkEntries = readForkEntries(await readFile(filePath, 'utf8'))
+    expect(forkEntries).toHaveLength(1)
+    expect(forkEntries[0]).toMatchObject({
+      sessionId,
+      forkParentSessionId: parentId,
+      forkedAt: '2026-01-02T03:04:05.000Z',
+      forkBoundaryMessageId: id(66),
+    })
+  })
+})
+
+test('restoreSessionMetadata clears cached fork when resumed transcript has no fork metadata', async () => {
+  await withSessionPersistence(async () => {
+    restoreSessionMetadata({
+      fork: {
+        type: 'fork',
+        sessionId: sessionId as UUID,
+        forkParentSessionId: id(62),
+        forkedAt: ts,
+      },
+    })
+
+    const dir = await mkdtemp(join(tmpdir(), 'openclaude-session-storage-'))
+    tempDirs.push(dir)
+    const filePath = join(dir, `${sessionId}.jsonl`)
+    await writeFile(
+      filePath,
+      `${JSON.stringify(user(id(63), null, 'resume non-fork'))}\n`,
+    )
+
+    switchSession(sessionId as never, dir)
+    await resetSessionFilePointer()
+    restoreSessionMetadata({})
+    adoptResumedSessionFile()
+
+    const text = await readFile(filePath, 'utf8')
+    expect(readForkEntries(text)).toEqual([])
   })
 })
 

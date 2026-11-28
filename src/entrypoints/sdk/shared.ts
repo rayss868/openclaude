@@ -301,6 +301,8 @@ export type SDKSessionInfo = {
   gitBranch?: string
   cwd?: string
   tag?: string
+  /** Session this transcript was forked from, when created via forkSession. */
+  forkParentSessionId?: string
   createdAt?: number
 }
 
@@ -354,6 +356,8 @@ export type ForkSessionOptions = {
 export type ForkSessionResult = {
   /** UUID of the newly created forked session. */
   sessionId: string
+  /** UUID of the session the transcript was copied from. */
+  forkParentSessionId: string
 }
 
 /**
