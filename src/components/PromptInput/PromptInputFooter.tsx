@@ -23,7 +23,8 @@ import { getLastAssistantMessageId, StatusLine, statusLineShouldDisplay } from '
 import { Notifications } from './Notifications.js';
 import { resolveFooterOverlay, resolveTransientFooterMessage } from './footerVisibility.js';
 import { KeepMounted } from './KeepMounted.js';
-import { PromptInputFooterLeftSide } from './PromptInputFooterLeftSide.js';
+import { isPrStatusEnabled, PromptInputFooterLeftSide } from './PromptInputFooterLeftSide.js';
+import { usePrStatus } from '../../hooks/usePrStatus.js';
 import { PromptInputFooterSuggestions, type SuggestionItem } from './PromptInputFooterSuggestions.js';
 import { PromptInputHelpMenu } from './PromptInputHelpMenu.js';
 /**
@@ -203,14 +204,16 @@ function PromptInputFooter({
     maxColumnWidth
   } : null, [isFullscreen, suggestions, selectedSuggestion, maxColumnWidth]);
   useSetPromptOverlay(overlayData);
+  // One poll feeds both the PR badge and the custom status line payload.
+  const prStatus = usePrStatus(isLoading, !hideRegularFooter && isPrStatusEnabled());
   return <>
       <KeepMounted hidden={hideRegularFooter}>
         <Box flexDirection={isNarrow ? 'column' : 'row'} justifyContent={isNarrow ? 'flex-start' : 'space-between'} paddingX={2} gap={isNarrow ? 0 : 1}>
           <Box flexDirection="column" flexShrink={isNarrow ? 0 : 1}>
           <KeepMounted hidden={footerStatusLine === null}>
-            {configuredFooterStatusLine === 'custom' ? <StatusLine active={footerStatusLine === 'custom'} messagesRef={messagesRef} lastAssistantMessageId={lastAssistantMessageId} vimMode={vimMode} /> : configuredFooterStatusLine === 'builtin' ? <BuiltinStatusLine messagesRef={messagesRef} lastAssistantMessageId={lastAssistantMessageId} /> : null}
+            {configuredFooterStatusLine === 'custom' ? <StatusLine active={footerStatusLine === 'custom'} messagesRef={messagesRef} lastAssistantMessageId={lastAssistantMessageId} vimMode={vimMode} prStatus={prStatus} /> : configuredFooterStatusLine === 'builtin' ? <BuiltinStatusLine messagesRef={messagesRef} lastAssistantMessageId={lastAssistantMessageId} /> : null}
           </KeepMounted>
-          <PromptInputFooterLeftSide active={!hideRegularFooter} exitMessage={exitMessage} vimMode={vimMode} mode={mode} toolPermissionContext={toolPermissionContext} suppressHint={suppressHint} isLoading={isLoading} tasksSelected={pillSelected} teamsSelected={teamsSelected} teammateFooterIndex={teammateFooterIndex} tmuxSelected={tmuxSelected} isPasting={isPasting} isSearching={isSearching} historyQuery={historyQuery} setHistoryQuery={setHistoryQuery} historyFailedMatch={historyFailedMatch} onOpenTasksDialog={onOpenTasksDialog} />
+          <PromptInputFooterLeftSide active={!hideRegularFooter} exitMessage={exitMessage} vimMode={vimMode} mode={mode} toolPermissionContext={toolPermissionContext} suppressHint={suppressHint} isLoading={isLoading} tasksSelected={pillSelected} teamsSelected={teamsSelected} teammateFooterIndex={teammateFooterIndex} tmuxSelected={tmuxSelected} isPasting={isPasting} isSearching={isSearching} historyQuery={historyQuery} setHistoryQuery={setHistoryQuery} historyFailedMatch={historyFailedMatch} onOpenTasksDialog={onOpenTasksDialog} hideVimModeIndicator={settings?.statusLine?.hideVimModeIndicator} prStatus={prStatus} />
           </Box>
           <Box flexShrink={1} gap={1}>
           {isFullscreen ? null : <Notifications apiKeyStatus={apiKeyStatus} autoUpdaterResult={autoUpdaterResult} debug={debug} isAutoUpdating={isAutoUpdating} verbose={verbose} messages={messages} onAutoUpdaterResult={onAutoUpdaterResult} onChangeIsUpdating={onChangeIsUpdating} ideSelection={ideSelection} mcpClients={mcpClients} isInputWrapped={isInputWrapped} isNarrow={isNarrow} />}

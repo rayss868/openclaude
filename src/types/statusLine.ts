@@ -16,6 +16,38 @@ type StatusLineRateLimitWindow = {
   resets_at: number
 }
 
+/** Host/owner/name of the `origin` remote, when it parses. */
+type StatusLineWorkspaceRepo = {
+  host: string
+  owner: string
+  name: string
+}
+
+/**
+ * Provider-reported prompt cache state for the session so far.
+ *
+ * Only present once at least one request has reported usage; absent means
+ * "no cache data yet" rather than "no cache".
+ */
+export type StatusLinePromptCache = {
+  /** True while the prompt cache is considered live (not expired). */
+  warm: boolean
+  caching_observed: boolean
+  /** Cache TTL in milliseconds when the provider reports one. */
+  ttl: number | null
+  /** Unix epoch seconds, or null when the expiry is unknown. */
+  expires_at: number | null
+  requests: number
+  /** Requests that read fewer cached tokens than the previous one did. */
+  misses: number
+  /** `cache_read / (fresh + cache_read + cache_write)`, or null when unknown. */
+  hit_ratio: number | null
+  cache_write_tokens: number
+  miss_recache_tokens: number
+  /** Unix epoch seconds of the most recent miss, or null. */
+  last_miss_at: number | null
+}
+
 export type StatusLineCommandInput = {
   // Base hook input (createBaseHookInput)
   session_id: string
@@ -35,6 +67,13 @@ export type StatusLineCommandInput = {
     current_dir: string
     project_dir: string
     added_dirs: string[]
+    /**
+     * Present when the cwd is a linked worktree: the worktree's directory
+     * name under `<common>.git/worktrees/`.
+     */
+    git_worktree?: string
+    /** Present when `origin` resolves to a parseable remote. */
+    repo?: StatusLineWorkspaceRepo
   }
   version: string
   output_style: {
@@ -71,6 +110,25 @@ export type StatusLineCommandInput = {
     remaining_percentage: number | null
   }
   exceeds_200k_tokens: boolean
+  /** Whether the session is running in fast mode. */
+  fast_mode: boolean
+  /** Present when the active model exposes a reasoning effort control. */
+  effort?: {
+    level: string
+  }
+  thinking: {
+    enabled: boolean
+  }
+  /** Present once the provider has reported cache usage this session. */
+  prompt_cache?: StatusLinePromptCache
+  /** Present when the current branch has an open pull request. */
+  pr?: {
+    number: number
+    url: string
+    review_state?: string
+    /** Host-specific PR kind, e.g. `github`. */
+    kind?: string
+  }
   rate_limits?: {
     five_hour?: StatusLineRateLimitWindow
     seven_day?: StatusLineRateLimitWindow

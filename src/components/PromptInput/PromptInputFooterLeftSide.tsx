@@ -23,8 +23,8 @@ import { TeamStatus } from '../teams/TeamStatus.js';
 import { isInProcessEnabled } from '../../utils/swarm/backends/registry.js';
 import { useAppState, useAppStateStore } from 'src/state/AppState.js';
 import { getIsRemoteMode } from '../../bootstrap/state.js';
+import type { PrStatusState } from '../../hooks/usePrStatus.js';
 import HistorySearchInput from './HistorySearchInput.js';
-import { usePrStatus } from '../../hooks/usePrStatus.js';
 import { KeyboardShortcutHint } from '../design-system/KeyboardShortcutHint.js';
 import { Byline } from '../design-system/Byline.js';
 import { useTerminalSize } from '../../hooks/useTerminalSize.js';
@@ -71,6 +71,16 @@ type Props = {
   setHistoryQuery: (query: string) => void;
   historyFailedMatch: boolean;
   onOpenTasksDialog?: (taskId?: string) => void;
+  /**
+   * `statusLine.hideVimModeIndicator`: the user's status line script renders
+   * `vim.mode` itself, so the built-in indicator would duplicate it.
+   */
+  hideVimModeIndicator?: boolean;
+  /**
+   * PR status polled by `PromptInputFooter`. Owned there so the custom status
+   * line can reuse the same result instead of running a second poll loop.
+   */
+  prStatus: PrStatusState;
 };
 function ProactiveCountdown({
   active
@@ -131,7 +141,7 @@ function ProactiveCountdown({
   return t4;
 }
 export function PromptInputFooterLeftSide(t0) {
-  const $ = _c(29);
+  const $ = _c(32);
   const {
     active,
     exitMessage,
@@ -149,7 +159,9 @@ export function PromptInputFooterLeftSide(t0) {
     historyQuery,
     setHistoryQuery,
     historyFailedMatch,
-    onOpenTasksDialog
+    onOpenTasksDialog,
+    hideVimModeIndicator,
+    prStatus
   } = t0;
   let transientMessage: React.ReactNode = null;
   const transientMessageType = resolveVisibleTransientFooterMessage({
@@ -178,11 +190,12 @@ export function PromptInputFooterLeftSide(t0) {
     transientMessage = t1;
   }
   let t1;
-  if ($[3] !== isSearching || $[4] !== vimMode) {
-    t1 = isVimModeEnabled() && vimMode === "INSERT" && !isSearching;
+  if ($[3] !== isSearching || $[4] !== vimMode || $[30] !== hideVimModeIndicator) {
+    t1 = hideVimModeIndicator !== true && isVimModeEnabled() && vimMode === "INSERT" && !isSearching;
     $[3] = isSearching;
     $[4] = vimMode;
     $[5] = t1;
+    $[30] = hideVimModeIndicator;
   } else {
     t1 = $[5];
   }
@@ -213,8 +226,8 @@ export function PromptInputFooterLeftSide(t0) {
   }
   const t4 = !suppressHint && !showVim;
   let t5;
-  if ($[14] !== isRegularFooterActive || $[15] !== isLoading || $[16] !== mode || $[17] !== onOpenTasksDialog || $[18] !== t4 || $[19] !== tasksSelected || $[20] !== teammateFooterIndex || $[21] !== teamsSelected || $[22] !== tmuxSelected || $[23] !== toolPermissionContext) {
-    t5 = <ModeIndicator mode={mode} toolPermissionContext={toolPermissionContext} showHint={t4} isLoading={isLoading} tasksSelected={tasksSelected} teamsSelected={teamsSelected} teammateFooterIndex={teammateFooterIndex} onOpenTasksDialog={onOpenTasksDialog} active={isRegularFooterActive} />;
+  if ($[14] !== isRegularFooterActive || $[15] !== isLoading || $[16] !== mode || $[17] !== onOpenTasksDialog || $[18] !== t4 || $[19] !== tasksSelected || $[20] !== teammateFooterIndex || $[21] !== teamsSelected || $[22] !== tmuxSelected || $[23] !== toolPermissionContext || $[31] !== prStatus) {
+    t5 = <ModeIndicator mode={mode} toolPermissionContext={toolPermissionContext} showHint={t4} isLoading={isLoading} tasksSelected={tasksSelected} teamsSelected={teamsSelected} teammateFooterIndex={teammateFooterIndex} onOpenTasksDialog={onOpenTasksDialog} active={isRegularFooterActive} prStatus={prStatus} />;
     $[14] = isRegularFooterActive;
     $[15] = isLoading;
     $[16] = mode;
@@ -225,6 +238,7 @@ export function PromptInputFooterLeftSide(t0) {
     $[21] = teamsSelected;
     $[22] = tmuxSelected;
     $[23] = toolPermissionContext;
+    $[31] = prStatus;
     $[24] = t5;
   } else {
     t5 = $[24];
@@ -254,6 +268,7 @@ type ModeIndicatorProps = {
   teammateFooterIndex?: number;
   onOpenTasksDialog?: (taskId?: string) => void;
   active: boolean;
+  prStatus: PrStatusState;
 };
 function ModeIndicator({
   mode,
@@ -264,7 +279,8 @@ function ModeIndicator({
   teamsSelected,
   teammateFooterIndex,
   onOpenTasksDialog,
-  active
+  active,
+  prStatus
 }: ModeIndicatorProps): React.ReactNode {
   const {
     columns
@@ -280,7 +296,6 @@ function ModeIndicator({
   const viewingAgentTaskId = useAppState(s_2 => s_2.viewingAgentTaskId);
   const expandedView = useAppState(s_3 => s_3.expandedView);
   const showSpinnerTree = expandedView === 'teammates';
-  const prStatus = usePrStatus(isLoading, active && isPrStatusEnabled());
   const nextTickAt = useSyncExternalStore(proactiveModule?.subscribeToProactiveChanges ?? NO_OP_SUBSCRIBE, proactiveModule?.getNextTickAt ?? NULL, NULL);
   // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
   const voiceEnabled = feature('VOICE_MODE') ? useVoiceEnabled() : false;
@@ -527,6 +542,6 @@ function getSpinnerHintParts(isLoading: boolean, escShortcut: string, todosShort
             <KeyboardShortcutHint shortcut={todosShortcut} action={toggleAction} />
           </Text>] : [])];
 }
-function isPrStatusEnabled(): boolean {
+export function isPrStatusEnabled(): boolean {
   return getGlobalConfig().prStatusFooterEnabled ?? true;
 }

@@ -658,6 +658,16 @@
         },
         "padding": {
           "type": "number"
+        },
+        "refreshInterval": {
+          "description": "Re-run the status line command every N seconds in addition to event-driven updates",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "hideVimModeIndicator": {
+          "description": "Hide the built-in `-- INSERT --` / `-- VISUAL --` indicator below the prompt. Use this when your status line script renders `vim.mode` itself.",
+          "type": "boolean"
         }
       },
       "required": [
