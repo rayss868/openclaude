@@ -214,7 +214,7 @@ export function getStartupScreenLines(modelOverride?: string, cols?: number): st
   const ver =
     typeof MACRO !== 'undefined'
       ? (MACRO.DISPLAY_VERSION ?? MACRO.VERSION)
-      : '0.37.1-by-rayss'
+      : '0.37.2-by-rayss'
   const versionText = `openclaude v${ver}`
   const rows = [
     { label: 'Provider', value: fit(p.name), color: provC },

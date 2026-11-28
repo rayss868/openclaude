@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.37.2-by-rayss](https://github.com/rayss868/openclaude/compare/v0.37.1-by-rayss...v0.37.2-by-rayss) (2026-11-28)
+
+Major feature and stability release merging all outstanding PRs (#3, #4, #5, #6, #8, #9, #10, #11) with UI enhancements, Claude Code parity features, and terminal interaction fixes.
+
+### Features
+
+* **diff:** dock the diff pane on the right inside the fullscreen layout, mirroring Claude Code's diff sidebar with file list, tabs, and scrollable detail view (#10).
+* **agents:** live subagent tree panel beside prompt showing running tasks in real-time (#4).
+* **tasks:** sectioned `/tasks` dialog grouping background jobs by kind with per-kind counts (#4).
+* **statusline:** mirror Claude Code status line payload (`workspace.repo`, `git_worktree`, `effort`, `thinking`, `prompt_cache`) and collapse multi-row rendering into a single block (#6).
+* **ui:** mouse hover and click selection in interactive lists such as `/model`, `/sessions`, and file pickers (#3).
+* **ui:** integrate startup screen banner directly into the fullscreen layout so the header is preserved in alt-screen mode.
+* **ui:** full-width rounded command box input prompt (`width="100%"`).
+* **settings:** filter non-critical MCP wrapper warnings from settings errors footer.
+* **notices:** deduplicate stacked bypassPermissions warning notices.
+
+### Bug Fixes
+
+* **context:** treat `settings.maxContextWindow` as a fallback behind per-model limits (#8).
+* **deps:** clean up dead eslint dependencies in `bun.lock` for `--frozen-lockfile` reliability (#5).
+* **test-infra:** add missing `formatDescriptionWithSource` stub and raise diff scan maxBuffer to 64MB (#11).
+* **provider-tests:** align provider suites with universal effort and isolate keepalive tests (#9).
+* **mouse:** preserve smooth mouse wheel scrolling in fullscreen mode while keeping in-app auto-copy (`copyOnSelect`) disabled by default to protect user clipboard.
+
 ## [0.37.1-by-rayss](https://github.com/rayss868/openclaude/compare/v0.37.0-by-rayss...v0.37.1-by-rayss) (2026-11-28)
 
 Detailed update featuring ACP engine initialization bugfix, redesigned sleek typographic startup banner, and upgraded full-rounded command bar prompt input.
