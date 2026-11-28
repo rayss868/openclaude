@@ -113,8 +113,11 @@ function setupOpenAIMode(baseUrl: string, model: string): void {
 
 // --- Layout: one compact centered block ---
 
-function renderStartupScreen(columns: number): string {
-  ;(globalThis as Record<string, unknown>).MACRO = { VERSION: 'test-version' }
+function renderStartupScreen(
+  columns: number,
+  macroOverride?: { VERSION: string; DISPLAY_VERSION?: string },
+): string {
+  ;(globalThis as Record<string, unknown>).MACRO = macroOverride ?? { VERSION: 'test-version' }
   Object.defineProperty(process.stdout, 'isTTY', {
     configurable: true,
     value: true,
@@ -187,6 +190,11 @@ describe('printStartupScreen layout', () => {
       expect(line.length).toBeLessThanOrEqual(60)
     }
 
+    // Middle divider does not contain dangling intersection glyphs
+    const midRule = lines.find(line => line.includes('├'))
+    expect(midRule).toBeDefined()
+    expect(midRule).not.toContain('┼')
+
     // Every row shares one left margin and one right edge, so the block
     // stays a single closed rectangle.
     const margins = new Set(lines.map(line => line.length - line.trimStart().length))
@@ -195,6 +203,19 @@ describe('printStartupScreen layout', () => {
     // Centered, not pinned to the edge.
     const [margin] = [...margins]
     expect(margin).toBeGreaterThan(0)
+  })
+
+  test('keeps rectangular alignment even with a long version string', () => {
+    const out = renderStartupScreen(100, {
+      VERSION: '0.37.0',
+      DISPLAY_VERSION: '0.37.0-beta.custom-extended-version-string-12345',
+    })
+    const lines = out.split('\n').filter(line => line.length > 0)
+
+    expect(new Set(lines.map(line => line.length)).size).toBe(1)
+    const bottomRule = lines.at(-1)!
+    expect(bottomRule).toContain('openclaude v0.37.0-beta.custom-extended-version-string-12345')
+    expect(bottomRule.endsWith('─╯')).toBe(true)
   })
 })
 

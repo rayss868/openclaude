@@ -169,8 +169,8 @@ export function printStartupScreen(modelOverride?: string): void {
   const status = ` ${ansiRgb(...sC)}\u25cf${RESET} ${DIM}${ansiRgb(...DIMCOL)}${sL}${RESET}    ${DIM}${ansiRgb(...DIMCOL)}Ready \u2014 type ${RESET}${ansiRgb(...ACCENT)}/help${RESET}${DIM}${ansiRgb(...DIMCOL)} to begin${RESET}`
   const statusPlain = ` \u25cf ${sL}    Ready \u2014 type /help to begin`
 
-  const tagline = `${ansiRgb(...ACCENT)}\u2726${RESET} ${ansiRgb(...CREAM)}${BRAND_TAGLINE}${RESET} ${ansiRgb(...ACCENT)}\u2726${RESET}`
-  const taglinePlain = `\u2726 ${BRAND_TAGLINE} \u2726`
+  const tagline = ` ${ansiRgb(...ACCENT)}\u2726${RESET} ${ansiRgb(...CREAM)}${BRAND_TAGLINE}${RESET} ${ansiRgb(...ACCENT)}\u2726${RESET}`
+  const taglinePlain = ` \u2726 ${BRAND_TAGLINE} \u2726`
   const versionText = `openclaude v${MACRO.DISPLAY_VERSION ?? MACRO.VERSION}`
   const contentW = Math.max(
     taglinePlain.length,
@@ -178,7 +178,7 @@ export function printStartupScreen(modelOverride?: string): void {
     modelPlain.length,
     endpointPlain.length,
     statusPlain.length,
-    versionText.length + 3,
+    versionText.length + 5,
   )
   const W = monoW + gap + contentW + 4
   const pad = W < columns ? Math.floor((columns - W) / 2) : 0
@@ -210,16 +210,7 @@ export function printStartupScreen(modelOverride?: string): void {
     )
   }
 
-  out.push(
-    indent +
-      border(
-        '\u251c' +
-          '\u2500'.repeat(monoW + gap + 1) +
-          '\u253c' +
-          '\u2500'.repeat(contentW) +
-          '\u2524',
-      ),
-  )
+  out.push(indent + border('\u251c' + '\u2500'.repeat(W - 2) + '\u2524'))
   out.push(
     indent +
       border('\u2502') +
