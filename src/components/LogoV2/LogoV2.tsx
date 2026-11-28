@@ -8,7 +8,7 @@ import { getLayoutMode, calculateLayoutDimensions, calculateOptimalLeftWidth, fo
 import { truncate } from '../../utils/format.js';
 import { getDisplayPath } from '../../utils/file.js';
 import { BRAND_TAGLINE } from '../../constants/brand.js';
-import { Clawd } from './Clawd.js';
+import { OcMonogram } from './OcMonogram.js';
 import { WordmarkRow } from './WordmarkRow.js';
 import { FeedColumn } from './FeedColumn.js';
 import { createRecentActivityFeed, createWhatsNewFeed, createProjectOnboardingFeed, createGuestPassesFeed } from './feedConfigs.js';
@@ -292,7 +292,7 @@ export function LogoV2() {
     }
     let t12;
     if ($[34] === Symbol.for("react.memo_cache_sentinel")) {
-      t12 = <Box marginY={1}><Clawd /></Box>;
+      t12 = <Box marginY={1}><OcMonogram /></Box>;
       $[34] = t12;
     } else {
       t12 = $[34];
@@ -383,7 +383,7 @@ export function LogoV2() {
   }
   let t19;
   if ($[48] === Symbol.for("react.memo_cache_sentinel")) {
-    t19 = <Clawd />;
+    t19 = <OcMonogram />;
     $[48] = t19;
   } else {
     t19 = $[48];
