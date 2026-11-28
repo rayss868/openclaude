@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.37.1-by-rayss](https://github.com/rayss868/openclaude/compare/v0.37.0-by-rayss...v0.37.1-by-rayss) (2026-11-28)
+
+Detailed update featuring ACP engine initialization bugfix, redesigned sleek typographic startup banner, and upgraded full-rounded command bar prompt input.
+
+### Features
+
+* **ui:** redesign startup banner with a compact 3-row horizontal-gradient block logo `OPEN CLAUDE` and spacious, centered metadata card with subtle accent borders (`─`). Cuts startup vertical height by ~50% and eliminates prompt displacement.
+* **ui:** upgrade prompt input from raw horizontal line sandwich to a complete, continuous rounded command box (`borderStyle="round"`). Dynamically bounds box width to `columns - 1` and reserves 5-column interior buffer to prevent right-edge line wrap and ghosting line artifacts on Windows Terminal and PowerShell.
+* **branding:** preserve and enforce custom `-by-rayss` version branding across package manifests, CLI output, and startup screen.
+
+### Bug Fixes
+
+* **acp:** await `init()` before constructing ACP session engines in `session/new` and `session/load`, resolving the fatal `Config accessed before allowed` crash when initializing ACP sessions and browser bridges (#1).
+
+### Tests
+
+* add ACP initialization regression tests verifying `init()` completes before session engine construction (`src/entrypoints/acp.test.ts`).
+* update startup screen unit tests for the 3-row typographic banner, multi-column layout, and version string handling (`src/components/StartupScreen.test.ts`).
+
 ## [0.37.0-by-rayss](https://github.com/rayss868/openclaude/compare/v0.33.3-by-rayss...v0.37.0-by-rayss) (2026-11-26)
 
 Syncs the fork with upstream `v0.37.0` plus post-release fixes from

@@ -213,7 +213,7 @@ export function printStartupScreen(modelOverride?: string): void {
   const ver =
     typeof MACRO !== 'undefined'
       ? (MACRO.DISPLAY_VERSION ?? MACRO.VERSION)
-      : '0.37.0-by-rayss'
+      : '0.37.1-by-rayss'
   const versionText = `openclaude v${ver}`
   const rows = [
     { label: 'Provider', value: fit(p.name), color: provC },
