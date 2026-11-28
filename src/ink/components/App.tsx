@@ -2,7 +2,7 @@ import React, { PureComponent, type ReactNode } from 'react';
 import { updateLastInteractionTime } from '../../bootstrap/state.js';
 import { stopCapturingEarlyInput } from '../../utils/earlyInput.js';
 import { isEnvTruthy } from '../../utils/envUtils.js';
-import { isMouseClicksDisabled } from '../../utils/fullscreen.js';
+import { isMouseClicksDisabled, isTextSelectionEnabled } from '../../utils/fullscreen.js';
 import { logForDebugging } from '../../utils/debug.js';
 import { logError } from '../../utils/log.js';
 import { EventEmitter } from '../events/emitter.js';
@@ -600,9 +600,10 @@ export function handleMouseEvent(app: App, m: ParsedMouse): void {
       return;
     }
     if ((m.button & 0x20) !== 0) {
-      // Drag motion: mode-aware extension (char/word/line). onSelectionDrag
-      // calls notifySelectionChange internally — no extra onSelectionChange.
-      app.props.onSelectionDrag(col, row);
+      // Drag motion: only extend in-app selection if text selection is enabled
+      if (isTextSelectionEnabled()) {
+        app.props.onSelectionDrag(col, row);
+      }
       return;
     }
     // Lost-release fallback for mode-1002-only terminals: a fresh press
@@ -632,18 +633,26 @@ export function handleMouseEvent(app: App, m: ParsedMouse): void {
         clearTimeout(app.pendingHyperlinkTimer);
         app.pendingHyperlinkTimer = null;
       }
-      // Cap at 3 (line select) for quadruple+ clicks.
-      const count = app.clickCount === 2 ? 2 : 3;
-      app.props.onMultiClick(col, row, count);
+      if (isTextSelectionEnabled()) {
+        // Cap at 3 (line select) for quadruple+ clicks.
+        const count = app.clickCount === 2 ? 2 : 3;
+        app.props.onMultiClick(col, row, count);
+      }
       return;
     }
-    startSelection(sel, col, row);
-    // SGR bit 0x08 = alt (xterm.js wires altKey here, not metaKey — see
-    // comment at the hyperlink-open guard below). On macOS xterm.js,
-    // receiving alt means macOptionClickForcesSelection is OFF (otherwise
-    // xterm.js would have consumed the event for native selection).
-    sel.lastPressHadAlt = (m.button & 0x08) !== 0;
-    app.props.onSelectionChange();
+    if (isTextSelectionEnabled()) {
+      startSelection(sel, col, row);
+      // SGR bit 0x08 = alt (xterm.js wires altKey here, not metaKey — see
+      // comment at the hyperlink-open guard below). On macOS xterm.js,
+      // receiving alt means macOptionClickForcesSelection is OFF (otherwise
+      // xterm.js would have consumed the event for native selection).
+      sel.lastPressHadAlt = (m.button & 0x08) !== 0;
+      app.props.onSelectionChange();
+    } else {
+      // Set anchor for click dispatch without starting a selection highlight
+      sel.anchor = { col, row };
+      sel.focus = null;
+    }
     return;
   }
 

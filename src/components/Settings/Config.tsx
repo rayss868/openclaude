@@ -941,7 +941,7 @@ export function Config({
     id: 'copyOnSelect',
     description: 'Copy selected text to the clipboard automatically.',
     label: 'Copy on select',
-    value: globalConfig.copyOnSelect ?? true,
+    value: globalConfig.copyOnSelect ?? false,
     type: 'boolean' as const,
     onChange(copyOnSelect: boolean) {
       saveGlobalConfig(current_8 => ({

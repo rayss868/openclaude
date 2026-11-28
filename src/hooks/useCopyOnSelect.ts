@@ -60,12 +60,9 @@ export function useCopyOnSelect(
       // isDragging or !has is a spurious notify (shouldn't happen, but safe).
       if (copiedRef.current) return
 
-      // Default true: macOS users expect cmd+c to work. It can't — the
-      // terminal's Edit > Copy intercepts it before the pty sees it, and
-      // finds no native selection (mouse tracking disabled it). Auto-copy
-      // on mouse-up makes cmd+c a no-op that leaves the clipboard intact
-      // with the right content, so paste works as expected.
-      const enabled = getGlobalConfig().copyOnSelect ?? true
+      // Default false: avoid automatically overwriting the user's clipboard
+      // or spamming OSC 52 toast notices on drag/click in terminal.
+      const enabled = getGlobalConfig().copyOnSelect ?? false
       if (!enabled) return
 
       const text = selection.copySelectionNoClear()

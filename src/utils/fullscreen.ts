@@ -174,6 +174,19 @@ export function isMouseClicksDisabled(): boolean {
 }
 
 /**
+ * Whether in-app mouse text selection (drag to highlight text in blue) is enabled.
+ * Defaults to false so mouse drag in the terminal does not block text or hijack
+ * the clipboard, while leaving mouse clicks on interactive UI options fully working.
+ */
+export function isTextSelectionEnabled(): boolean {
+  if (isEnvDefinedFalsy(process.env.CLAUDE_CODE_TEXT_SELECTION)) return false
+  if (isEnvTruthy(process.env.CLAUDE_CODE_TEXT_SELECTION)) return true
+  const configValue = getGlobalConfig().textSelectionEnabled
+  if (configValue !== undefined) return configValue
+  return false
+}
+
+/**
  * True when the fullscreen alt-screen layout is actually rendering —
  * requires an interactive REPL session AND the env var not explicitly
  * set falsy. Headless paths (--print, SDK, in-process teammates) never

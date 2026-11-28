@@ -557,7 +557,8 @@ export type GlobalConfig = {
   copyFullResponse: boolean // Whether /copy always copies the full response instead of showing the picker
 
   // Fullscreen in-app text selection behavior
-  copyOnSelect?: boolean // Auto-copy to clipboard on mouse-up (undefined → true; lets cmd+c "work" via no-op)
+  copyOnSelect?: boolean // Auto-copy to clipboard on mouse-up (default: false)
+  textSelectionEnabled?: boolean // In-app mouse drag text selection in fullscreen (default: false)
 
   // Flicker-free fullscreen mode (equivalent to CLAUDE_CODE_NO_FLICKER=1 env var).
   // When true, enables alt-screen + virtualized scroll for all users.
