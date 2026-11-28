@@ -1,3 +1,4 @@
+import { exec } from 'child_process';
 import React, { PureComponent, type ReactNode } from 'react';
 import { updateLastInteractionTime } from '../../bootstrap/state.js';
 import { stopCapturingEarlyInput } from '../../utils/earlyInput.js';
@@ -26,6 +27,33 @@ import { TerminalSizeContext } from './TerminalSizeContext.js';
 
 // Platforms that support Unix-style process suspension (SIGSTOP/SIGCONT)
 const SUPPORTS_SUSPEND = process.platform !== 'win32';
+
+let isPastingFromMouse = false;
+
+function readClipboardText(callback: (text: string) => void): void {
+  if (isPastingFromMouse) return;
+  isPastingFromMouse = true;
+  const platform = process.platform;
+  let cmd: string;
+  if (platform === 'win32') {
+    cmd = 'powershell.exe -NoProfile -Command "[Console]::Out.Write((Get-Clipboard -Raw))"';
+  } else if (platform === 'darwin') {
+    cmd = 'pbpaste';
+  } else {
+    cmd = 'wl-paste 2>/dev/null || xclip -selection clipboard -o 2>/dev/null || xsel -b -o 2>/dev/null';
+  }
+
+  try {
+    exec(cmd, { timeout: 3000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
+      isPastingFromMouse = false;
+      if (!err && stdout) {
+        callback(stdout);
+      }
+    });
+  } catch {
+    isPastingFromMouse = false;
+  }
+}
 
 // After this many milliseconds of stdin silence, the next chunk triggers
 // a terminal mode re-assert (mouse tracking). Catches tmux detach→attach,
@@ -439,6 +467,12 @@ export default class App extends PureComponent<Props, State> {
     // and Clock (interval speed) — no App setState needed.
     setTerminalFocused(isFocused);
   };
+  handleRightClickPaste = (): void => {
+    readClipboardText((text) => {
+      if (!text) return;
+      this.processInput(`\x1b[200~${text}\x1b[201~`);
+    });
+  };
   handleSuspend = (): void => {
     if (!this.isRawModeSupported()) {
       return;
@@ -663,6 +697,11 @@ export function handleMouseEvent(app: App, m: ParsedMouse): void {
   // scroll boundary. Only act on non-left releases when we ARE dragging
   // (so an unrelated middle/right click-release doesn't touch selection).
   if (baseButton !== 0) {
+    if (baseButton === 2) {
+      // Right-click release: paste clipboard text into the active input (matches native terminal behavior)
+      app.handleRightClickPaste();
+      return;
+    }
     if (!sel.isDragging) return;
     finishSelection(sel);
     app.props.onSelectionChange();
