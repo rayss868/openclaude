@@ -175,15 +175,15 @@ export function isMouseClicksDisabled(): boolean {
 
 /**
  * Whether in-app mouse text selection (drag to highlight text in blue) is enabled.
- * Defaults to false so mouse drag in the terminal does not block text or hijack
- * the clipboard, while leaving mouse clicks on interactive UI options fully working.
+ * Defaults to true so drag-to-select text works like a normal terminal, while
+ * auto-copy-on-select stays off so the clipboard is not overwritten.
  */
 export function isTextSelectionEnabled(): boolean {
   if (isEnvDefinedFalsy(process.env.CLAUDE_CODE_TEXT_SELECTION)) return false
   if (isEnvTruthy(process.env.CLAUDE_CODE_TEXT_SELECTION)) return true
   const configValue = getGlobalConfig().textSelectionEnabled
   if (configValue !== undefined) return configValue
-  return false
+  return true
 }
 
 /**
