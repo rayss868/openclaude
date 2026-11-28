@@ -961,7 +961,7 @@ export function Config({
     id: 'flickerFreeMode',
     description: 'Alt-screen rendering to reduce terminal flicker.',
     label: 'Flicker-free mode',
-    value: globalConfig.flickerFreeMode ?? (process.env.USER_TYPE === 'ant'),
+    value: globalConfig.flickerFreeMode ?? true,
     type: 'boolean' as const,
     onChange(flickerFreeMode: boolean) {
       saveGlobalConfig(current => ({
