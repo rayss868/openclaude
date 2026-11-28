@@ -210,7 +210,11 @@ export function printStartupScreen(modelOverride?: string): void {
   const fit = (val: string): string =>
     val.length > maxValLen ? `${val.slice(0, maxValLen - 1)}\u2026` : val
 
-  const versionText = `openclaude v${MACRO.DISPLAY_VERSION ?? MACRO.VERSION}`
+  const ver =
+    typeof MACRO !== 'undefined'
+      ? (MACRO.DISPLAY_VERSION ?? MACRO.VERSION)
+      : '0.37.0-by-rayss'
+  const versionText = `openclaude v${ver}`
   const rows = [
     { label: 'Provider', value: fit(p.name), color: provC },
     { label: 'Model', value: fit(p.model), color: CREAM },
