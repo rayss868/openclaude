@@ -565,6 +565,10 @@ export type GlobalConfig = {
   // Env var still takes precedence: =0 always off, =1 always on.
   flickerFreeMode?: boolean
 
+  // Whether terminal mouse tracking (DEC 1000/1002/1006) is enabled in fullscreen.
+  // Defaults to false so terminal native context menu and selection work out of the box.
+  mouseTracking?: boolean
+
   // Focus view: in fullscreen, show only the latest prompt, a tool summary and
   // the final response. Toggled by /focus or /config. undefined reads as off.
   focusView?: boolean
@@ -837,6 +841,7 @@ export const GLOBAL_CONFIG_KEYS = [
   'copyFullResponse',
   'copyOnSelect',
   'flickerFreeMode',
+  'mouseTracking',
   'focusView',
   'scrollSpeed',
   'diffSidebarOpen',

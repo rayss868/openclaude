@@ -146,20 +146,23 @@ export function isFullscreenEnvEnabled(): boolean {
   // `/config` without having to set an env var.
   const configValue = getGlobalConfig().flickerFreeMode
   if (configValue !== undefined) return configValue
-  return false
+  return true
 }
 
 /**
  * Whether fullscreen mode should enable SGR mouse tracking (DEC 1000/1002/1006).
- * Set CLAUDE_CODE_DISABLE_MOUSE=1 to keep alt-screen + virtualized scroll
- * (keyboard PgUp/PgDn/Ctrl+Home/End still work) but skip mouse capture,
- * so tmux/kitty/terminal-native copy-on-select keeps working.
- *
- * Compare with CLAUDE_CODE_NO_FLICKER=0 which is all-or-nothing — it also
- * disables alt-screen and virtualized scrollback.
+ * Defaults to false so the terminal emulator (Orca, Windows Terminal, VS Code)
+ * retains native right-click context menu and native selection behavior.
+ * Users who want in-app mouse hover/click can opt in via CLAUDE_CODE_ENABLE_MOUSE=1
+ * or mouseTracking config.
  */
 export function isMouseTrackingEnabled(): boolean {
-  return !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_MOUSE)
+  if (isEnvDefinedFalsy(process.env.CLAUDE_CODE_ENABLE_MOUSE)) return false
+  if (isEnvTruthy(process.env.CLAUDE_CODE_ENABLE_MOUSE)) return true
+  if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_MOUSE)) return false
+  const configValue = getGlobalConfig().mouseTracking
+  if (configValue !== undefined) return configValue
+  return false
 }
 
 /**
