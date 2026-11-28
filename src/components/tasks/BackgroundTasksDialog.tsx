@@ -21,7 +21,7 @@ import type { MonitorMcpTaskState } from 'src/tasks/MonitorMcpTask/MonitorMcpTas
 import { RemoteAgentTask, type RemoteAgentTaskState } from 'src/tasks/RemoteAgentTask/RemoteAgentTask.js';
 import { type BackgroundTaskState, isBackgroundTask, type TaskState } from 'src/tasks/types.js';
 import type { DeepImmutable } from 'src/types/utils.js';
-import { intersperse } from 'src/utils/array.js';
+import { count, intersperse } from 'src/utils/array.js';
 import { TEAM_LEAD_NAME } from 'src/utils/swarm/constants.js';
 import { stopUltraplan } from '../../commands/ultraplan.js';
 import type { CommandResultDisplay } from '../../commands.js';
@@ -31,10 +31,10 @@ import type { KeyboardEvent } from '../../ink/events/keyboard-event.js';
 import { Box, Text } from '../../ink.js';
 import { useKeybindings } from '../../keybindings/useKeybinding.js';
 import { useShortcutDisplay } from '../../keybindings/useShortcutDisplay.js';
-import { count } from '../../utils/array.js';
 import { Byline } from '../design-system/Byline.js';
 import { Dialog } from '../design-system/Dialog.js';
 import { KeyboardShortcutHint } from '../design-system/KeyboardShortcutHint.js';
+import { joinMeta, rowMeta, treePrefix } from '../Spinner/teammateRowMeta.js';
 import { AsyncAgentDetailDialog } from './AsyncAgentDetailDialog.js';
 import { BackgroundTask as BackgroundTaskComponent } from './BackgroundTask.js';
 import { DreamDetailDialog } from './DreamDetailDialog.js';
@@ -171,6 +171,7 @@ export function BackgroundTasksDialog({
   // Memoize the sorted and categorized items together to ensure stable references
   const {
     bashTasks,
+    monitorTasks,
     remoteSessions,
     agentTasks,
     teammateTasks,
@@ -191,7 +192,11 @@ export function BackgroundTasksDialog({
       const bTime = 'task' in b ? b.task.startTime : 0;
       return bTime - aTime;
     });
-    const bash = sorted.filter(item => item.type === 'local_bash');
+    // Claude splits monitor-kind shell tasks out of `Shells` into `Monitors`.
+    const isMonitor = (item: (typeof sorted)[number]): boolean =>
+      item.type === 'local_bash' && item.task.kind === 'monitor';
+    const bash = sorted.filter(item => item.type === 'local_bash' && !isMonitor(item));
+    const monitors = sorted.filter(item => isMonitor(item));
     const remote = sorted.filter(item_0 => item_0.type === 'remote_agent');
     // Exclude foregrounded task - it's being viewed in the main UI, not a background task
     const agent = sorted.filter(item_1 => item_1.type === 'local_agent' && item_1.id !== foregroundedTaskId);
@@ -209,16 +214,17 @@ export function BackgroundTasksDialog({
     }] : [];
     return {
       bashTasks: bash,
+      monitorTasks: monitors,
       remoteSessions: remote,
       agentTasks: agent,
       workflowTasks: workflows,
       mcpMonitors: monitorMcp,
       dreamTasks,
       teammateTasks: [...leaderItem, ...teammates],
-      // Order MUST match JSX render order (teammates \u2192 bash \u2192 monitorMcp \u2192
-      // remote \u2192 agent \u2192 workflows \u2192 dream) so \u2193/\u2191 navigation moves the cursor
-      // visually downward.
-      allSelectableItems: [...leaderItem, ...teammates, ...bash, ...monitorMcp, ...remote, ...agent, ...workflows, ...dreamTasks]
+      // Order MUST match JSX render order (teammates \u2192 Shells \u2192 Monitors \u2192
+      // MCP tasks \u2192 Cloud agents \u2192 Background agents \u2192 workflows \u2192 dream)
+      // so \u2193/\u2191 navigation moves the cursor visually downward.
+      allSelectableItems: [...leaderItem, ...teammates, ...bash, ...monitors, ...monitorMcp, ...remote, ...agent, ...workflows, ...dreamTasks]
     };
   }, [typedTasks, foregroundedTaskId, showSpinnerTree]);
   const currentSelection = allSelectableItems[selectedIndex] ?? null;
@@ -293,6 +299,14 @@ export function BackgroundTasksDialog({
         e.preventDefault();
         enterTeammateView(currentSelection_0.id, setAppState);
         onDone('Viewing teammate', {
+          display: 'system'
+        });
+      } else if (currentSelection_0.type === 'local_agent' && currentSelection_0.status === 'running') {
+        // Claude Code lets `f` foreground a background local agent as well as
+        // an in-process teammate; both land in the same transcript view.
+        e.preventDefault();
+        enterTeammateView(currentSelection_0.id, setAppState);
+        onDone('Viewing agent', {
           display: 'system'
         });
       } else if (currentSelection_0.type === 'leader') {
@@ -412,7 +426,7 @@ export function BackgroundTasksDialog({
               {runningAgentCount}{' '}
               {runningAgentCount !== 1 ? 'active agents' : 'active agent'}
             </Text>] : [])], index => <Text key={`separator-${index}`}> · </Text>);
-  const actions = [<KeyboardShortcutHint key="upDown" shortcut="↑/↓" action="select" />, <KeyboardShortcutHint key="enter" shortcut="Enter" action="view" />, ...(currentSelection?.type === 'in_process_teammate' && currentSelection.status === 'running' ? [<KeyboardShortcutHint key="foreground" shortcut="f" action="foreground" />] : []), ...((currentSelection?.type === 'local_bash' || currentSelection?.type === 'local_agent' || currentSelection?.type === 'in_process_teammate' || currentSelection?.type === 'local_workflow' || currentSelection?.type === 'monitor_mcp' || currentSelection?.type === 'dream' || currentSelection?.type === 'remote_agent') && currentSelection.status === 'running' ? [<KeyboardShortcutHint key="kill" shortcut="x" action="stop" />] : []), ...(agentTasks.some(t => t.status === 'running') ? [<KeyboardShortcutHint key="kill-all" shortcut={killAgentsShortcut} action="stop all agents" />] : []), <KeyboardShortcutHint key="esc" shortcut="←/Esc" action="close" />];
+  const actions = [<KeyboardShortcutHint key="upDown" shortcut="↑/↓" action="select" />, <KeyboardShortcutHint key="enter" shortcut="Enter" action="view" />, ...((currentSelection?.type === 'in_process_teammate' || currentSelection?.type === 'local_agent') && currentSelection.status === 'running' ? [<KeyboardShortcutHint key="foreground" shortcut="f" action="foreground" />] : []), ...((currentSelection?.type === 'local_bash' || currentSelection?.type === 'local_agent' || currentSelection?.type === 'in_process_teammate' || currentSelection?.type === 'local_workflow' || currentSelection?.type === 'monitor_mcp' || currentSelection?.type === 'dream' || currentSelection?.type === 'remote_agent') && currentSelection.status === 'running' ? [<KeyboardShortcutHint key="kill" shortcut="x" action="stop" />] : []), ...(agentTasks.some(t => t.status === 'running') ? [<KeyboardShortcutHint key="kill-all" shortcut={killAgentsShortcut} action="stop all agents" />] : []), <KeyboardShortcutHint key="esc" shortcut="←/Esc" action="close" />];
   const handleCancel = () => onDone('Background tasks dialog dismissed', {
     display: 'system'
   });
@@ -426,64 +440,69 @@ export function BackgroundTasksDialog({
       <Dialog title="Background tasks" subtitle={<>{subtitle}</>} onCancel={handleCancel} color="background" inputGuide={renderInputGuide}>
         {allSelectableItems.length === 0 ? <Text dimColor>No tasks currently running</Text> : <Box flexDirection="column">
             {teammateTasks.length > 0 && <Box flexDirection="column">
-                {(bashTasks.length > 0 || remoteSessions.length > 0 || agentTasks.length > 0) && <Text dimColor>
-                    <Text bold>{'  '}Agents</Text> (
-                    {count(teammateTasks, i => i.type !== 'leader')})
-                  </Text>}
                 <Box flexDirection="column">
                   <TeammateTaskGroups teammateTasks={teammateTasks} currentSelectionId={currentSelection?.id} />
                 </Box>
               </Box>}
 
             {bashTasks.length > 0 && <Box flexDirection="column" marginTop={teammateTasks.length > 0 ? 1 : 0}>
-                {(teammateTasks.length > 0 || remoteSessions.length > 0 || agentTasks.length > 0) && <Text dimColor>
-                    <Text bold>{'  '}Shells</Text> ({bashTasks.length})
-                  </Text>}
-                <Box flexDirection="column">
-                  {bashTasks.map(item_6 => <Item key={item_6.id} item={item_6} isSelected={item_6.id === currentSelection?.id} />)}
-                </Box>
-              </Box>}
-
-            {mcpMonitors.length > 0 && <Box flexDirection="column" marginTop={teammateTasks.length > 0 || bashTasks.length > 0 ? 1 : 0}>
                 <Text dimColor>
-                  <Text bold>{'  '}Monitors</Text> ({mcpMonitors.length})
+                  <Text bold>{'  '}Shells</Text> ({bashTasks.length})
                 </Text>
                 <Box flexDirection="column">
-                  {mcpMonitors.map(item_7 => <Item key={item_7.id} item={item_7} isSelected={item_7.id === currentSelection?.id} />)}
+                  {bashTasks.map((item_6, i_item_6) => <Item key={item_6.id} item={item_6} isSelected={item_6.id === currentSelection?.id} isLast={i_item_6 === bashTasks.length - 1} />)}
                 </Box>
               </Box>}
 
-            {remoteSessions.length > 0 && <Box flexDirection="column" marginTop={teammateTasks.length > 0 || bashTasks.length > 0 || mcpMonitors.length > 0 ? 1 : 0}>
+            {monitorTasks.length > 0 && <Box flexDirection="column" marginTop={teammateTasks.length > 0 || bashTasks.length > 0 ? 1 : 0}>
                 <Text dimColor>
-                  <Text bold>{'  '}Remote agents</Text> ({remoteSessions.length}
+                  <Text bold>{'  '}Monitors</Text> ({monitorTasks.length})
+                </Text>
+                <Box flexDirection="column">
+                  {monitorTasks.map((item_12, i_item_12) => <Item key={item_12.id} item={item_12} isSelected={item_12.id === currentSelection?.id} isLast={i_item_12 === monitorTasks.length - 1} />)}
+                </Box>
+              </Box>}
+
+            {mcpMonitors.length > 0 && <Box flexDirection="column" marginTop={teammateTasks.length > 0 || bashTasks.length > 0 || monitorTasks.length > 0 ? 1 : 0}>
+                <Text dimColor>
+                  <Text bold>{'  '}MCP tasks</Text> ({mcpMonitors.length})
+                </Text>
+                <Box flexDirection="column">
+                  {mcpMonitors.map((item_7, i_item_7) => <Item key={item_7.id} item={item_7} isSelected={item_7.id === currentSelection?.id} isLast={i_item_7 === mcpMonitors.length - 1} />)}
+                </Box>
+              </Box>}
+
+            {remoteSessions.length > 0 && <Box flexDirection="column" marginTop={teammateTasks.length > 0 || bashTasks.length > 0 || monitorTasks.length > 0 || mcpMonitors.length > 0 ? 1 : 0}>
+                <Text dimColor>
+                  <Text bold>{'  '}Cloud agents</Text> ({remoteSessions.length}
                   )
                 </Text>
                 <Box flexDirection="column">
-                  {remoteSessions.map(item_8 => <Item key={item_8.id} item={item_8} isSelected={item_8.id === currentSelection?.id} />)}
+                  {remoteSessions.map((item_8, i_item_8) => <Item key={item_8.id} item={item_8} isSelected={item_8.id === currentSelection?.id} isLast={i_item_8 === remoteSessions.length - 1} />)}
                 </Box>
               </Box>}
 
-            {agentTasks.length > 0 && <Box flexDirection="column" marginTop={teammateTasks.length > 0 || bashTasks.length > 0 || mcpMonitors.length > 0 || remoteSessions.length > 0 ? 1 : 0}>
+            {agentTasks.length > 0 && <Box flexDirection="column" marginTop={teammateTasks.length > 0 || bashTasks.length > 0 || monitorTasks.length > 0 || mcpMonitors.length > 0 || remoteSessions.length > 0 ? 1 : 0}>
                 <Text dimColor>
-                  <Text bold>{'  '}Local agents</Text> ({agentTasks.length})
+                  <Text bold>{'  '}Background agents</Text> ({agentTasks.length})
                 </Text>
                 <Box flexDirection="column">
-                  {agentTasks.map(item_9 => <Item key={item_9.id} item={item_9} isSelected={item_9.id === currentSelection?.id} />)}
+                  {agentTasks.map((item_9, i_item_9) => <Item key={item_9.id} item={item_9} isSelected={item_9.id === currentSelection?.id} isLast={i_item_9 === agentTasks.length - 1} />)}
                 </Box>
               </Box>}
 
-            {workflowTasks.length > 0 && <Box flexDirection="column" marginTop={teammateTasks.length > 0 || bashTasks.length > 0 || mcpMonitors.length > 0 || remoteSessions.length > 0 || agentTasks.length > 0 ? 1 : 0}>
+            {workflowTasks.length > 0 && <Box flexDirection="column" marginTop={teammateTasks.length > 0 || bashTasks.length > 0 || monitorTasks.length > 0 || mcpMonitors.length > 0 || remoteSessions.length > 0 || agentTasks.length > 0 ? 1 : 0}>
                 <Text dimColor>
-                  <Text bold>{'  '}Workflows</Text> ({workflowTasks.length})
+                  <Text bold>{'  '}Dynamic workflows</Text> ({workflowTasks.length})
                 </Text>
                 <Box flexDirection="column">
-                  {workflowTasks.map(item_10 => <Item key={item_10.id} item={item_10} isSelected={item_10.id === currentSelection?.id} />)}
+                  {workflowTasks.map((item_10, i_item_10) => <Item key={item_10.id} item={item_10} isSelected={item_10.id === currentSelection?.id} isLast={i_item_10 === workflowTasks.length - 1} />)}
                 </Box>
               </Box>}
 
-            {dreamTasks_0.length > 0 && <Box flexDirection="column" marginTop={teammateTasks.length > 0 || bashTasks.length > 0 || mcpMonitors.length > 0 || remoteSessions.length > 0 || agentTasks.length > 0 || workflowTasks.length > 0 ? 1 : 0}>
+            {dreamTasks_0.length > 0 && <Box flexDirection="column" marginTop={teammateTasks.length > 0 || bashTasks.length > 0 || monitorTasks.length > 0 || mcpMonitors.length > 0 || remoteSessions.length > 0 || agentTasks.length > 0 || workflowTasks.length > 0 ? 1 : 0}>
                 <Box flexDirection="column">
-                  {dreamTasks_0.map(item_11 => <Item key={item_11.id} item={item_11} isSelected={item_11.id === currentSelection?.id} />)}
+                  {dreamTasks_0.map((item_11, i_item_11) => <Item key={item_11.id} item={item_11} isSelected={item_11.id === currentSelection?.id} isLast={i_item_11 === dreamTasks_0.length - 1} />)}
                 </Box>
               </Box>}
           </Box>}
@@ -551,10 +570,11 @@ function toListItem(task: BackgroundTaskState): ListItem {
   }
 }
 function Item(t0) {
-  const $ = _c(14);
+  const $ = _c(15);
   const {
     item,
-    isSelected
+    isSelected,
+    isLast
   } = t0;
   const {
     columns
@@ -580,13 +600,24 @@ function Item(t0) {
     t4 = $[3];
   }
   const t5 = isSelected && !useGreyPointer ? "suggestion" : undefined;
+  // Claude Code prefixes each row with the tree glyph and appends the
+  // `started`/`last active` meta, so a row reads
+  //   ├─ @fixer: Reading src/a.ts · started 2m ago · last active 12s ago
+  const itemMeta = item.type === "leader" ? "" : joinMeta(rowMeta({
+    stoppedByUser: item.task.status === "killed",
+    startedAt: item.task.startTime,
+    lastActivityAt: item.task.status === "running" ? (item.task.type === "in_process_teammate" ? item.task.lastActivityAt : undefined) ?? item.task.startTime : item.task.endTime
+  }, Date.now()));
+  const prefix = treePrefix(1, isLast === true);
   let t6;
-  if ($[4] !== item.task || $[5] !== item.type || $[6] !== maxActivityWidth) {
-    t6 = item.type === "leader" ? <Text>@{TEAM_LEAD_NAME}</Text> : <BackgroundTaskComponent task={item.task} maxActivityWidth={maxActivityWidth} />;
+  if ($[4] !== item.task || $[5] !== item.type || $[6] !== maxActivityWidth || $[10] !== itemMeta || $[14] !== prefix) {
+    t6 = item.type === "leader" ? <Text>{prefix}@{TEAM_LEAD_NAME}</Text> : <Text>{prefix}<BackgroundTaskComponent task={item.task} maxActivityWidth={maxActivityWidth} />{itemMeta ? <Text dimColor={true}>{" · "}{itemMeta}</Text> : null}</Text>;
     $[4] = item.task;
     $[5] = item.type;
     $[6] = maxActivityWidth;
     $[7] = t6;
+    $[10] = itemMeta;
+    $[14] = prefix;
   } else {
     t6 = $[7];
   }
@@ -634,7 +665,8 @@ function TeammateTaskGroups(t0) {
     t1 = <>{teamEntries.map(t2 => {
         const [teamName_0, items] = t2;
         const memberCount = items.length + leaderItems.length;
-        return <Box key={teamName_0} flexDirection="column"><Text dimColor={true}>{"  "}Team: {teamName_0} ({memberCount})</Text>{leaderItems.map(item_0 => <Item key={`${item_0.id}-${teamName_0}`} item={item_0} isSelected={item_0.id === currentSelectionId} />)}{items.map(item_1 => <Item key={item_1.id} item={item_1} isSelected={item_1.id === currentSelectionId} />)}</Box>;
+        const rows = [...leaderItems, ...items];
+        return <Box key={teamName_0} flexDirection="column"><Text dimColor={true}>{"  "}Team: {teamName_0} ({memberCount})</Text>{rows.map((row_0, index_0) => <Item key={`${row_0.id}-${teamName_0}`} item={row_0} isSelected={row_0.id === currentSelectionId} isLast={index_0 === rows.length - 1} />)}</Box>;
       })}</>;
     $[0] = currentSelectionId;
     $[1] = teammateTasks;
