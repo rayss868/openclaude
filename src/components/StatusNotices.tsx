@@ -99,7 +99,12 @@ export function StatusNotices(t0) {
     permissionMode,
     mainLoopModel: mainLoopModel ?? undefined,
   };
-  const activeNotices = getActiveNotices(context);
+  let activeNotices = getActiveNotices(context);
+  // Suppress duplicate stacked bypass warnings in UI: if dangerous permissions notice is active,
+  // it already alerts the user about bypass permissions.
+  if (activeNotices.some(n => n.id === 'dangerously-skip-permissions-no-sandbox')) {
+    activeNotices = activeNotices.filter(n => n.id !== 'third-party-permissive-mode');
+  }
   if (activeNotices.length === 0) {
     return null;
   }

@@ -34,8 +34,11 @@ export function useSettingsErrors() {
       if (getIsRemoteMode()) {
         return;
       }
-      if (errors_0.length > 0) {
-        const message = `Found ${errors_0.length} settings ${errors_0.length === 1 ? "issue" : "issues"} · /doctor for details`;
+      const actualErrors = errors_0.filter(
+        (err: ValidationError) => err.mcpErrorMetadata?.severity !== 'warning'
+      );
+      if (actualErrors.length > 0) {
+        const message = `Found ${actualErrors.length} settings ${actualErrors.length === 1 ? "issue" : "issues"} · /doctor for details`;
         addNotification({
           key: SETTINGS_ERRORS_NOTIFICATION_KEY,
           text: message,

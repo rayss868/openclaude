@@ -2301,7 +2301,7 @@ function PromptInput({
     ultracodeActive,
   });
   if (isExternalEditorActive) {
-    return <Box flexDirection="row" alignItems="center" justifyContent="center" borderColor={getBorderColor()} borderStyle="round" width={Math.max(20, columns - 1)}>
+    return <Box flexDirection="row" alignItems="center" justifyContent="center" borderColor={getBorderColor()} borderStyle="round" width="100%">
         <Text dimColor italic>
           Save and close editor to continue...
         </Text>
@@ -2328,7 +2328,7 @@ function PromptInput({
               {textInputElement}
             </Box>
           </Box>
-        </> : <Box flexDirection="row" alignItems="flex-start" justifyContent="flex-start" borderColor={getBorderColor()} borderStyle="round" width={Math.max(20, columns - 1)} borderText={buildBorderText(showFastIcon ?? false, showFastIconHint, fastModeCooldown)}>
+        </> : <Box flexDirection="row" alignItems="flex-start" justifyContent="flex-start" borderColor={getBorderColor()} borderStyle="round" width="100%" borderText={buildBorderText(showFastIcon ?? false, showFastIconHint, fastModeCooldown)}>
           <PromptInputModeIndicator mode={mode} isLoading={isLoading} viewingAgentName={viewingAgentName} viewingAgentColor={viewingAgentColor} />
           <Box flexGrow={1} flexShrink={1} onClick={handleInputClick}>
             {textInputElement}
