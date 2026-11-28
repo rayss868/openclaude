@@ -139,31 +139,26 @@ function renderStartupScreen(
   return stripAnsi(output)
 }
 
-const MONOGRAM = ['  ▄▀▀▀▄  ', ' █ O C █ ', '  ▀▄▄▄▀  ']
-
-function monogramLines(plainOutput: string): string[] {
-  return plainOutput.split('\n').filter(line => line.includes('▀') || line.includes('█ O C █'))
+function logoLines(plainOutput: string): string[] {
+  return plainOutput.split('\n').filter(line => line.includes('▄▀▀▄') || line.includes('█▄▄▀'))
 }
 
 describe('printStartupScreen layout', () => {
-  test('renders a static OC monogram inside a single compact block', () => {
+  test('renders a sleek 3-line block logo', () => {
     const out = renderStartupScreen(120)
-    const logo = monogramLines(out)
+    const logo = logoLines(out)
 
-    expect(logo).toHaveLength(3)
-    for (const [index, row] of MONOGRAM.entries()) {
-      expect(logo[index]!).toContain(row.trim())
-      expect(logo[index]!.trimStart().startsWith('│ ')).toBe(true)
-    }
+    expect(logo).toHaveLength(2) // the two distinctive signature rows
+    expect(out).toContain('✦ Open terminal for any LLM ✦')
     expect(out).not.toContain('██████╗')
+    expect(out).not.toContain('█ O C █')
   })
 
-  test('keeps all provider information in the block on wide and narrow terminals', () => {
-    for (const columns of [120, 80]) {
+  test('keeps all provider information in the metadata section on wide and narrow terminals', () => {
+    for (const columns of [120, 80, 60]) {
       const out = renderStartupScreen(columns)
       const lines = out.split('\n').filter(line => line.length > 0)
 
-      expect(lines[0]!.trimStart().startsWith('╭')).toBe(true)
       expect(out).toContain('Provider')
       expect(out).toContain('Model')
       expect(out).toContain('Endpoint')
@@ -176,46 +171,27 @@ describe('printStartupScreen layout', () => {
     }
   })
 
-  test('centers the block and truncates long values', () => {
-    const out = renderStartupScreen(60)
+  test('centers the logo and metadata cleanly', () => {
+    const out = renderStartupScreen(80)
     const lines = out.split('\n').filter(line => line.length > 0)
 
-    expect(lines[0]!.trimStart().startsWith('╭')).toBe(true)
-    expect(lines.at(-1)!.trimStart().startsWith('╰')).toBe(true)
-    expect(lines[0]!).not.toContain('openclaude v')
-    expect(lines.at(-1)!).toContain('openclaude v')
-    expect(lines.every(line => /^\s*[╭│├╰]/.test(line))).toBe(true)
+    const vLine = lines.find(line => line.includes('openclaude v'))
+    expect(vLine).toBeDefined()
+    expect(vLine!.startsWith(' ')).toBe(true)
+    expect(lines.every(line => line.length <= 80)).toBe(true)
     expect(out).not.toContain('undefined')
-    for (const line of lines) {
-      expect(line.length).toBeLessThanOrEqual(60)
-    }
-
-    // Middle divider does not contain dangling intersection glyphs
-    const midRule = lines.find(line => line.includes('├'))
-    expect(midRule).toBeDefined()
-    expect(midRule).not.toContain('┼')
-
-    // Every row shares one left margin and one right edge, so the block
-    // stays a single closed rectangle.
-    const margins = new Set(lines.map(line => line.length - line.trimStart().length))
-    expect(margins.size).toBe(1)
-    expect(new Set(lines.map(line => line.length)).size).toBe(1)
-    // Centered, not pinned to the edge.
-    const [margin] = [...margins]
-    expect(margin).toBeGreaterThan(0)
   })
 
-  test('keeps rectangular alignment even with a long version string', () => {
+  test('handles long version strings cleanly', () => {
     const out = renderStartupScreen(100, {
       VERSION: '0.37.0',
       DISPLAY_VERSION: '0.37.0-beta.custom-extended-version-string-12345',
     })
     const lines = out.split('\n').filter(line => line.length > 0)
 
-    expect(new Set(lines.map(line => line.length)).size).toBe(1)
-    const bottomRule = lines.at(-1)!
-    expect(bottomRule).toContain('openclaude v0.37.0-beta.custom-extended-version-string-12345')
-    expect(bottomRule.endsWith('─╯')).toBe(true)
+    const vLine = lines.find(line => line.includes('openclaude v0.37.0-beta.custom-extended-version-string-12345'))
+    expect(vLine).toBeDefined()
+    expect(lines.every(line => line.length <= 100)).toBe(true)
   })
 })
 

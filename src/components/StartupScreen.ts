@@ -28,13 +28,43 @@ declare const MACRO: { VERSION: string; DISPLAY_VERSION?: string }
 const RESET = ANSI_RESET
 const DIM = ANSI_DIM
 
+function lerp(a: RGB, b: RGB, t: number): RGB {
+  return [
+    Math.round(a[0] + (b[0] - a[0]) * t),
+    Math.round(a[1] + (b[1] - a[1]) * t),
+    Math.round(a[2] + (b[2] - a[2]) * t),
+  ]
+}
+
+function gradAt(stops: readonly RGB[], t: number): RGB {
+  const c = Math.max(0, Math.min(1, t))
+  const s = c * (stops.length - 1)
+  const i = Math.floor(s)
+  if (i >= stops.length - 1) return stops[stops.length - 1]
+  return lerp(stops[i], stops[i + 1], s - i)
+}
+
 function paint(text: string, color: RGB): string {
   return `${ansiRgb(...color)}${text}${RESET}`
 }
 
-// ─── Letter Monogram ──────────────────────────────────────────────────────────
+function paintGradient(text: string, stops: readonly RGB[]): string {
+  let out = ''
+  for (let i = 0; i < text.length; i++) {
+    const t = text.length > 1 ? i / (text.length - 1) : 0
+    const [r, g, b] = gradAt(stops, t)
+    out += `${ansiRgb(r, g, b)}${text[i]}`
+  }
+  return out + RESET
+}
 
-const OC_MONOGRAM = ['  \u2584\u2580\u2580\u2580\u2584  ', ' \u2588 O C \u2588 ', '  \u2580\u2584\u2584\u2584\u2580  ']
+// ─── Compact Typographic Block Logo (3 lines, 48 cols) ───────────────────────
+
+export const LOGO_OPEN_CLAUDE = [
+  '▄▀▀▄ █▀▀▄ █▀▀ █▄ █   ▄▀▀ █   ▄▀▀▄ █  █ █▀▀▄ █▀▀',
+  '█  █ █▄▄▀ █▀▀ █ ▀█   █   █   █▄▄█ █  █ █  █ █▀▀',
+  ' ▀▀  █    ▀▀▀ ▀  ▀    ▀▀ ▀▀▀ ▀  ▀  ▀▀  ▀▀▀  ▀▀▀',
+]
 
 // ─── Provider detection ───────────────────────────────────────────────────────
 
@@ -142,94 +172,99 @@ export function printStartupScreen(modelOverride?: string): void {
   const CREAM = palette.cream
   const DIMCOL = palette.dim
   const BORDER = palette.border
+  const GRAD = palette.gradient
 
   const p = detectProvider(modelOverride)
-  const border = (s: string): string => paint(s, BORDER)
-  const monoW = Math.max(...OC_MONOGRAM.map(row => row.length))
-  const gap = 2
-  const labelW = 9
   const columns = process.stdout.columns || 80
-  const maxValue = Math.min(48, Math.max(16, columns - (monoW + gap + 4 + labelW + 2)))
-  const fit = (value: string): string =>
-    value.length > maxValue ? `${value.slice(0, maxValue - 1)}\u2026` : value
+  const centerPad = (visibleLen: number): string =>
+    ' '.repeat(Math.max(0, Math.floor((columns - visibleLen) / 2)))
 
-  const label = (k: string): string => `${k.padEnd(labelW)} `
-  const field = (k: string, v: string, c: RGB = CREAM): [string, string] => [
-    ` ${DIM}${ansiRgb(...DIMCOL)}${label(k)}${RESET}${ansiRgb(...c)}${v}${RESET}`,
-    ` ${label(k)}${v}`,
-  ]
-
-  const provC: RGB = p.isLocal ? [130, 175, 130] : ACCENT
-  const [provider, providerPlain] = field('Provider', fit(p.name), provC)
-  const [model, modelPlain] = field('Model', fit(p.model))
-  const [endpoint, endpointPlain] = field('Endpoint', fit(p.baseUrl))
-
-  const sC: RGB = p.isLocal ? [130, 175, 130] : ACCENT
-  const sL = p.isLocal ? 'local' : 'cloud'
-  const status = ` ${ansiRgb(...sC)}\u25cf${RESET} ${DIM}${ansiRgb(...DIMCOL)}${sL}${RESET}    ${DIM}${ansiRgb(...DIMCOL)}Ready \u2014 type ${RESET}${ansiRgb(...ACCENT)}/help${RESET}${DIM}${ansiRgb(...DIMCOL)} to begin${RESET}`
-  const statusPlain = ` \u25cf ${sL}    Ready \u2014 type /help to begin`
-
-  const tagline = ` ${ansiRgb(...ACCENT)}\u2726${RESET} ${ansiRgb(...CREAM)}${BRAND_TAGLINE}${RESET} ${ansiRgb(...ACCENT)}\u2726${RESET}`
-  const taglinePlain = ` \u2726 ${BRAND_TAGLINE} \u2726`
-  const versionText = `openclaude v${MACRO.DISPLAY_VERSION ?? MACRO.VERSION}`
-  const contentW = Math.max(
-    taglinePlain.length,
-    providerPlain.length,
-    modelPlain.length,
-    endpointPlain.length,
-    statusPlain.length,
-    versionText.length + 5,
-  )
-  const W = monoW + gap + contentW + 4
-  const pad = W < columns ? Math.floor((columns - W) / 2) : 0
-  const indent = ' '.repeat(pad)
   const out: string[] = []
+  out.push('')
 
-  // Top rule stays quiet; the version rides on the bottom rule.
-  out.push(indent + border('\u256d' + '\u2500'.repeat(W - 2) + '\u256e'))
-
-  // Monogram sits in the left column; every detail stays on the right.
-  const rows: Array<[string, string, string]> = [
-    [OC_MONOGRAM[0]!, tagline, taglinePlain],
-    [OC_MONOGRAM[1]!, provider, providerPlain],
-    [OC_MONOGRAM[2]!, model, modelPlain],
-    ['', endpoint, endpointPlain],
-  ]
-  for (const [art, styled, plain] of rows) {
-    const artCell = art ? ansiRgb(...ACCENT) + art.padEnd(monoW) + RESET : ' '.repeat(monoW)
-    out.push(
-      indent +
-        border('\u2502') +
-        ' ' +
-        artCell +
-        ' '.repeat(gap) +
-        styled +
-        ' '.repeat(contentW - plain.length) +
-        ' ' +
-        border('\u2502'),
-    )
+  // 1. Sleek 3-line typographic logo with gradient
+  const logoW = LOGO_OPEN_CLAUDE[0]!.length
+  const logoPad = centerPad(logoW)
+  for (const line of LOGO_OPEN_CLAUDE) {
+    out.push(logoPad + paintGradient(line, GRAD))
   }
 
-  out.push(indent + border('\u251c' + '\u2500'.repeat(W - 2) + '\u2524'))
+  // 2. Tagline
+  const taglineText = BRAND_TAGLINE
+  const taglineVisibleLen = taglineText.length + 4 // ✦ ... ✦
+  const taglinePad = centerPad(taglineVisibleLen)
   out.push(
-    indent +
-      border('\u2502') +
-      ' '.repeat(1 + monoW + gap) +
-      status +
-      ' '.repeat(contentW - statusPlain.length) +
-      ' ' +
-      border('\u2502'),
+    taglinePad +
+      paint('\u2726 ', ACCENT) +
+      paint(taglineText, CREAM) +
+      paint(' \u2726', ACCENT),
   )
-  const versionStem = '\u2500'.repeat(monoW + gap + 4)
+  out.push('')
+
+  // 3. Metadata card with top & bottom subtle rules
+  const provC: RGB = p.isLocal ? [130, 175, 130] : ACCENT
+  const sC: RGB = p.isLocal ? [130, 175, 130] : ACCENT
+  const sL = p.isLocal ? 'local' : 'cloud'
+
+  const maxValLen = Math.min(60, Math.max(20, columns - 24))
+  const fit = (val: string): string =>
+    val.length > maxValLen ? `${val.slice(0, maxValLen - 1)}\u2026` : val
+
+  const versionText = `openclaude v${MACRO.DISPLAY_VERSION ?? MACRO.VERSION}`
+  const rows = [
+    { label: 'Provider', value: fit(p.name), color: provC },
+    { label: 'Model', value: fit(p.model), color: CREAM },
+    { label: 'Endpoint', value: fit(p.baseUrl), color: CREAM },
+  ]
+
+  const maxRowLen = Math.max(
+    ...rows.map(r => r.label.length + 4 + r.value.length),
+    versionText.length + 18,
+    44,
+  )
+  const cardW = Math.min(columns - 4, Math.max(56, maxRowLen + 4))
+  const cardPad = centerPad(cardW)
+
+  const leftStem = Math.min(12, Math.max(3, Math.floor((cardW - versionText.length - 2) / 3)))
+  const rightStem = Math.max(2, cardW - leftStem - versionText.length - 2)
+
   out.push(
-    indent +
-      border('\u2570') +
-      versionStem +
+    cardPad +
+      paint('\u2500'.repeat(leftStem), BORDER) +
       ' ' +
       paint(versionText, ACCENT) +
       ' ' +
-      border('\u2500'.repeat(Math.max(0, W - versionStem.length - versionText.length - 4)) + '\u256f'),
+      paint('\u2500'.repeat(rightStem), BORDER),
   )
+
+  for (const row of rows) {
+    const padKey = row.label.padEnd(9)
+    out.push(
+      cardPad +
+        '  ' +
+        DIM +
+        paint(padKey, DIMCOL) +
+        '  ' +
+        paint(row.value, row.color),
+    )
+  }
+
+  out.push(
+    cardPad +
+      '  ' +
+      paint('\u25cf ', sC) +
+      DIM +
+      paint(sL, DIMCOL) +
+      '     ' +
+      DIM +
+      paint('Ready \u2014 type ', DIMCOL) +
+      paint('/help', ACCENT) +
+      DIM +
+      paint(' to begin', DIMCOL),
+  )
+
+  out.push(cardPad + paint('\u2500'.repeat(cardW), BORDER))
+  out.push('')
 
   process.stdout.write(out.join('\n') + '\n')
 }
