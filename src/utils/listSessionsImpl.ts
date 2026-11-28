@@ -16,6 +16,7 @@ import type { LiteSessionFile } from './sessionStoragePortable.js'
 import {
   canonicalizePath,
   extractFirstPromptFromHead,
+  extractForkParentSessionId,
   extractJsonStringField,
   extractLastJsonStringField,
   findProjectDir,
@@ -40,6 +41,8 @@ export type SessionInfo = {
   gitBranch?: string
   cwd?: string
   tag?: string
+  /** Session this transcript was forked from, when created with --fork-session. */
+  forkParentSessionId?: string
   /** Epoch ms — from first entry's ISO timestamp. Undefined if unparseable. */
   createdAt?: number
 }
@@ -133,6 +136,7 @@ export function parseSessionInfoFromLite(
   const tag = tagLine
     ? extractLastJsonStringField(tagLine, 'tag') || undefined
     : undefined
+  const forkParentSessionId = extractForkParentSessionId(head, tail)
 
   return {
     sessionId,
@@ -144,6 +148,7 @@ export function parseSessionInfoFromLite(
     gitBranch,
     cwd: sessionCwd,
     tag,
+    forkParentSessionId,
     createdAt,
   }
 }

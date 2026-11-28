@@ -78,6 +78,9 @@ export type LogOption = {
   contentReplacements?: ContentReplacementRecord[] // Replacement decisions for resume reconstruction
   goal?: GoalState | null // Last session goal state, if any
   sessionBranch?: SessionBranchEntry // Conversation-branch lineage metadata, if this session is a branch
+  forkParentSessionId?: UUID // Session this transcript was forked from, if any
+  forkedAt?: string // ISO timestamp of the fork, when forkParentSessionId is set
+  forkBoundaryMessageId?: UUID // Parent message that bounded the copied range, if any
 }
 
 export type SummaryMessage = {
@@ -240,6 +243,20 @@ export type SessionBranchEntry = {
   branchedAtMessageId?: UUID
 }
 
+/**
+ * Recorded when a transcript is created with --fork-session or
+ * forkSession(). Unlike session-branch, which tracks /branch lineage, this
+ * points at the session whose conversation was copied into this new session.
+ */
+export type ForkMetadataEntry = {
+  type: 'fork'
+  sessionId: UUID
+  forkParentSessionId: UUID
+  forkedAt: string
+  /** Message in the parent transcript that bounded the copied range, if any. */
+  forkBoundaryMessageId?: UUID
+}
+
 export type FileHistorySnapshotMessage = {
   type: 'file-history-snapshot'
   messageId: UUID
@@ -376,6 +393,7 @@ export type Entry =
   | ContentReplacementEntry
   | GoalStateEntry
   | SessionBranchEntry
+  | ForkMetadataEntry
   | ContextCollapseCommitEntry
   | ContextCollapseSnapshotEntry
 

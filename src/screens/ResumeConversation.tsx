@@ -30,7 +30,7 @@ import type { FileHistorySnapshot } from '../utils/fileHistory.js';
 import { logError } from '../utils/log.js';
 import { createSystemMessage } from '../utils/messages.js';
 import { computeStandaloneAgentContext, createForkSessionInfoMessage, restoreAgentFromSession, restoreWorktreeForResume } from '../utils/sessionRestore.js';
-import { adoptResumedSessionFile, enrichLogs, isCustomTitleEnabled, loadAllProjectsMessageLogsProgressive, loadSameRepoMessageLogsProgressive, recordContentReplacement, resetSessionFilePointer, restoreSessionMetadata, type SessionLogResult } from '../utils/sessionStorage.js';
+import { adoptResumedSessionFile, cacheForkParentSessionId, enrichLogs, isCustomTitleEnabled, loadAllProjectsMessageLogsProgressive, loadSameRepoMessageLogsProgressive, recordContentReplacement, resetSessionFilePointer, restoreSessionMetadata, type SessionLogResult } from '../utils/sessionStorage.js';
 import type { ModelSetting } from '../utils/model/model.js';
 import type { ThinkingConfig } from '../utils/thinking.js';
 import { filterContentReplacementsForMessages, type ContentReplacementRecord } from '../utils/toolResultStorage.js';
@@ -248,6 +248,9 @@ export function ResumeConversation({
         ...result_3,
         worktreeSession: undefined
       } : result_3);
+      if (forkSession) {
+        cacheForkParentSessionId(result_3.sessionId ?? log_0.sessionId);
+      }
       if (!forkSession) {
         restoreWorktreeForResume(result_3.worktreeSession);
         if (result_3.sessionId) {

@@ -222,6 +222,7 @@ import {
   saveMode,
   saveAiGeneratedTitle,
   restoreSessionMetadata,
+  cacheForkParentSessionId,
 } from 'src/utils/sessionStorage.js'
 import { incrementPromptCount } from 'src/utils/commitAttribution.js'
 import {
@@ -5204,6 +5205,9 @@ async function loadInitialMessages(
             ? { ...result, worktreeSession: undefined }
             : result,
         )
+        if (options.forkSession) {
+          cacheForkParentSessionId(result.sessionId)
+        }
 
         // Write mode entry for the resumed session
         if (feature('COORDINATOR_MODE') && coordinatorModeModule) {
@@ -5445,6 +5449,9 @@ async function loadInitialMessages(
           ? { ...result, worktreeSession: undefined }
           : result,
       )
+      if (options.forkSession) {
+        cacheForkParentSessionId(parsedSessionId?.sessionId ?? result.sessionId)
+      }
 
       // Write mode entry for the resumed session
       if (feature('COORDINATOR_MODE') && coordinatorModeModule) {

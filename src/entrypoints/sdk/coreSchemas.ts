@@ -1912,6 +1912,12 @@ export const SDKSessionInfoSchema = lazySchema(() =>
         .describe('Git branch at the end of the session.'),
       cwd: z.string().optional().describe('Working directory for the session.'),
       tag: z.string().optional().describe('User-set session tag.'),
+      forkParentSessionId: z
+        .string()
+        .optional()
+        .describe(
+          'Session this transcript was forked from, when created via forkSession.',
+        ),
       createdAt: z
         .number()
         .optional()

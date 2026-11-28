@@ -52,6 +52,7 @@ import {
   recordContentReplacement,
   resetSessionFilePointer,
   restoreSessionMetadata,
+  cacheForkParentSessionId,
   saveMode,
   saveWorktreeState,
 } from './sessionStorage.js'
@@ -520,6 +521,9 @@ export async function processResumedConversation(
   restoreSessionMetadata(
     opts.forkSession ? { ...result, worktreeSession: undefined } : result,
   )
+  if (opts.forkSession) {
+    cacheForkParentSessionId(opts.sessionIdOverride ?? result.sessionId)
+  }
 
   if (!opts.forkSession) {
     // Cd back into the worktree the session was in when it last exited.

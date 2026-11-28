@@ -729,6 +729,9 @@ export async function loadConversationForResume(
   prUrl?: string
   prRepository?: string
   goal?: LogOption['goal']
+  forkParentSessionId?: string
+  forkedAt?: string
+  forkBoundaryMessageId?: string
   // Full path to the session file (for cross-directory resume)
   fullPath?: string
 } | null> {
@@ -837,6 +840,9 @@ export async function loadConversationForResume(
       prUrl: log?.prUrl,
       prRepository: log?.prRepository,
       goal,
+      forkParentSessionId: log?.forkParentSessionId,
+      forkedAt: log?.forkedAt,
+      forkBoundaryMessageId: log?.forkBoundaryMessageId,
       // Include full path for cross-directory resume
       fullPath: log?.fullPath,
     }
