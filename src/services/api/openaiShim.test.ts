@@ -649,7 +649,7 @@ test('auto-routes gpt-5.6 to /responses on api.openai.com with tools and nested 
   expect(capturedBody).not.toHaveProperty('reasoning_effort')
 })
 
-test('gpt-5.6 chat-completions escape hatch omits reasoning effort with tools', async () => {
+test('gpt-5.6 chat-completions escape hatch forwards explicit reasoning effort with tools', async () => {
   process.env.OPENAI_BASE_URL = 'https://api.openai.com/v1'
   process.env.OPENAI_API_KEY = 'test-key'
   process.env.OPENAI_API_FORMAT = 'chat_completions'
@@ -687,10 +687,10 @@ test('gpt-5.6 chat-completions escape hatch omits reasoning effort with tools', 
 
   expect(capturedUrl).toBe('https://api.openai.com/v1/chat/completions')
   expect(capturedBody?.tools).toBeDefined()
-  expect(capturedBody).not.toHaveProperty('reasoning_effort')
+  expect(capturedBody?.reasoning_effort).toBe('high')
 })
 
-test('gpt-5.4 chat-completions escape hatch omits reasoning effort with tools', async () => {
+test('gpt-5.4 chat-completions escape hatch forwards explicit reasoning effort with tools', async () => {
   process.env.OPENAI_BASE_URL = 'https://api.openai.com/v1'
   process.env.OPENAI_API_KEY = 'test-key'
   process.env.OPENAI_API_FORMAT = 'chat_completions'
@@ -714,7 +714,7 @@ test('gpt-5.4 chat-completions escape hatch omits reasoning effort with tools', 
     stream: false,
   })
 
-  expect(capturedBody).not.toHaveProperty('reasoning_effort')
+  expect(capturedBody?.reasoning_effort).toBe('high')
 })
 
 test('gpt-5.6 chat-completions escape hatch keeps reasoning effort without tools', async () => {
@@ -5515,15 +5515,15 @@ test('extracts mixed text+image tool results as text tool + follow-up user image
 
 
 test.each([
-  ['glm-5.2?reasoning=low', 'high'],
-  ['glm-5.2?reasoning=medium', 'high'],
+  ['glm-5.2?reasoning=low', 'low'],
+  ['glm-5.2?reasoning=medium', 'medium'],
   ['glm-5.2?reasoning=high', 'high'],
-  ['glm-5.2?reasoning=xhigh', 'max'],
-  ['openrouter/zhipu/glm-5.2?reasoning=low', 'high'],
-  ['openrouter/zhipu/glm-5.2?reasoning=medium', 'high'],
+  ['glm-5.2?reasoning=xhigh', 'xhigh'],
+  ['openrouter/zhipu/glm-5.2?reasoning=low', 'low'],
+  ['openrouter/zhipu/glm-5.2?reasoning=medium', 'medium'],
   ['openrouter/zhipu/glm-5.2?reasoning=high', 'high'],
-  ['openrouter/zhipu/glm-5.2?reasoning=xhigh', 'max'],
-] as const)('Z.AI GLM-5.2: %s enables mapped reasoning effort', async (model, effort) => {
+  ['openrouter/zhipu/glm-5.2?reasoning=xhigh', 'xhigh'],
+] as const)('Z.AI GLM-5.2: %s forwards reasoning effort', async (model, effort) => {
   process.env.OPENAI_BASE_URL = 'https://api.z.ai/api/coding/paas/v4'
   process.env.OPENAI_API_KEY = 'sk-zai-test'
 
@@ -5560,7 +5560,7 @@ test.each([
   ['glm-5.3', undefined, undefined],
   ['glm-5.3?reasoning=low', 'enabled', 'low'],
   ['glm-5.3?reasoning=high', 'enabled', 'high'],
-  ['glm-5.3?reasoning=xhigh', 'enabled', 'max'],
+  ['glm-5.3?reasoning=xhigh', 'enabled', 'xhigh'],
   ['glm-5.3?thinking=disabled', 'enabled', 'low'],
   ['glm-5.3?thinking=disabled&reasoning=high', 'enabled', 'high'],
 ] as const)('Z.AI GLM-5.3 serializes the verified request contract for %s', async (
@@ -5608,7 +5608,7 @@ test.each([
   ['glm-5.3-flash', undefined, undefined],
   ['glm-5.3-flash?reasoning=low', 'enabled', 'low'],
   ['glm-5.3-flash?reasoning=high', 'enabled', 'high'],
-  ['glm-5.3-flash?reasoning=xhigh', 'enabled', 'max'],
+  ['glm-5.3-flash?reasoning=xhigh', 'enabled', 'xhigh'],
   ['glm-5.3-flash?thinking=disabled', 'enabled', 'low'],
   ['glm-5.3-flash?thinking=disabled&reasoning=high', 'enabled', 'high'],
 ] as const)('Z.AI GLM-5.3-Flash serializes the verified request contract for %s', async (

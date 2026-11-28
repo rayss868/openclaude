@@ -364,7 +364,7 @@ test('the façade applies NIM thinking kwargs across DeepSeek and GLM reasoning 
   })
 
   expect(bodies[0]?.thinking).toEqual({ type: 'enabled' })
-  expect(bodies[0]?.reasoning_effort).toBe('max')
+  expect(bodies[0]?.reasoning_effort).toBe('xhigh')
   expect(bodies[0]?.chat_template_kwargs).toEqual({
     thinking: true,
     enable_thinking: true,
@@ -373,7 +373,7 @@ test('the façade applies NIM thinking kwargs across DeepSeek and GLM reasoning 
   expect(bodies[1]?.reasoning_effort).toBeUndefined()
   expect(bodies[1]?.chat_template_kwargs).toBeUndefined()
   expect(bodies[2]?.thinking).toEqual({ type: 'enabled' })
-  expect(bodies[2]?.reasoning_effort).toBe('max')
+  expect(bodies[2]?.reasoning_effort).toBe('xhigh')
   expect(bodies[2]?.chat_template_kwargs).toEqual({
     thinking: true,
     enable_thinking: true,

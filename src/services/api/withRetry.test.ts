@@ -3,6 +3,7 @@ import type Anthropic from '@anthropic-ai/sdk'
 import { APIError, APIUserAbortError } from '@anthropic-ai/sdk'
 import { acquireSharedMutationLock, releaseSharedMutationLock } from '../../test/sharedMutationLock.js'
 import * as debugNs from '../../utils/debug.js'
+import { getProxyFetchOptions, _resetKeepAliveForTesting } from '../../utils/proxy.js'
 import * as realSettingsModule from '../../utils/settings/settings.js'
 import { markOpenAIRequestNonReplayable } from './openaiErrorClassification.js'
 type ProvidersModule = typeof import('../../utils/model/providers.js')
@@ -22,7 +23,6 @@ function makeError(headers: Record<string, string>): APIError {
 const originalEnv = { ...process.env }
 const originalDebugModule = { ...debugNs }
 let originalProvidersModule: ProvidersModule | undefined
-let originalProxyModule: typeof import('../../utils/proxy.js') | undefined
 
 const envKeys = [
   'CLAUDE_CODE_USE_OPENAI',
@@ -54,11 +54,9 @@ afterEach(() => {
       else process.env[key] = originalEnv[key]
     }
     mock.restore()
+    _resetKeepAliveForTesting()
     if (originalProvidersModule) {
       mock.module('src/utils/model/providers.js', () => originalProvidersModule!)
-    }
-    if (originalProxyModule) {
-      mock.module('src/utils/proxy.js', () => originalProxyModule!)
     }
     mock.module('src/utils/debug.js', () => originalDebugModule)
   } finally {
@@ -384,12 +382,7 @@ describe('abort retry classification', () => {
 
   test('retries drop the pooled connection and use a fresh client', async () => {
     process.env.OPENCLAUDE_RETRY_DELAY_MS = '1'
-    originalProxyModule ??= await import('../../utils/proxy.js')
-    const disableKeepAliveMock = mock(() => {})
-    mock.module('src/utils/proxy.js', () => ({
-      ...originalProxyModule!,
-      disableKeepAlive: disableKeepAliveMock,
-    }))
+    _resetKeepAliveForTesting()
     const { withRetry } = await importFreshWithRetryModule('firstParty')
     const retryableError = APIError.generate(
       500,
@@ -428,7 +421,7 @@ describe('abort retry classification', () => {
     expect(seenClients).toEqual([clientA, clientB])
     // Keep-alive pooling is disabled before the retry so the new client
     // opens a fresh socket instead of reusing the pooled connection.
-    expect(disableKeepAliveMock).toHaveBeenCalledTimes(1)
+    expect(getProxyFetchOptions().keepalive).toBe(false)
   })
 })
 

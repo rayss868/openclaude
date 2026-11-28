@@ -2257,7 +2257,7 @@ test('providerOverride custom OpenAI-compatible gpt effort uses legacy support',
   expect(requestBody?.reasoning_effort).toBe('medium')
 })
 
-test('providerOverride custom shims do not infer native Claude or Gemini effort', async () => {
+test('providerOverride custom shims forward the explicit effort pick', async () => {
   const requestBodies: Record<string, unknown>[] = []
 
   globalThis.fetch = (async (_input, init) => {
@@ -2307,8 +2307,27 @@ test('providerOverride custom shims do not infer native Claude or Gemini effort'
     'gemini-3-pro',
   ])
   for (const requestBody of requestBodies) {
-    expect(requestBody.reasoning_effort).toBeUndefined()
+    expect(requestBody.reasoning_effort).toBe('medium')
   }
+
+  // The pick is only forwarded when it is explicit: a shim never derives an
+  // effort level from a Claude/Gemini-looking model name on its own.
+  const noEffortClient = (await getAnthropicClient({
+    maxRetries: 0,
+    providerOverride: {
+      model: 'gemini-3-pro',
+      baseURL: 'https://custom-openai-compatible.example.test/v1',
+      apiKey: 'provider-test-key',
+    },
+  })) as unknown as ShimClient
+  await noEffortClient.beta.messages.create({
+    model: 'unused',
+    messages: [{ role: 'user', content: 'hello' }],
+    max_tokens: 64,
+    stream: false,
+  })
+  expect(requestBodies).toHaveLength(3)
+  expect(requestBodies[2]!.reasoning_effort).toBeUndefined()
 
   process.env.CLAUDE_CODE_ALWAYS_ENABLE_EFFORT = '1'
   const forceEnabledGemini = (await getAnthropicClient({
@@ -2326,8 +2345,8 @@ test('providerOverride custom shims do not infer native Claude or Gemini effort'
     max_tokens: 64,
     stream: false,
   })
-  expect(requestBodies).toHaveLength(3)
-  expect(requestBodies[2]!.reasoning_effort).toBeUndefined()
+  expect(requestBodies).toHaveLength(4)
+  expect(requestBodies[3]!.reasoning_effort).toBe('medium')
 })
 
 test('NVIDIA NIM does not infer native Claude effort from the model name', async () => {

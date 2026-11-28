@@ -112,24 +112,24 @@ test('resolveProviderRequest maps direct Moonshot K3 reasoning aliases', () => {
   }
 })
 
-test('resolveProviderRequest rejects max reasoning for models without K3 support', () => {
+test('resolveProviderRequest keeps an explicit max pick for models without K3 support', () => {
   const request = resolveProviderRequest({
     model: 'gpt-4o?reasoning=max',
     baseUrl: 'https://api.openai.com/v1',
     processEnv: {},
   })
 
-  expect(request.reasoning).toBeUndefined()
+  expect(request.reasoning).toEqual({ effort: 'max' })
 })
 
-test('resolveProviderRequest rejects K3 max reasoning outside a Kimi route', () => {
+test('resolveProviderRequest keeps K3 max reasoning outside a Kimi route', () => {
   const request = resolveProviderRequest({
     model: 'k3?reasoning=max',
     baseUrl: 'https://api.openai.com/v1',
     processEnv: {},
   })
 
-  expect(request.reasoning).toBeUndefined()
+  expect(request.reasoning).toEqual({ effort: 'max' })
 })
 
 test('resolveProviderRequest maps explicit Atlas coding aliases without ambiguity', () => {
