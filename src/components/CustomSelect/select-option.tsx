@@ -37,9 +37,24 @@ export type SelectOptionProps = {
    * Set false when a child declares its own cursor (e.g. BaseTextInput).
    */
   readonly declareCursor?: boolean;
+
+  /**
+   * Called when the pointer enters the option row (fullscreen mouse support).
+   */
+  readonly onMouseEnter?: () => void;
+
+  /**
+   * Called when the pointer leaves the option row.
+   */
+  readonly onMouseLeave?: () => void;
+
+  /**
+   * Called when the option row is clicked.
+   */
+  readonly onClick?: () => void;
 };
 export function SelectOption(t0) {
-  const $ = _c(8);
+  const $ = _c(12);
   const {
     isFocused,
     isSelected,
@@ -47,11 +62,14 @@ export function SelectOption(t0) {
     description,
     shouldShowDownArrow,
     shouldShowUpArrow,
-    declareCursor
+    declareCursor,
+    onMouseEnter,
+    onMouseLeave,
+    onClick
   } = t0;
   let t1;
-  if ($[0] !== children || $[1] !== declareCursor || $[2] !== description || $[3] !== isFocused || $[4] !== isSelected || $[5] !== shouldShowDownArrow || $[6] !== shouldShowUpArrow) {
-    t1 = <ListItem isFocused={isFocused} isSelected={isSelected} description={description} showScrollDown={shouldShowDownArrow} showScrollUp={shouldShowUpArrow} styled={false} declareCursor={declareCursor}>{children}</ListItem>;
+  if ($[0] !== children || $[1] !== declareCursor || $[2] !== description || $[3] !== isFocused || $[4] !== isSelected || $[5] !== shouldShowDownArrow || $[6] !== shouldShowUpArrow || $[8] !== onMouseEnter || $[9] !== onMouseLeave || $[10] !== onClick) {
+    t1 = <ListItem isFocused={isFocused} isSelected={isSelected} description={description} showScrollDown={shouldShowDownArrow} showScrollUp={shouldShowUpArrow} styled={false} declareCursor={declareCursor} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} onClick={onClick}>{children}</ListItem>;
     $[0] = children;
     $[1] = declareCursor;
     $[2] = description;
@@ -59,9 +77,12 @@ export function SelectOption(t0) {
     $[4] = isSelected;
     $[5] = shouldShowDownArrow;
     $[6] = shouldShowUpArrow;
-    $[7] = t1;
+    $[8] = onMouseEnter;
+    $[9] = onMouseLeave;
+    $[10] = onClick;
+    $[11] = t1;
   } else {
-    t1 = $[7];
+    t1 = $[11];
   }
   return t1;
 }

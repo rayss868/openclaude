@@ -115,7 +115,7 @@ export function _resetTmuxControlModeProbeForTesting(): void {
  *   CLAUDE_CODE_NO_FLICKER=1  → always on (overrides tmux -CC guard too)
  *   tmux -CC detected         → off (corrupts terminal state)
  *   config flickerFreeMode    → on/off per user preference
- *   default                   → off
+ *   default                   → on (mouse hover/click needs alt-screen tracking)
  */
 export function isFullscreenEnvEnabled(): boolean {
   // Explicit env opt-out always wins.
@@ -137,7 +137,7 @@ export function isFullscreenEnvEnabled(): boolean {
   // `/config` without having to set an env var.
   const configValue = getGlobalConfig().flickerFreeMode
   if (configValue !== undefined) return configValue
-  return false
+  return true
 }
 
 /**

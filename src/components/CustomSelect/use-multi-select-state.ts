@@ -140,6 +140,26 @@ export type MultiSelectState<T> = {
   isSubmitFocused: boolean
 
   /**
+   * Focus an option by value.
+   */
+  focusOption: (value: T | undefined) => void
+
+  /**
+   * Toggle a value's selected state, used by mouse clicks.
+   */
+  toggleValue: (value: T) => void
+
+  /**
+   * Focus the submit button, used by mouse hover.
+   */
+  focusSubmit: () => void
+
+  /**
+   * Unfocus the submit button.
+   */
+  unfocusSubmit: () => void
+
+  /**
    * Update an input field value.
    */
   updateInputValue: (value: T, inputValue: string) => void
@@ -199,6 +219,27 @@ export function useMultiSelectState<T>({
     },
     [selectedValues, onChange],
   )
+
+  // Mouse support: a click toggles the row exactly like Space does on the
+  // keyboard-focused option.
+  const toggleValue = useCallback(
+    (value: T) => {
+      updateSelectedValues(prev =>
+        prev.includes(value)
+          ? prev.filter(v => v !== value)
+          : [...prev, value],
+      )
+    },
+    [updateSelectedValues],
+  )
+
+  const focusSubmit = useCallback(() => {
+    setIsSubmitFocused(true)
+  }, [])
+
+  const unfocusSubmit = useCallback(() => {
+    setIsSubmitFocused(false)
+  }, [])
 
   const navigation = useSelectNavigation<T>({
     visibleOptionCount,
@@ -409,6 +450,9 @@ export function useMultiSelectState<T>({
     inputValues,
     isSubmitFocused,
     updateInputValue,
+    toggleValue,
+    focusSubmit,
+    unfocusSubmit,
     onCancel,
   }
 }

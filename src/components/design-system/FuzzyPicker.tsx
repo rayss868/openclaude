@@ -172,7 +172,12 @@ export function FuzzyPicker<T>({
   const visible = items.slice(windowStart, windowStart + visibleCount);
   const emptyText = typeof emptyMessage === 'function' ? emptyMessage(query) : emptyMessage;
   const searchBox = <SearchBox query={query} cursorOffset={cursorOffset} placeholder={placeholder} isFocused isTerminalFocused={isTerminalFocused} />;
-  const listBlock = <List visible={visible} windowStart={windowStart} visibleCount={visibleCount} total={items.length} focusedIndex={focusedIndex} direction={direction} getKey={getKey} renderItem={(item: T, isFocused: boolean) => renderItem(item, isFocused, query)} emptyText={emptyText} />;
+  const listBlock = <List visible={visible} windowStart={windowStart} visibleCount={visibleCount} total={items.length} focusedIndex={focusedIndex} direction={direction} getKey={getKey} renderItem={(item: T, isFocused: boolean) => renderItem(item, isFocused, query)} emptyText={emptyText} onFocusIndex={index => setFocusedIndex(index)} onActivateIndex={index => {
+    const item = items[index];
+    if (item !== undefined) {
+      onSelect(item);
+    }
+  }} />;
   const preview = renderPreview && focused ? <Box flexDirection="column" flexGrow={1}>
         {renderPreview(focused)}
       </Box> : null;
@@ -223,9 +228,13 @@ type ListProps<T> = Pick<Props<T>, 'visibleCount' | 'direction' | 'getKey' | 're
   total: number;
   focusedIndex: number;
   emptyText: string;
+  /** Move focus to a row on pointer hover (fullscreen mouse support). */
+  onFocusIndex: (index: number) => void;
+  /** Select a row on pointer click. */
+  onActivateIndex: (index: number) => void;
 };
 function List(t0) {
-  const $ = _c(27);
+  const $ = _c(29);
   const {
     visible,
     windowStart,
@@ -235,7 +244,9 @@ function List(t0) {
     direction,
     getKey,
     renderItem,
-    emptyText
+    emptyText,
+    onFocusIndex,
+    onActivateIndex
   } = t0;
   if (visible.length === 0) {
     let t1;
@@ -260,13 +271,13 @@ function List(t0) {
   let t1;
   if ($[5] !== direction || $[6] !== focusedIndex || $[7] !== getKey || $[8] !== renderItem || $[9] !== total || $[10] !== visible || $[11] !== visibleCount || $[12] !== windowStart) {
     let t2;
-    if ($[14] !== direction || $[15] !== focusedIndex || $[16] !== getKey || $[17] !== renderItem || $[18] !== total || $[19] !== visible.length || $[20] !== visibleCount || $[21] !== windowStart) {
+    if ($[14] !== direction || $[15] !== focusedIndex || $[16] !== getKey || $[17] !== renderItem || $[18] !== total || $[19] !== visible.length || $[20] !== visibleCount || $[21] !== windowStart || $[27] !== onActivateIndex || $[28] !== onFocusIndex) {
       t2 = (item, i) => {
         const actualIndex = windowStart + i;
         const isFocused = actualIndex === focusedIndex;
         const atLowEdge = i === 0 && windowStart > 0;
         const atHighEdge = i === visible.length - 1 && windowStart + visibleCount < total;
-        return <ListItem key={getKey(item)} isFocused={isFocused} showScrollUp={direction === "up" ? atHighEdge : atLowEdge} showScrollDown={direction === "up" ? atLowEdge : atHighEdge} styled={false}>{renderItem(item, isFocused)}</ListItem>;
+        return <ListItem key={getKey(item)} isFocused={isFocused} showScrollUp={direction === "up" ? atHighEdge : atLowEdge} showScrollDown={direction === "up" ? atLowEdge : atHighEdge} styled={false} onMouseEnter={() => onFocusIndex(actualIndex)} onClick={() => onActivateIndex(actualIndex)}>{renderItem(item, isFocused)}</ListItem>;
       };
       $[14] = direction;
       $[15] = focusedIndex;
@@ -276,6 +287,8 @@ function List(t0) {
       $[19] = visible.length;
       $[20] = visibleCount;
       $[21] = windowStart;
+      $[27] = onActivateIndex;
+      $[28] = onFocusIndex;
       $[22] = t2;
     } else {
       t2 = $[22];
