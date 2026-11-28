@@ -380,6 +380,7 @@ export function scanAddedLines(lines: DiffLine[]): Finding[] {
 export function getGitDiff(baseRef: string, headRef = 'HEAD'): string {
   const mergeBase = spawnSync('git', ['merge-base', baseRef, headRef], {
     encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
   })
 
   if (mergeBase.status !== 0) {
@@ -392,7 +393,7 @@ export function getGitDiff(baseRef: string, headRef = 'HEAD'): string {
   const diff = spawnSync(
     'git',
     ['diff', '--unified=0', '--no-ext-diff', `${base}...${headRef}`],
-    { encoding: 'utf8' },
+    { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
   )
 
   if (diff.status !== 0) {

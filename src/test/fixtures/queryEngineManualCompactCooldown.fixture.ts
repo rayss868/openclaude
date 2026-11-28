@@ -93,6 +93,7 @@ try {
     builtInCommandNames: new Set<string>(),
     clearCommandsCache: () => {},
     findCommand: () => undefined,
+    formatDescriptionWithSource: () => '',
     getCommand: () => undefined,
     getCommandName: (command: { name?: string }) => command.name ?? '',
     getCommands: () => [],
