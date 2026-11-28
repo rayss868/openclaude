@@ -17,7 +17,15 @@ import type { StatusLineCommandInput } from '../types/statusLine.js'
 import type { executeStatusLineCommand } from '../utils/hooks.js'
 import { createUserMessage } from '../utils/messages.js'
 import { createCompactBoundaryMessage } from '../utils/messages/systemFactories.js'
+import type { PrStatusState } from '../hooks/usePrStatus.js'
 import { getLastAssistantMessageId, StatusLine } from './StatusLine.js'
+
+const NO_PR_STATUS: PrStatusState = {
+  number: null,
+  url: null,
+  reviewState: null,
+  lastUpdated: 0,
+}
 
 type MacroGlobal = typeof globalThis & { MACRO?: { VERSION: string } }
 const macroGlobal = globalThis as MacroGlobal
@@ -154,6 +162,7 @@ test('cancels hidden statusline work and refreshes once reactivated', async () =
           executeCommand={executeCommand}
           messagesRef={messagesRef}
           lastAssistantMessageId={lastAssistantMessageId}
+          prStatus={NO_PR_STATUS}
         />
         <CommitProbe
           token={token}
@@ -299,6 +308,7 @@ test('refreshes mounted statusline with null usage after full compaction', async
           messagesRef={messagesRef}
           lastAssistantMessageId={getLastAssistantMessageId(messages)}
           executeCommand={executeCommand}
+          prStatus={NO_PR_STATUS}
         />
       </AppStateProvider>,
     )
