@@ -151,18 +151,14 @@ export function isFullscreenEnvEnabled(): boolean {
 
 /**
  * Whether fullscreen mode should enable SGR mouse tracking (DEC 1000/1002/1006).
- * Defaults to false so the terminal emulator (Orca, Windows Terminal, VS Code)
- * retains native right-click context menu and native selection behavior.
- * Users who want in-app mouse hover/click can opt in via CLAUDE_CODE_ENABLE_MOUSE=1
- * or mouseTracking config.
+ * Required for mouse wheel scrolling and interactive selection in fullscreen.
+ * Set CLAUDE_CODE_DISABLE_MOUSE=1 to disable mouse tracking.
  */
 export function isMouseTrackingEnabled(): boolean {
-  if (isEnvDefinedFalsy(process.env.CLAUDE_CODE_ENABLE_MOUSE)) return false
-  if (isEnvTruthy(process.env.CLAUDE_CODE_ENABLE_MOUSE)) return true
   if (isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_MOUSE)) return false
   const configValue = getGlobalConfig().mouseTracking
   if (configValue !== undefined) return configValue
-  return false
+  return true
 }
 
 /**
